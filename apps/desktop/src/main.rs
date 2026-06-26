@@ -364,19 +364,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let items2 = items.clone();
 
                 handle.spawn(async move {
-                    // Get counts for the database node label
                     let tbl_count_sql = format!("SELECT COUNT(*) FROM [{db_name}].INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'");
                     let view_count_sql = format!("SELECT COUNT(*) FROM [{db_name}].INFORMATION_SCHEMA.VIEWS");
-                    let tbl_sql = format!("SELECT TABLE_NAME FROM [{db_name}].INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME");
-                    let view_sql = format!("SELECT TABLE_NAME FROM [{db_name}].INFORMATION_SCHEMA.VIEWS ORDER BY TABLE_NAME");
 
-                    let mut table_names = Vec::new();
-                    let mut view_names = Vec::new();
                     let mut tbl_count = 0i64;
                     let mut view_count = 0i64;
 
                     if let Ok(mut conn) = driver2.connect(&url2).await {
-                        // Get counts
                         if let Ok(r) = conn.execute(&tbl_count_sql).await {
                             if let Some(row) = r.rows.first() {
                                 tbl_count = row.get(0).and_then(|v| match v {
@@ -393,18 +387,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }).unwrap_or(0);
                             }
                         }
-                        // Get tables
-                        if let Ok(r) = conn.execute(&tbl_sql).await {
-                            for row in &r.rows {
-                                if let Some(name) = row.get(0).map(|v| v.to_string()) { table_names.push(name); }
-                            }
-                        }
-                        // Get views
-                        if let Ok(r) = conn.execute(&view_sql).await {
-                            for row in &r.rows {
-                                if let Some(name) = row.get(0).map(|v| v.to_string()) { view_names.push(name); }
-                            }
-                        }
                     }
 
                     let mut updated_items = items2.clone();
@@ -413,28 +395,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     updated_items[idx].expanded = true;
 
                     let mut new_items = Vec::new();
-                    // Tables folder
+                    // Tables folder (collapsed — actual tables loaded on expand)
                     new_items.push(TreeItem {
                         label: format!("Tables ({tbl_count})").into(), kind: "folder".into(),
                         depth: 2, expanded: false, has_children: true, icon: "".into(),
                     });
-                    for name in &table_names {
-                        new_items.push(TreeItem {
-                            label: name.clone().into(), kind: "table".into(),
-                            depth: 3, expanded: false, has_children: true, icon: "".into(),
-                        });
-                    }
-                    // Views folder
+                    // Views folder (collapsed — actual views loaded on expand)
                     new_items.push(TreeItem {
                         label: format!("Views ({view_count})").into(), kind: "folder".into(),
                         depth: 2, expanded: false, has_children: true, icon: "".into(),
                     });
-                    for name in &view_names {
-                        new_items.push(TreeItem {
-                            label: name.clone().into(), kind: "view".into(),
-                            depth: 3, expanded: false, has_children: false, icon: "".into(),
-                        });
-                    }
 
                     let insert_pos = idx + 1;
                     for (i, ni) in new_items.iter().enumerate() {
