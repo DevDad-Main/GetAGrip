@@ -10,9 +10,25 @@ description = "GetAGrip — a modern, cross-platform database IDE."
 name = "getagrip"
 path = "src/main.rs"
 
+[build-dependencies]
+slint-build = "1.9"
+
 [dependencies]
 getagrip-core = { path = "../../crates/getagrip-core" }
+getagrip-database = { path = "../../crates/getagrip-database" }
+getagrip-sql = { path = "../../crates/getagrip-sql" }
+getagrip-schema = { path = "../../crates/getagrip-schema" }
+getagrip-explorer = { path = "../../crates/getagrip-explorer" }
+getagrip-editor = { path = "../../crates/getagrip-editor" }
+getagrip-results = { path = "../../crates/getagrip-results" }
+getagrip-settings = { path = "../../crates/getagrip-settings" }
+getagrip-themes = { path = "../../crates/getagrip-themes" }
+getagrip-telemetry = { path = "../../crates/getagrip-telemetry" }
+getagrip-plugins = { path = "../../crates/getagrip-plugins" }
+getagrip-query-engine = { path = "../../crates/getagrip-query_engine" }
 slint = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+parking_lot = { workspace = true }
+chrono = { workspace = true }
