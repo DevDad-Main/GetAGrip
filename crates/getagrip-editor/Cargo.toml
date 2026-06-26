@@ -10,3 +10,4 @@ description = "GetAGrip: SQL editor with syntax highlighting and autocomplete."
 getagrip-core = { path = "../getagrip-core" }
 getagrip-sql = { path = "../getagrip-sql" }
 serde = { workspace = true }
+chrono = { workspace = true }

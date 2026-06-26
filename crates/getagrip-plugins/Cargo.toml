@@ -9,3 +9,4 @@ description = "GetAGrip: plugin system for extensibility."
 [dependencies]
 getagrip-core = { path = "../getagrip-core" }
 serde = { workspace = true }
+parking_lot = { workspace = true }

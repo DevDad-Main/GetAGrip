@@ -1685,6 +1685,7 @@ dependencies = [
 name = "getagrip-editor"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "getagrip-core",
  "getagrip-sql",
  "serde",
@@ -1704,6 +1705,7 @@ name = "getagrip-plugins"
 version = "0.1.0"
 dependencies = [
  "getagrip-core",
+ "parking_lot",
  "serde",
 ]
 
@@ -1724,6 +1726,7 @@ name = "getagrip-results"
 version = "0.1.0"
 dependencies = [
  "getagrip-core",
+ "getagrip-database",
  "serde",
 ]
 
@@ -1731,6 +1734,8 @@ dependencies = [
 name = "getagrip-schema"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "chrono",
  "getagrip-core",
  "getagrip-database",
  "serde",
@@ -1741,7 +1746,9 @@ name = "getagrip-settings"
 version = "0.1.0"
 dependencies = [
  "getagrip-core",
+ "parking_lot",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

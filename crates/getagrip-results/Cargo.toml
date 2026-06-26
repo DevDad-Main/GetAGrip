@@ -8,4 +8,5 @@ description = "GetAGrip: query results data grid and export."
 
 [dependencies]
 getagrip-core = { path = "../getagrip-core" }
+getagrip-database = { path = "../getagrip-database" }
 serde = { workspace = true }

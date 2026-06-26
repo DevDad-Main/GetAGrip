@@ -10,3 +10,5 @@ description = "GetAGrip: schema introspection and comparison."
 getagrip-core = { path = "../getagrip-core" }
 getagrip-database = { path = "../getagrip-database" }
 serde = { workspace = true }
+chrono = { workspace = true }
+async-trait = "0.1"

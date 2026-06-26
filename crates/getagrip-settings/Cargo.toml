@@ -9,3 +9,5 @@ description = "GetAGrip: settings UI and persistence."
 [dependencies]
 getagrip-core = { path = "../getagrip-core" }
 serde = { workspace = true }
+serde_json = { workspace = true }
+parking_lot = { workspace = true }
