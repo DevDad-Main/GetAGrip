@@ -152,26 +152,28 @@ export component EditorPanel {
                         background: #a5d6a7;
                     }
 
-                    HorizontalLayout {
-                        padding-left: 8px; padding-right: 4px; spacing: 4px;
-                        Text {
-                            text: tab.title;
-                            font-size: 12px; vertical-alignment: center;
-                            color: idx == root.active-tab ? #e6e6eb : #8a8a93;
-                            overflow: elide; horizontal-alignment: left;
-                        }
-                        if tab.modified : Text {
-                            text: "●"; font-size: 8px; color: #f9e2af; vertical-alignment: center;
-                        }
-                        Rectangle { horizontal-stretch: 1; }
-                        TouchArea {
-                            clicked => { root.tab-closed(idx); }
-                            Rectangle { width: 16px; height: 16px;
-                                Text { text: "×"; font-size: 13px; color: #8a8a93; horizontal-alignment: center; vertical-alignment: center; }
+                    TouchArea {
+                        clicked => { root.tab-selected(idx); }
+                        HorizontalLayout {
+                            padding-left: 8px; padding-right: 4px; spacing: 4px;
+                            Text {
+                                text: tab.title;
+                                font-size: 12px; vertical-alignment: center;
+                                color: idx == root.active-tab ? #e6e6eb : #8a8a93;
+                                overflow: elide; horizontal-alignment: left;
+                            }
+                            if tab.modified : Text {
+                                text: "●"; font-size: 8px; color: #f9e2af; vertical-alignment: center;
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                            TouchArea {
+                                clicked => { root.tab-closed(idx); }
+                                Rectangle { width: 16px; height: 16px;
+                                    Text { text: "x"; font-size: 13px; color: #8a8a93; horizontal-alignment: center; vertical-alignment: center; }
+                                }
                             }
                         }
                     }
-                    TouchArea { clicked => { root.tab-selected(idx); } }
                 }
                 Rectangle { }
                 TouchArea { clicked => { root.new-tab(); }
