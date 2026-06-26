@@ -124,7 +124,7 @@ export struct TabData {
 export component EditorPanel {
     in-out property <[TabData]> tabs;
     in-out property <int> active-tab: 0;
-    in-out property <string> editor-content: "/* GetAGrip SQL Editor */\n\nSELECT 1;";
+    in-out property <string> editor-content: "SELECT @@VERSION";
     in-out property <string> cursor-position: "1:1";
     in-out property <bool> editor-modified: false;
     in-out property <bool> has-connection: false;
@@ -135,88 +135,14 @@ export component EditorPanel {
     callback execute-query(string);
 
     VerticalLayout {
-        Rectangle {
-            height: 32px; background: #181825;
-            HorizontalLayout {
-                spacing: 0;
-                for tab[idx] in root.tabs : Rectangle {
-                    width: 160px; height: 100%;
-                    background: idx == root.active-tab ? #1e1e2e : #181825;
-
-                    HorizontalLayout {
-                        padding-left: 8px; padding-right: 8px; spacing: 4px;
-                        if tab.is-query : Text {
-                            text: "▶"; font-size: 10px; color: #cba6f7; vertical-alignment: center;
-                        }
-                        Text {
-                            text: tab.title; font-size: 12px; vertical-alignment: center;
-                            color: idx == root.active-tab ? #cdd6f4 : #6c7086;
-                            overflow: elide; horizontal-alignment: left;
-                        }
-                        if tab.modified : Text {
-                            text: "●"; font-size: 8px; color: #fab387; vertical-alignment: center;
-                        }
-                        Text { text: "×"; font-size: 13px; color: #6c7086; vertical-alignment: center; }
-                    }
-                    TouchArea { clicked => { root.tab-selected(idx); } }
-                }
-                Rectangle { }
-                TouchArea {
-                    clicked => { root.new-tab(); }
-                    Rectangle {
-                        width: 28px; height: 28px; border-radius: 4px;
-                        Text { text: "+"; font-size: 16px; color: #6c7086; horizontal-alignment: center; vertical-alignment: center; }
-                    }
-                }
-            }
-        }
-
-        Rectangle {
-            background: #1e1e2e;
-            VerticalLayout {
-                padding-left: 8px; padding-top: 8px; padding-right: 8px; padding-bottom: 8px;
-                TextEdit {
-                    text <=> root.editor-content;
-                    font-size: 14px;
-                    font-family: "monospace";
-                    edited(str) => {
-                        root.editor-content = str;
-                        root.editor-changed(str);
-                    }
-                }
-            }
-        }
-
-        Rectangle {
-            height: 28px; background: #181825;
-            HorizontalLayout {
-                padding-left: 8px; padding-right: 8px; padding-top: 4px; padding-bottom: 4px; spacing: 12px;
-                Text { text: root.cursor-position; font-size: 11px; color: #6c7086; vertical-alignment: center; }
-                Rectangle { }
-                Rectangle {
-                    border-radius: 3px;
-                    background: root.has-connection ? #cba6f7 : #45475a;
-                    height: 20px;
-                    HorizontalLayout {
-                        padding-left: 6px; padding-right: 8px; padding-top: 2px; padding-bottom: 2px;
-                        spacing: 3px;
-                        if root.has-connection : Image { source: @image-url("icons/play.svg"); width: 12px; height: 12px; }
-                        if !root.has-connection : Image { source: @image-url("icons/play-off.svg"); width: 12px; height: 12px; }
-                        Text {
-                            text: "Run";
-                            font-size: 11px; font-weight: 600;
-                            color: root.has-connection ? #1e1e2e : #6c7086;
-                            vertical-alignment: center;
-                        }
-                    }
-                    TouchArea {
-                        clicked => {
-                            if root.has-connection {
-                                root.execute-query(root.editor-content);
-                            }
-                        }
-                    }
-                }
+        padding-left: 8px; padding-top: 8px; padding-right: 8px; padding-bottom: 8px;
+        TextEdit {
+            text <=> root.editor-content;
+            font-size: 14px;
+            font-family: "monospace";
+            edited(str) => {
+                root.editor-content = str;
+                root.editor-changed(str);
             }
         }
     }
@@ -229,7 +155,7 @@ export struct ResultRowData {
 export component ResultsPanel {
     in-out property <[string]> columns;
     in-out property <[ResultRowData]> rows;
-    in-out property <string> status: "0 rows — 0ms";
+    in-out property <string> status: "";
     in-out property <int> selected-row: -1;
     in-out property <bool> has-data: false;
     in-out property <string> output-text: "";
@@ -237,30 +163,35 @@ export component ResultsPanel {
     callback close-results();
 
     VerticalLayout {
+        // Header row
         Rectangle {
-            height: 28px; background: #181825;
+            height: 24px;
             HorizontalLayout {
-                padding-left: 8px; padding-right: 8px; padding-top: 4px; padding-bottom: 4px; spacing: 8px;
-                Text { text: "RESULTS"; font-size: 10px; font-weight: 600; letter-spacing: 1px; color: #6c7086; vertical-alignment: center; }
-                Text { text: root.status; font-size: 11px; color: #6c7086; vertical-alignment: center; }
+                padding-left: 12px; padding-right: 8px;
+                Text { text: "RESULTS"; font-size: 10px; font-weight: 600; color: #6e6e7d; vertical-alignment: center; }
+                Text { text: root.status; font-size: 10px; color: #6e6e7d; vertical-alignment: center; }
                 Rectangle { }
-                Text { text: "×"; font-size: 14px; color: #6c7086; vertical-alignment: center; }
+                Text { text: "×"; font-size: 14px; color: #6e6e7d; vertical-alignment: center; }
                 TouchArea { clicked => { root.close-results(); } }
             }
         }
+
+        // Divider
+        Rectangle { height: 1px; background: #38364a; }
+
+        // Output
         if root.has-data : Rectangle {
             clip: true;
             VerticalLayout {
-                padding-left: 4px; padding-top: 2px;
+                padding-left: 12px; padding-right: 12px; padding-top: 4px; padding-bottom: 4px;
                 Text {
                     text: root.output-text;
                     font-size: 13px;
                     font-family: "monospace";
-                    color: #cdd6f4;
+                    color: #6e6e7d;
                     vertical-alignment: top;
                     horizontal-alignment: left;
                     wrap: word-wrap;
-                    overflow: elide;
                 }
             }
         }
