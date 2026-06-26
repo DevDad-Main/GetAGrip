@@ -112,11 +112,13 @@ export component MainWindow inherits Window {
         // Main content (fills remaining space)
         HorizontalLayout {
             vertical-stretch: 1;
-            if AppState.sidebar-visible : Rectangle {
-                width: 260px; background: #181825;
+            Rectangle {
+                width: AppState.sidebar-visible ? 260px : 0px;
+                background: #181825;
                 vertical-stretch: 1;
+                clip: true;
                 Sidebar {
-                    width: 100%; height: 100%;
+                    width: 260px; height: 100%;
                     items: AppState.sidebar-items;
                 }
             }
