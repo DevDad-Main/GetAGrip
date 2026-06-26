@@ -284,6 +284,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if idx >= items.len() { return; }
             let item = &items[idx];
 
+            // Toggle collapse: if already expanded, remove children
+            if item.expanded {
+                let mut updated = items.clone();
+                updated[idx].expanded = false;
+                // Remove all children (items with depth > current depth until next same-or-lower depth)
+                let i = idx + 1;
+                while i < updated.len() && updated[i].depth > item.depth {
+                    updated.remove(i);
+                }
+                {
+                    let mut m = model.lock().unwrap();
+                    m.sidebar_items = updated.clone();
+                }
+                let items2 = updated;
+                let weak2 = app_weak.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(a) = weak2.upgrade() {
+                        let m = std::rc::Rc::new(slint::VecModel::from(items2));
+                        a.global::<AppState>().set_sidebar_items(m.into());
+                    }
+                });
+                return;
+            }
+
             if item.kind == "database" && item.depth == 1 && !item.expanded {
                 let db_name = item.label.to_string();
                 let handle = tokio::runtime::Handle::current();
@@ -341,7 +365,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
             }
 
-            if item.kind == "table".to_string() && item.depth == 2 && !item.expanded {
+            if item.kind == "table" && item.depth == 2 && !item.expanded {
                 let db_name: String = items.iter()
                     .take(idx)
                     .rev()
