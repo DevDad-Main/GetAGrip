@@ -126,6 +126,10 @@ pub struct LayoutCache {
     pub tabs: Vec<(u16, u16, tg_core::id::Id<tg_core::id::TabTag>)>,
     /// Menu bar item positions: (x, width).
     pub menu_positions: Vec<(u16, u16)>,
+    /// Menu dropdown items: (y, label) relative to dropdown.
+    pub menu_dropdown_items: Vec<(u16, String)>,
+    /// Menu dropdown rect: (x, y, w, h).
+    pub menu_dropdown_rect: Option<(u16, u16, u16, u16)>,
     /// Explorer area (x, y, w, h).
     pub explorer_rect: Option<(u16, u16, u16, u16)>,
     /// Editor area (x, y, w, h).

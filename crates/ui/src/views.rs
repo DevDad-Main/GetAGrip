@@ -363,40 +363,74 @@ pub fn render_menu_bar(frame: &mut Frame, area: Rect, state: &AppState, theme: &
         x += w;
     }
 
-    state.layout_cache.write().menu_positions = positions.clone();
-
+    state.layout_cache.write().menu_positions = positions;
     frame.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)),
         area,
     );
+}
 
-    // Dropdown for open menu
-    if let Some(idx) = open_idx {
-        let dropdown_items = match idx {
-            0 => vec![" New Connection  Ctrl+K", " Open Workspace", " Save All", "────", " Quit  Ctrl+C"],
-            1 => vec![" Undo  Ctrl+Z", " Redo  Ctrl+Y", " Cut", " Copy", " Paste"],
-            2 => vec![" Toggle Sidebar  Ctrl+B", " Command Palette  Ctrl+K", " Cycle Theme", " Toggle Vim Mode"],
-            3 => vec![" About GetAGrip", " Keybindings", " Check for Updates"],
-            _ => vec![],
-        };
-        let dropdown_w = 30u16;
-        let dropdown_h = dropdown_items.len() as u16 + 2;
-        let dx = positions.get(idx).map(|(x, _)| *x).unwrap_or(0);
-        let dy = area.y + 1;
-        let dropdown_rect = Rect::new(dx.min(area.width.saturating_sub(dropdown_w)), dy, dropdown_w, dropdown_h);
+/// Render menu dropdown as an overlay (rendered AFTER main content to stay on top).
+pub fn render_menu_dropdown(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
+    let open_idx = match *state.menu_open.read() {
+        Some(idx) => idx,
+        None => {
+            state.layout_cache.write().menu_dropdown_rect = None;
+            return;
+        }
+    };
 
-        frame.render_widget(Clear, dropdown_rect);
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .style(Style::default().bg(bg))
-            .border_style(Style::default().fg(accent));
-        let inner = block.inner(dropdown_rect);
-        frame.render_widget(block, dropdown_rect);
-        let items: Vec<Line> = dropdown_items.iter().map(|s| {
-            Line::from(Span::styled(format!("  {s}"), Style::default().fg(fg)))
-        }).collect();
-        frame.render_widget(Paragraph::new(items), inner);
+    let bg = hex_color(&theme.semantic.panel_bg);
+    let fg = theme_color(&theme.palette.foreground);
+    let dim = theme_color(&theme.palette.bright_black);
+    let accent = theme_color(&theme.palette.blue);
+
+    let dropdown_items: Vec<&str> = match open_idx {
+        0 => vec![" New Connection  Ctrl+K", " Open Settings", "────", " Quit  Ctrl+C"],
+        1 => vec![" Undo  Ctrl+Z", " Redo  Ctrl+Y", " Cut", " Copy", " Paste"],
+        2 => vec![" Toggle Sidebar  Ctrl+B", " Command Palette  Ctrl+K", " Cycle Theme", " Toggle Vim Mode"],
+        3 => vec![" About GetAGrip", " Keybindings Reference"],
+        _ => vec![],
+    };
+
+    let cache = state.layout_cache.read();
+    let dx = cache.menu_positions.get(open_idx).map(|(x, _)| *x).unwrap_or(0);
+    drop(cache);
+
+    let dropdown_w = 32u16;
+    let dropdown_h = (dropdown_items.len() as u16) + 2;
+    let dropdown_rect = Rect::new(dx.min(area.width.saturating_sub(dropdown_w)), 1, dropdown_w, dropdown_h);
+
+    // Cache for mouse hit-testing
+    {
+        let mut c = state.layout_cache.write();
+        c.menu_dropdown_rect = Some((dropdown_rect.x, dropdown_rect.y, dropdown_rect.width, dropdown_rect.height));
+        let mut items = Vec::new();
+        for (i, s) in dropdown_items.iter().enumerate() {
+            items.push((dropdown_rect.y + i as u16, s.to_string()));
+        }
+        c.menu_dropdown_items = items;
     }
+
+    // Clear area behind dropdown
+    frame.render_widget(Clear, dropdown_rect);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .style(Style::default().bg(bg))
+        .border_style(Style::default().fg(accent));
+    let inner = block.inner(dropdown_rect);
+    frame.render_widget(block, dropdown_rect);
+
+    let items: Vec<Line> = dropdown_items.iter().map(|s| {
+        let is_sep = s.contains('─');
+        if is_sep {
+            Line::from(Span::styled(format!("  {s}"), Style::default().fg(dim)))
+        } else {
+            Line::from(Span::styled(format!("  {s}"), Style::default().fg(fg)))
+        }
+    }).collect();
+    frame.render_widget(Paragraph::new(items), inner);
 }
 
 /// Render the status bar at the bottom.

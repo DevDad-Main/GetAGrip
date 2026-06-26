@@ -92,6 +92,9 @@ impl App {
 
         // Notification toast
         views::render_notification(frame, area, &self.state, &theme);
+
+        // Menu dropdown (overlay — rendered last to stay on top)
+        views::render_menu_dropdown(frame, area, &self.state, &theme);
     }
 
     /// Handle an input event.
@@ -122,6 +125,29 @@ impl App {
     /// Handle a keyboard event.
     fn handle_key(&mut self, key_event: crossterm::event::KeyEvent) {
         use crossterm::event::{KeyCode, KeyModifiers};
+
+        // ── Menu keyboard navigation ────────────────────────────
+        let menu_open = *self.state.menu_open.read();
+        if menu_open.is_some() {
+            match key_event.code {
+                KeyCode::Esc => {
+                    *self.state.menu_open.write() = None;
+                    self.needs_redraw = true;
+                }
+                KeyCode::Left => {
+                    let mut m = self.state.menu_open.write();
+                    *m = Some(m.unwrap_or(0).saturating_sub(1).max(0));
+                    self.needs_redraw = true;
+                }
+                KeyCode::Right => {
+                    let mut m = self.state.menu_open.write();
+                    *m = Some(m.unwrap_or(0).saturating_add(1).min(3));
+                    self.needs_redraw = true;
+                }
+                _ => {}
+            }
+            return;
+        }
 
         let ctrl = key_event.modifiers.contains(KeyModifiers::CONTROL);
         let shift = key_event.modifiers.contains(KeyModifiers::SHIFT);
@@ -360,6 +386,36 @@ impl App {
         self.state.notify("Driver not yet implemented", crate::state::NotificationLevel::Warning);
     }
 
+    /// Execute a command from a menu dropdown click.
+    fn execute_menu_command(&mut self, label: &str) {
+        let lower = label.to_lowercase().trim().to_string();
+        if lower.contains("new connection") {
+            *self.state.connection_dialog_open.write() = true;
+            self.state.connection_dialog_input.write().clear();
+        } else if lower.contains("command palette") {
+            self.toggle_command_palette();
+        } else if lower.contains("toggle sidebar") {
+            let mut focus = self.state.focused_panel.write();
+            *focus = match *focus {
+                FocusedPanel::Editor | FocusedPanel::Results => FocusedPanel::Explorer,
+                _ => FocusedPanel::Editor,
+            };
+        } else if lower.contains("cycle theme") {
+            self.cycle_theme();
+        } else if lower.contains("quit") {
+            self.should_quit = true;
+        } else if lower.contains("toggle vim") {
+            self.state.notify("Vim mode toggle not yet wired", crate::state::NotificationLevel::Info);
+        } else if lower.contains("about") {
+            self.state.notify("GetAGrip v0.1.0-dev — A modern database IDE", crate::state::NotificationLevel::Info);
+        } else if lower.contains("keybindings") {
+            self.state.notify("Ctrl+K palette • Alt+1/2/3 panes • Ctrl+T/W tabs • Ctrl+B sidebar", crate::state::NotificationLevel::Info);
+        } else {
+            self.state.notify(&format!("Menu: {label}"), crate::state::NotificationLevel::Info);
+        }
+        self.needs_redraw = true;
+    }
+
     /// Handle keys when the command palette is open.
     fn handle_palette_key(&mut self, key_event: crossterm::event::KeyEvent) {
         use crossterm::event::KeyCode;
@@ -380,10 +436,15 @@ impl App {
                 self.needs_redraw = true;
             }
             KeyCode::Enter => {
-                let query = self.state.command_palette_query.read().clone();
+                let query = { self.state.command_palette_query.read().clone() };
+                let selected = *self.state.palette_selected.read();
+                let cmd = {
+                    let q = query.clone();
+                    self.resolve_palette_selection(&q, selected)
+                };
                 *self.state.command_palette_open.write() = false;
                 *self.state.palette_selected.write() = 0;
-                self.execute_palette_command(&query);
+                self.execute_palette_command(&cmd);
                 self.needs_redraw = true;
             }
             KeyCode::Backspace => {
@@ -399,6 +460,37 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    /// Resolve which command to execute from the palette query.
+    fn resolve_palette_selection(&self, query: &str, selected: usize) -> String {
+        let commands: Vec<(&str, &str)> = vec![
+            ("/connect",        "Add a new database connection"),
+            ("Switch Theme",    "Cycle through color themes"),
+            ("New Tab",         "Open a new query tab"),
+            ("Close Tab",       "Close the current tab"),
+            ("Format SQL",      "Format the current query"),
+            ("Toggle Vim Mode", "Enable/disable Vim keys"),
+            ("Execute Query",   "Run the current SQL"),
+            ("Explain Query",   "Show execution plan"),
+            ("help",            "Show available commands"),
+        ];
+
+        let lower = query.to_lowercase();
+        let filtered: Vec<&(&str, &str)> = if lower.is_empty() {
+            commands.iter().collect()
+        } else {
+            commands.iter().filter(|(name, desc)| {
+                name.to_lowercase().contains(&lower) || desc.to_lowercase().contains(&lower)
+            }).collect()
+        };
+
+        if filtered.is_empty() {
+            return query.to_string();
+        }
+
+        let idx = selected.min(filtered.len().saturating_sub(1));
+        filtered[idx].0.to_string()
     }
 
     /// Execute a command entered in the command palette.
@@ -638,9 +730,26 @@ impl App {
 
         // Close menu if clicking elsewhere
         if *self.state.menu_open.read() != None {
+            // Check dropdown clicks first
+            if let Some((dx, dy, dw, dh)) = cache.menu_dropdown_rect {
+                if col >= dx && col < dx + dw && row >= dy && row < dy + dh {
+                    let rel_y = row - dy;
+                    let clicked_label: Option<String> = cache.menu_dropdown_items.iter()
+                        .find(|(item_y, label)| rel_y == *item_y && !label.contains('─'))
+                        .map(|(_, l)| l.clone());
+                    drop(cache);
+                    if let Some(label) = clicked_label {
+                        self.execute_menu_command(&label);
+                        *self.state.menu_open.write() = None;
+                        self.needs_redraw = true;
+                    }
+                    return;
+                }
+            }
+            // Click outside dropdown: close menu
             *self.state.menu_open.write() = None;
             self.needs_redraw = true;
-            // Fall through to handle other clicks
+            // Fall through
         }
 
         // Tab bar clicks
