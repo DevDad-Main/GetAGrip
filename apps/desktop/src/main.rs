@@ -10,11 +10,21 @@ use slint_ui::*;
 
 use getagrip_database::driver::DatabaseDriver;
 
+#[derive(Clone)]
+struct TabContent {
+    id: String,
+    title: String,
+    sql: String,
+    modified: bool,
+}
+
 struct AppModel {
     driver: Arc<dyn DatabaseDriver>,
     connection_url: Option<String>,
     connecting: Arc<AtomicBool>,
     sidebar_items: Vec<TreeItem>,
+    tabs: Vec<TabContent>,
+    next_tab_id: u32,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -33,7 +43,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         connection_url: None,
         connecting: Arc::new(AtomicBool::new(false)),
         sidebar_items: Vec::new(),
+        tabs: vec![TabContent { id: "tab1".into(), title: "Query 1".into(), sql: "SELECT @@VERSION".into(), modified: false }],
+        next_tab_id: 2,
     }));
+
+    // Init tabs
+    {
+        let model = model.lock().unwrap();
+        let tabs_data: Vec<TabData> = model.tabs.iter().map(|t| TabData {
+            title: t.title.clone().into(), is_query: true, modified: t.modified,
+        }).collect();
+        let tab_model = std::rc::Rc::new(slint::VecModel::from(tabs_data));
+        app.global::<AppState>().set_editor_tabs(tab_model.into());
+        app.global::<AppState>().set_active_tab_index(0);
+    }
 
     app.global::<AppState>().set_connection_status("● Disconnected".into());
     app.global::<AppState>().set_status_text("Ready".into());
@@ -49,6 +72,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     let app_weak = app.as_weak();
     app.global::<AppState>().on_new_query(move || { let _ = app_weak; });
+
+    // ---- New Tab ----
+    {
+        let model = model.clone();
+        let app_weak = app.as_weak();
+        app.global::<AppState>().on_new_tab(move || {
+            let mut m = model.lock().unwrap();
+            let id = m.next_tab_id;
+            m.next_tab_id += 1;
+            let title = format!("Query {id}");
+            m.tabs.push(TabContent { id: id.to_string(), title: title.clone(), sql: String::new(), modified: false });
+            let tabs_data: Vec<TabData> = m.tabs.iter().map(|t| TabData { title: t.title.clone().into(), is_query: true, modified: t.modified }).collect();
+            let active = (m.tabs.len() - 1) as i32;
+            if let Some(a) = app_weak.upgrade() {
+                let tab_model = std::rc::Rc::new(slint::VecModel::from(tabs_data));
+                a.global::<AppState>().set_editor_tabs(tab_model.into());
+                a.global::<AppState>().set_active_tab_index(active);
+                a.global::<AppState>().set_current_sql(String::new().into());
+            }
+        });
+    }
 
     // ---- Connect dialog submit ----
     {

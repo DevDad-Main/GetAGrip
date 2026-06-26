@@ -1,4 +1,4 @@
-import { StatusBar, Sidebar, EditorPanel, ResultsPanel, CommandPalette, ConnectDialog, TreeItem, CommandItem } from "components.slint";
+import { StatusBar, Sidebar, EditorPanel, ResultsPanel, CommandPalette, ConnectDialog, TreeItem, CommandItem, TabData } from "components.slint";
 
 export global AppState {
     in-out property <bool> sidebar-visible: false;
@@ -22,6 +22,9 @@ export global AppState {
     in-out property <string> current-sql: "SELECT @@VERSION";
     in-out property <string> result-text: "";
     in-out property <[TreeItem]> sidebar-items;
+    in-out property <[TabData]> editor-tabs;
+    in-out property <int> active-tab-index: 0;
+    callback new-tab();
 }
 
 export component MainWindow inherits Window {
@@ -87,7 +90,11 @@ export component MainWindow inherits Window {
                     width: 100%; height: 100%;
                     has-connection: AppState.active-connection != "";
                     editor-content <=> AppState.current-sql;
+                    tabs: AppState.editor-tabs;
+                    active-tab: AppState.active-tab-index;
                     execute-query(sql) => { AppState.execute-query(sql); }
+                    tab-selected(idx) => { AppState.active-tab-index = idx; }
+                    new-tab => { AppState.new-tab(); }
                 }
             }
 
