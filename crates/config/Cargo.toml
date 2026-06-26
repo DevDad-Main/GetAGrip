@@ -1,0 +1,24 @@
+[package]
+name = "tg-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "GetAGrip configuration management"
+
+[dependencies]
+tg-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+toml.workspace = true
+dirs.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+config.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

@@ -1,0 +1,31 @@
+[package]
+name = "tg-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "GetAGrip core types, traits, and abstractions"
+
+[dependencies]
+tokio.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+miette.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+bytes.workspace = true
+smallvec.workspace = true
+hashbrown.workspace = true
+parking_lot.workspace = true
+regex.workspace = true
+url.workspace = true
+itertools.workspace = true
+tracing.workspace = true
+
+[features]
+default = []
+vendored = []

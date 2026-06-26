@@ -1,0 +1,52 @@
+[package]
+name = "tg-database"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "GetAGrip database drivers and connection management"
+
+[dependencies]
+tg-core.workspace = true
+tg-config.workspace = true
+tg-telemetry.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+bytes.workspace = true
+dashmap.workspace = true
+parking_lot.workspace = true
+rusqlite.workspace = true
+tokio-postgres = { workspace = true, optional = true }
+mysql_async = { workspace = true, optional = true }
+duckdb = { workspace = true, optional = true }
+redis = { workspace = true, optional = true }
+mongodb = { workspace = true, optional = true }
+ssh2 = { workspace = true, optional = true }
+keyring = { workspace = true, optional = true }
+url.workspace = true
+itertools.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = "3"
+
+[lints]
+workspace = true
+
+[features]
+default = ["sqlite"]
+sqlite = ["rusqlite/bundled"]
+postgres = ["dep:tokio-postgres"]
+mysql = ["dep:mysql_async"]
+duckdb = ["duckdb/bundled"]
+redis = ["dep:redis"]
+mongodb = ["dep:mongodb"]
+ssh = ["dep:ssh2"]
+keyring-vault = ["dep:keyring"]
