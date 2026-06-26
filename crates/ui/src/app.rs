@@ -126,23 +126,24 @@ impl App {
             KeyCode::Char('c') if ctrl => {
                 self.should_quit = true;
             }
-            KeyCode::Char('p') if ctrl && shift => {
-                // Toggle command palette
-                let mut open = self.state.command_palette_open.write();
-                *open = !*open;
-                if *open {
-                    self.state.command_palette_query.write().clear();
-                }
-                self.needs_redraw = true;
+            KeyCode::Char('k') if ctrl => {
+                // Toggle command palette (Ctrl+K works in all terminals)
+                self.toggle_command_palette();
+            }
+            KeyCode::F(1) => {
+                self.toggle_command_palette();
+            }
+            KeyCode::Char('p') if ctrl => {
+                // Ctrl+P alone = command palette
+                self.toggle_command_palette();
             }
             KeyCode::Esc => {
-                // Close command palette if open
                 if *self.state.command_palette_open.read() {
                     *self.state.command_palette_open.write() = false;
                     self.needs_redraw = true;
                 }
             }
-            KeyCode::Char('l') if ctrl && shift => {
+            KeyCode::Char('b') if ctrl => {
                 // Toggle sidebar focus
                 let mut focus = self.state.focused_panel.write();
                 *focus = match *focus {
@@ -151,6 +152,10 @@ impl App {
                 };
                 self.needs_redraw = true;
             }
+            // Pane switching
+            KeyCode::Char('1') if ctrl => { *self.state.focused_panel.write() = FocusedPanel::Editor; self.needs_redraw = true; }
+            KeyCode::Char('2') if ctrl => { *self.state.focused_panel.write() = FocusedPanel::Results; self.needs_redraw = true; }
+            KeyCode::Char('3') if ctrl => { *self.state.focused_panel.write() = FocusedPanel::Explorer; self.needs_redraw = true; }
             KeyCode::Char('t') if ctrl => {
                 // New tab
                 let tab_id = tg_core::id::Id::new();
@@ -244,6 +249,15 @@ impl App {
                 }
             }
         }
+    }
+
+    fn toggle_command_palette(&mut self) {
+        let mut open = self.state.command_palette_open.write();
+        *open = !*open;
+        if *open {
+            self.state.command_palette_query.write().clear();
+        }
+        self.needs_redraw = true;
     }
 
     /// Handle editor-specific key events.

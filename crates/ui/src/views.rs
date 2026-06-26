@@ -8,6 +8,32 @@ use ratatui::{
 use tg_core::traits::theme::Theme;
 use crate::state::{AppState, FocusedPanel};
 
+/// Convert a theme `Color` enum to ratatui `Color`.
+fn theme_color(c: &tg_core::traits::theme::Color) -> Color {
+    match c {
+        tg_core::traits::theme::Color::Hex(s) => parse_hex_color(s),
+        tg_core::traits::theme::Color::Index(i) => Color::Indexed(*i),
+        tg_core::traits::theme::Color::Rgb { r, g, b } => Color::Rgb(*r, *g, *b),
+    }
+}
+
+/// Convert a hex string from semantic colors to ratatui `Color`.
+fn hex_color(s: &str) -> Color {
+    parse_hex_color(s)
+}
+
+fn parse_hex_color(s: &str) -> Color {
+    let hex = s.trim_start_matches('#');
+    if hex.len() >= 6 {
+        let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(128);
+        let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(128);
+        let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(128);
+        Color::Rgb(r, g, b)
+    } else {
+        Color::Gray
+    }
+}
+
 /// The main application layout sections.
 pub struct MainLayout {
     pub sidebar: Rect,
@@ -65,16 +91,21 @@ pub fn editor_results_split(area: Rect) -> EditorResultsLayout {
 }
 
 /// Render the sidebar (connections + object explorer).
-pub fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState, _theme: &Theme) {
+pub fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
     let is_focused = *state.focused_panel.read() == FocusedPanel::Explorer;
+    let bg = theme_color(&theme.palette.background);
+    let fg = theme_color(&theme.palette.foreground);
+    let dim = theme_color(&theme.palette.bright_black);
+    let accent = theme_color(&theme.palette.blue);
 
     let block = Block::default()
         .title(" Explorer ")
         .borders(Borders::ALL)
+        .style(Style::default().bg(bg).fg(fg))
         .border_style(if is_focused {
-            Style::default().fg(Color::Cyan)
+            Style::default().fg(accent)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(dim)
         });
 
     let sidebar_split = Layout::default()
@@ -91,10 +122,10 @@ pub fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState, _theme: &
         .borders(Borders::BOTTOM);
 
     let conn_items: Vec<ListItem> = vec![
-        "  + New Connection...".into(),
+        "  No connections yet".into(),
         "".into(),
-        "  No connections yet.".into(),
-        "  Press Ctrl+N to add one.".into(),
+        "  Connect a database to".into(),
+        "  browse tables and objects".into(),
     ];
     let conn_list = List::new(conn_items);
 
@@ -119,8 +150,12 @@ pub fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState, _theme: &
 }
 
 /// Render the query editor with tabs.
-pub fn render_editor(frame: &mut Frame, area: Rect, state: &AppState, _theme: &Theme) {
+pub fn render_editor(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
     let is_focused = *state.focused_panel.read() == FocusedPanel::Editor;
+    let bg = hex_color(&theme.editor.bg);
+    let fg = hex_color(&theme.editor.fg);
+    let dim = theme_color(&theme.palette.bright_black);
+    let accent = theme_color(&theme.palette.blue);
 
     // Tab bar + Editor
     let split = Layout::default()
@@ -132,7 +167,7 @@ pub fn render_editor(frame: &mut Frame, area: Rect, state: &AppState, _theme: &T
         .split(area);
 
     // Render tab bar
-    let tab_bar = render_tab_bar(state);
+    let tab_bar = render_tab_bar(state, theme);
     frame.render_widget(tab_bar, split[0]);
 
     // Render editor content
@@ -145,10 +180,11 @@ pub fn render_editor(frame: &mut Frame, area: Rect, state: &AppState, _theme: &T
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
+        .style(Style::default().bg(bg).fg(fg))
         .border_style(if is_focused {
-            Style::default().fg(Color::Cyan)
+            Style::default().fg(accent)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(dim)
         });
 
     let text = state.active_tab_state().map(|tab| tab.content.clone()).unwrap_or_default();
@@ -156,12 +192,12 @@ pub fn render_editor(frame: &mut Frame, area: Rect, state: &AppState, _theme: &T
         vec![
             Line::from(Span::styled(
                 "  Write your SQL here...",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(dim),
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "  Ctrl+Enter to execute   |   Ctrl+Shift+F to format   |   Ctrl+Shift+P for commands",
-                Style::default().fg(Color::DarkGray),
+                "  Ctrl+Enter to execute   |   Ctrl+K for commands   |   Ctrl+1/2/3 to switch panes",
+                Style::default().fg(dim),
             )),
         ]
     } else {
@@ -170,7 +206,7 @@ pub fn render_editor(frame: &mut Frame, area: Rect, state: &AppState, _theme: &T
             .map(|line| {
                 Line::from(Span::styled(
                     if line.is_empty() { " " } else { line },
-                    Style::default().fg(Color::White),
+                    Style::default().fg(fg),
                 ))
             })
             .collect()
@@ -184,9 +220,14 @@ pub fn render_editor(frame: &mut Frame, area: Rect, state: &AppState, _theme: &T
 }
 
 /// Render the tab bar.
-fn render_tab_bar(state: &AppState) -> Paragraph<'static> {
+fn render_tab_bar(state: &AppState, theme: &Theme) -> Paragraph<'static> {
     let active = *state.active_tab.read();
     let mut spans = Vec::new();
+    let tab_bg = hex_color(&theme.semantic.tab_bar_bg);
+    let tab_active = hex_color(&theme.semantic.tab_active);
+    let tab_inactive = hex_color(&theme.semantic.tab_inactive);
+    let fg = theme_color(&theme.palette.foreground);
+    let dim = theme_color(&theme.palette.bright_black);
 
     for entry in state.tabs.iter() {
         let id = *entry.key();
@@ -195,30 +236,29 @@ fn render_tab_bar(state: &AppState) -> Paragraph<'static> {
 
         let prefix = if tab.dirty { " ● " } else { "   " };
         let title = format!("{prefix}{} ", tab.title);
-        let title = if tab.pinned {
-            format!("📌{title}")
-        } else {
-            title
-        };
 
         spans.push(Span::styled(
             title,
             if is_active {
-                Style::default().fg(Color::White).bg(Color::DarkGray)
+                Style::default().fg(fg).bg(tab_active)
             } else {
-                Style::default().fg(Color::Gray)
+                Style::default().fg(dim).bg(tab_inactive)
             },
         ));
         spans.push(Span::raw(" "));
     }
 
     Paragraph::new(Line::from(spans))
-        .style(Style::default().bg(Color::Rgb(24, 24, 37)))
+        .style(Style::default().bg(tab_bg))
 }
 
 /// Render the results grid.
-pub fn render_results(frame: &mut Frame, area: Rect, state: &AppState, _theme: &Theme) {
+pub fn render_results(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
     let is_focused = *state.focused_panel.read() == FocusedPanel::Results;
+    let bg = hex_color(&theme.grid.bg);
+    let fg = theme_color(&theme.palette.foreground);
+    let dim = theme_color(&theme.palette.bright_black);
+    let accent = theme_color(&theme.palette.blue);
 
     let block = Block::default()
         .title(if is_focused {
@@ -227,22 +267,23 @@ pub fn render_results(frame: &mut Frame, area: Rect, state: &AppState, _theme: &
             " Results "
         })
         .borders(Borders::ALL)
+        .style(Style::default().bg(bg).fg(fg))
         .border_style(if is_focused {
-            Style::default().fg(Color::Cyan)
+            Style::default().fg(accent)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(dim)
         });
 
     let message = Paragraph::new(vec![
         Line::from(""),
         Line::from(Span::styled(
             "  No results yet. Execute a query to see results here.",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(dim),
         )),
         Line::from(""),
         Line::from(Span::styled(
             "  Features: virtual scrolling | sorting | filtering | CSV/JSON/Parquet export",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(dim),
         )),
     ])
     .block(block)
@@ -252,7 +293,9 @@ pub fn render_results(frame: &mut Frame, area: Rect, state: &AppState, _theme: &
 }
 
 /// Render the status bar at the bottom.
-pub fn render_status_bar(frame: &mut Frame, area: Rect, state: &AppState, _theme: &Theme) {
+pub fn render_status_bar(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
+    let sb_bg = hex_color(&theme.semantic.status_bar_bg);
+    let sb_fg = hex_color(&theme.semantic.status_bar_fg);
     let settings = state.settings.read();
 
     let left = format!(
@@ -278,22 +321,27 @@ pub fn render_status_bar(frame: &mut Frame, area: Rect, state: &AppState, _theme
     let right_len = right.len() as u16;
 
     let spans = Line::from(vec![
-        Span::styled(left, Style::default().fg(Color::Gray)),
+        Span::styled(left, Style::default().fg(sb_fg)),
         Span::raw(" ".repeat(
             area.width.saturating_sub(left_len + right_len) as usize
         )),
-        Span::styled(right, Style::default().fg(Color::Gray)),
+        Span::styled(right, Style::default().fg(sb_fg)),
     ]);
 
     let bar = Paragraph::new(spans)
-        .style(Style::default().bg(Color::Rgb(24, 24, 37)));
+        .style(Style::default().bg(sb_bg));
 
     frame.render_widget(bar, area);
 }
 
 /// Render the command palette overlay.
-pub fn render_command_palette(frame: &mut Frame, area: Rect, state: &AppState, _theme: &Theme) {
+pub fn render_command_palette(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
     let query = state.command_palette_query.read();
+    let bg = hex_color(&theme.semantic.command_palette_bg);
+    let fg = theme_color(&theme.palette.foreground);
+    let sel = hex_color(&theme.semantic.command_palette_selected);
+    let accent = theme_color(&theme.palette.yellow);
+    let dim = theme_color(&theme.palette.bright_black);
 
     // Center the palette
     let palette_width = 60u16.min(area.width - 4);
@@ -302,47 +350,27 @@ pub fn render_command_palette(frame: &mut Frame, area: Rect, state: &AppState, _
     let palette_y = (area.height - palette_height) / 3;
     let palette_area = Rect::new(palette_x, palette_y, palette_width, palette_height);
 
-    // Dim background
     frame.render_widget(Clear, palette_area);
 
     let block = Block::default()
-        .title(" Command Palette ")
+        .title(" Command Palette (Esc to close) ")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow));
+        .style(Style::default().bg(bg))
+        .border_style(Style::default().fg(accent));
 
     let prompt = format!("> {query}");
     let cursor_pos = 2 + query.len() as u16;
 
     let items = vec![
-        Line::from(Span::styled(
-            &prompt,
-            Style::default().fg(Color::White),
-        )),
+        Line::from(Span::styled(&prompt, Style::default().fg(fg))),
         Line::from(""),
-        Line::from(Span::styled(
-            "  New Connection...          Ctrl+N",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
-            "  Execute Query              Ctrl+Enter",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
-            "  Format SQL                 Ctrl+Shift+F",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
-            "  Toggle Vim Mode            ",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
-            "  Switch Theme...            ",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
-            "  Preferences...             ",
-            Style::default().fg(Color::DarkGray),
-        )),
+        Line::from(Span::styled("  Ctrl+K / F1     Toggle this palette", Style::default().fg(dim))),
+        Line::from(Span::styled("  Ctrl+1/2/3      Switch panes (editor/results/explorer)", Style::default().fg(dim))),
+        Line::from(Span::styled("  Ctrl+T          New tab", Style::default().fg(dim))),
+        Line::from(Span::styled("  Ctrl+W          Close tab", Style::default().fg(dim))),
+        Line::from(Span::styled("  Ctrl+Enter      Execute query (not wired yet)", Style::default().fg(dim))),
+        Line::from(Span::styled("  Ctrl+B          Toggle sidebar", Style::default().fg(dim))),
+        Line::from(Span::styled("  Ctrl+C          Quit", Style::default().fg(dim))),
     ];
 
     let paragraph = Paragraph::new(items).block(block);
