@@ -36,47 +36,67 @@ export component Sidebar {
                     background: idx == root.selected-index ? #45475a : #00000000;
 
                     HorizontalLayout {
-                        padding-left: 16px + item.depth * 16px;
-                        padding-right: 8px;
-                        spacing: 6px;
+                        padding-left: 8px + item.depth * 16px;
+                        spacing: 0px;
 
-                        // Chevron or spacer (fixed width for alignment)
+                        // Chevron: 16px fixed column
                         Rectangle {
-                            width: 16px;
-                            if item.has-children : Text {
-                                text: item.expanded ? "▾" : "▸";
-                                font-size: 11px; color: #6c7086; vertical-alignment: center;
+                            width: 16px; height: 100%;
+                            if item.has-children : Image {
+                                source: item.expanded ? @image-url("icons/chevron-down.svg") : @image-url("icons/chevron-right.svg");
+                                width: 12px; height: 12px;
+                                x: 2px;
+                                y: (parent.height - 12px) / 2;
                             }
                         }
-                        if item.kind == "server" : Image {
-                            source: @image-url("icons/server.svg");
-                            width: 16px; height: 16px;
-                        }
-                        if item.kind == "database" : Image {
-                            source: @image-url("icons/database.svg");
-                            width: 16px; height: 16px;
-                        }
-                        if item.kind == "folder" : Image {
-                            source: @image-url("icons/folder.svg");
-                            width: 16px; height: 16px;
-                        }
-                        if item.kind == "table" : Image {
-                            source: @image-url("icons/table.svg");
-                            width: 16px; height: 16px;
-                        }
-                        if item.kind == "view" : Image {
-                            source: @image-url("icons/view.svg");
-                            width: 16px; height: 16px;
-                        }
-                        if item.kind == "function" : Image {
-                            source: @image-url("icons/function.svg");
-                            width: 16px; height: 16px;
-                        }
-                        if item.kind == "column" : Image {
-                            source: @image-url("icons/column.svg");
-                            width: 14px; height: 14px;
+
+                        // Spacing
+                        Rectangle { width: 4px; }
+
+                        // Icon: 16px fixed column
+                        Rectangle {
+                            width: 16px; height: 100%;
+                            if item.kind == "server" : Image {
+                                source: @image-url("icons/server.svg");
+                                width: 16px; height: 16px;
+                                y: (parent.height - 16px) / 2;
+                            }
+                            if item.kind == "database" : Image {
+                                source: @image-url("icons/database.svg");
+                                width: 16px; height: 16px;
+                                y: (parent.height - 16px) / 2;
+                            }
+                            if item.kind == "folder" : Image {
+                                source: @image-url("icons/folder.svg");
+                                width: 16px; height: 16px;
+                                y: (parent.height - 16px) / 2;
+                            }
+                            if item.kind == "table" : Image {
+                                source: @image-url("icons/table.svg");
+                                width: 16px; height: 16px;
+                                y: (parent.height - 16px) / 2;
+                            }
+                            if item.kind == "view" : Image {
+                                source: @image-url("icons/view.svg");
+                                width: 16px; height: 16px;
+                                y: (parent.height - 16px) / 2;
+                            }
+                            if item.kind == "function" : Image {
+                                source: @image-url("icons/function.svg");
+                                width: 16px; height: 16px;
+                                y: (parent.height - 16px) / 2;
+                            }
+                            if item.kind == "column" : Image {
+                                source: @image-url("icons/column.svg");
+                                width: 14px; height: 14px;
+                                y: (parent.height - 14px) / 2;
+                            }
                         }
 
+                        // Spacing
+                        Rectangle { width: 6px; }
+
+                        // Label
                         Text {
                             text: item.label;
                             font-size: 12px; vertical-alignment: center;
