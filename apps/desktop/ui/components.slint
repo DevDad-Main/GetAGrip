@@ -138,19 +138,17 @@ export component EditorPanel {
         // Tab bar
         if root.tabs.length > 0 : Rectangle {
             height: 28px;
+            background: #181724;
             HorizontalLayout {
                 spacing: 0;
                 for tab[idx] in root.tabs : Rectangle {
                     width: 150px;
                     height: 100%;
-                    background: idx == root.active-tab ? #282a36 : #1e1c2a;
+                    background: idx == root.active-tab ? #282a36 : #181724;
 
-                    // Active indicator bar at bottom of tab
                     if idx == root.active-tab : Rectangle {
                         y: parent.height - 2px;
-                        height: 2px;
-                        x: 0px;
-                        width: parent.width;
+                        height: 2px; x: 0px; width: parent.width;
                         background: #a5d6a7;
                     }
 
@@ -165,14 +163,14 @@ export component EditorPanel {
                         if tab.modified : Text {
                             text: "●"; font-size: 8px; color: #f9e2af; vertical-alignment: center;
                         }
-                        Text { text: "×"; font-size: 12px; color: #6e6e7d; vertical-alignment: center; }
+                        Text { text: "×"; font-size: 12px; color: #8a8a93; vertical-alignment: center; }
                     }
                     TouchArea { clicked => { root.tab-selected(idx); } }
                 }
                 Rectangle { }
                 TouchArea { clicked => { root.new-tab(); }
                     Rectangle { width: 24px; height: 24px;
-                        Text { text: "+"; font-size: 16px; color: #6e6e7d; horizontal-alignment: center; vertical-alignment: center; }
+                        Text { text: "+"; font-size: 16px; color: #8a8a93; horizontal-alignment: center; vertical-alignment: center; }
                     }
                 }
             }
@@ -180,8 +178,9 @@ export component EditorPanel {
 
         // Editor area
         Rectangle {
+            background: #282a36;
             VerticalLayout {
-                padding-left: 8px; padding-top: 6px; padding-right: 8px; padding-bottom: 6px;
+                padding-left: 8px; padding-top: 4px; padding-right: 8px; padding-bottom: 4px;
                 TextEdit {
                     text <=> root.editor-content;
                     font-size: 14px;
