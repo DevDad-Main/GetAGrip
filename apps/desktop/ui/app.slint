@@ -37,9 +37,13 @@ export component MainWindow inherits Window {
         y: 0px; x: 0px; width: root.width; height: 32px; background: #181825;
         HorizontalLayout {
             padding-left: 6px; padding-right: 6px; spacing: 0px;
-            Rectangle { HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: "File"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { AppState.connect-dialog-open = true; } } }
-            Rectangle { HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: "Edit"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { } } }
-            Rectangle { HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: "View"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { AppState.toggle-sidebar(); } } }
+            Text { text: "GetAGrip"; font-weight: 700; font-size: 13px; color: #cdd6f4; vertical-alignment: center; }
+            Rectangle { width: 16px; }
+            Rectangle { HorizontalLayout { padding-left: 10px; padding-right: 10px; padding-top: 6px; padding-bottom: 6px; Text { text: "File"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { AppState.connect-dialog-open = true; } } }
+            Rectangle { width: 6px; }
+            Rectangle { HorizontalLayout { padding-left: 10px; padding-right: 10px; padding-top: 6px; padding-bottom: 6px; Text { text: "Edit"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { } } }
+            Rectangle { width: 6px; }
+            Rectangle { HorizontalLayout { padding-left: 10px; padding-right: 10px; padding-top: 6px; padding-bottom: 6px; Text { text: "View"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { AppState.toggle-sidebar(); } } }
             Rectangle { width: 16px; }
             Rectangle { border-radius: 4px; background: #181825; HorizontalLayout { padding-left: 10px; padding-right: 10px; padding-top: 6px; padding-bottom: 6px; Text { text: AppState.active-connection == "" ? "● Not Connected" : "● " + AppState.active-connection; font-size: 12px; vertical-alignment: center; color: AppState.active-connection == "" ? #6c7086 : #a6e3a1; } } TouchArea { clicked => { AppState.connect-dialog-open = true; } } }
             Rectangle { border-radius: 4px; background: AppState.active-connection == "" ? #45475a : #a6e3a1; HorizontalLayout { padding-left: 14px; padding-right: 14px; padding-top: 6px; padding-bottom: 6px; Text { text: AppState.active-connection == "" ? "▶ Not Connected" : "▶ Run"; font-size: 12px; font-weight: 600; color: AppState.active-connection == "" ? #6c7086 : #1e1e2e; vertical-alignment: center; } } TouchArea { clicked => { if AppState.active-connection != "" { AppState.execute-query(AppState.current-sql); } } } }
