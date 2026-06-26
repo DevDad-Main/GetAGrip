@@ -530,9 +530,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .take(idx)
                     .rev()
                     .find(|i| i.kind == "database")
-                    .map(|i| i.label.to_string())
+                    .map(|i| i.label.to_string().split("  (").next().unwrap_or("").to_string())
                     .unwrap_or_default();
                 let table_name = item.label.to_string();
+                tracing::info!("Column introspect: db={db_name}, table={table_name}");
                 let handle = tokio::runtime::Handle::current();
                 let model2 = model.clone();
                 let app_weak2 = app_weak.clone();
