@@ -4749,6 +4749,7 @@ dependencies = [
  "miette",
  "parking_lot",
  "ratatui",
+ "rusqlite",
  "serde",
  "serde_json",
  "tg-config",

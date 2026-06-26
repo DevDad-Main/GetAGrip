@@ -32,6 +32,10 @@ pub struct AppState {
     pub palette_selected: parking_lot::RwLock<usize>,
     /// Explorer tree state.
     pub explorer: parking_lot::RwLock<ExplorerState>,
+    /// Sidebar width in columns.
+    pub sidebar_width: parking_lot::RwLock<u16>,
+    /// Editor/results split percentage (0-100).
+    pub editor_split_pct: parking_lot::RwLock<u16>,
     /// Current notification message.
     pub notification: parking_lot::RwLock<Option<Notification>>,
 }
@@ -190,6 +194,8 @@ impl AppState {
                 items: Vec::new(),
                 selected: 0,
             }),
+            sidebar_width: parking_lot::RwLock::new(38),
+            editor_split_pct: parking_lot::RwLock::new(50),
             notification: parking_lot::RwLock::new(None),
         })
     }
@@ -217,6 +223,34 @@ impl AppState {
             if n.created.elapsed().as_secs() > 5 {
                 *notif = None;
             }
+        }
+    }
+
+    /// Rebuild the explorer tree from the connection manager.
+    pub fn refresh_explorer(&self) {
+        let conns = self.connection_manager.list_connections().unwrap_or_default();
+        let mut explorer = self.explorer.write();
+        explorer.items.clear();
+
+        for conn in &conns {
+            let status_icon = match conn.status {
+                tg_core::types::connection::ConnectionStatus::Connected => "●",
+                _ => "○",
+            };
+            explorer.items.push(ExplorerItem {
+                label: format!("{status_icon} {}", conn.name),
+                depth: 0,
+                expanded: false,
+                kind: ExplorerItemKind::Connection,
+                connection_id: Some(conn.id),
+                database: conn.database.clone(),
+                schema: conn.schema.clone(),
+                table: None,
+            });
+        }
+
+        if explorer.selected >= explorer.items.len() {
+            explorer.selected = explorer.items.len().saturating_sub(1);
         }
     }
 }

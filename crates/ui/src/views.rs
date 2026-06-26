@@ -49,20 +49,20 @@ pub struct EditorResultsLayout {
 
 /// Compute the main application layout.
 #[must_use]
-pub fn main_layout(area: Rect) -> MainLayout {
+pub fn main_layout(area: Rect, sidebar_width: u16) -> MainLayout {
     let body = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(0),    // Content area
-            Constraint::Length(1), // Status bar
+            Constraint::Min(0),
+            Constraint::Length(1),
         ])
         .split(area);
 
     let content_area = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(30), // Sidebar
-            Constraint::Min(0),     // Editor + Results
+            Constraint::Length(sidebar_width),
+            Constraint::Min(0),
         ])
         .split(body[0]);
 
@@ -75,12 +75,12 @@ pub fn main_layout(area: Rect) -> MainLayout {
 
 /// Split the content area into editor (top) and results (bottom).
 #[must_use]
-pub fn editor_results_split(area: Rect) -> EditorResultsLayout {
+pub fn editor_results_split(area: Rect, split_pct: u16) -> EditorResultsLayout {
     let split = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
+            Constraint::Percentage(split_pct),
+            Constraint::Percentage(100 - split_pct),
         ])
         .split(area);
 
@@ -154,13 +154,13 @@ pub fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState, theme: &T
                 _ => "  ",
             };
             let icon = match item.kind {
-                crate::state::ExplorerItemKind::Connection => " ", // nf-fa-plug / database
-                crate::state::ExplorerItemKind::Database => " ",    // nf-dev-database
-                crate::state::ExplorerItemKind::Schema => " ",      // nf-fa-folder
-                crate::state::ExplorerItemKind::Table => " ",       // nf-fa-table
-                crate::state::ExplorerItemKind::View => " ",        // nf-fa-eye
-                crate::state::ExplorerItemKind::Column => " ",      // nf-fa-file
-                crate::state::ExplorerItemKind::Header => "──",
+                crate::state::ExplorerItemKind::Connection => " ",
+                crate::state::ExplorerItemKind::Database => " ",
+                crate::state::ExplorerItemKind::Schema => " ",
+                crate::state::ExplorerItemKind::Table => " ",
+                crate::state::ExplorerItemKind::View => " ",
+                crate::state::ExplorerItemKind::Column => "  ",
+                crate::state::ExplorerItemKind::Header => "  ",
             };
             let text = format!("{indent}{expand_icon}{icon} {}", item.label);
 

@@ -21,6 +21,7 @@ impl App {
     /// Create a new application instance.
     #[must_use]
     pub fn new(state: AppState) -> Self {
+        state.refresh_explorer();
         Self {
             state,
             input: InputHandler::new(),
@@ -62,13 +63,9 @@ impl App {
         let area = frame.area();
 
         // Main layout: sidebar | editor | results
-        let layout = views::main_layout(area);
-
-        // Sidebar (connections + object explorer)
+        let layout = views::main_layout(area, *self.state.sidebar_width.read());
         views::render_sidebar(frame, layout.sidebar, &self.state, &theme);
-
-        // Editor + results vertical split
-        let editor_layout = views::editor_results_split(layout.content);
+        let editor_layout = views::editor_results_split(layout.content, *self.state.editor_split_pct.read());
 
         // Query editor
         views::render_editor(frame, editor_layout.editor, &self.state, &theme);
@@ -150,6 +147,28 @@ impl App {
             KeyCode::Char('1') if alt => { *self.state.focused_panel.write() = FocusedPanel::Editor; self.needs_redraw = true; }
             KeyCode::Char('2') if alt => { *self.state.focused_panel.write() = FocusedPanel::Results; self.needs_redraw = true; }
             KeyCode::Char('3') if alt => { *self.state.focused_panel.write() = FocusedPanel::Explorer; self.needs_redraw = true; }
+
+            // Panel resizing: Alt+H/L for sidebar width, Alt+J/K for editor/results split
+            KeyCode::Char('h') if alt => {
+                let mut w = self.state.sidebar_width.write();
+                *w = w.saturating_sub(2).max(10);
+                self.needs_redraw = true;
+            }
+            KeyCode::Char('l') if alt => {
+                let mut w = self.state.sidebar_width.write();
+                *w = (*w + 2).min(80);
+                self.needs_redraw = true;
+            }
+            KeyCode::Char('j') if alt => {
+                let mut p = self.state.editor_split_pct.write();
+                *p = p.saturating_sub(5).max(10);
+                self.needs_redraw = true;
+            }
+            KeyCode::Char('k') if alt => {
+                let mut p = self.state.editor_split_pct.write();
+                *p = (*p + 5).min(90);
+                self.needs_redraw = true;
+            }
 
             // Tabs
             KeyCode::Char('t') if ctrl => { self.new_tab(); }
@@ -275,35 +294,55 @@ impl App {
         }
     }
 
-    fn expand_connection_node(&self, explorer: &mut crate::state::ExplorerState, idx: usize, _conn_id: tg_core::types::connection::ConnectionId) {
+    fn expand_connection_node(&self, explorer: &mut crate::state::ExplorerState, idx: usize, conn_id: tg_core::types::connection::ConnectionId) {
         let depth = explorer.items[idx].depth + 1;
-        let children = vec![
-            crate::state::ExplorerItem {
-                label: "Tables".into(),
-                depth,
-                expanded: false,
-                kind: crate::state::ExplorerItemKind::Header,
-                connection_id: None, database: None, schema: None, table: None,
-            },
-            crate::state::ExplorerItem {
-                label: "Views".into(),
-                depth,
-                expanded: false,
-                kind: crate::state::ExplorerItemKind::Header,
-                connection_id: None, database: None, schema: None, table: None,
-            },
-            crate::state::ExplorerItem {
-                label: "Connect to load schema...".into(),
-                depth: depth + 1,
-                expanded: false,
-                kind: crate::state::ExplorerItemKind::Column,
-                connection_id: None, database: None, schema: None, table: None,
-            },
-        ];
-        let insert_at = idx + 1;
-        for (i, child) in children.into_iter().enumerate() {
-            explorer.items.insert(insert_at + i, child);
+
+        let rows: Vec<(String, String)> = if let Ok(conn_info) = self.state.connection_manager.get_connection(conn_id) {
+            if conn_info.kind == tg_core::types::connection::DatabaseKind::Sqlite {
+                let path = conn_info.database.as_deref().unwrap_or(":memory:");
+                read_sqlite_schema(path)
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+
+        if !rows.is_empty() {
+            let insert_at = idx + 1;
+            for (i, (name, obj_type)) in rows.iter().enumerate() {
+                let kind = if obj_type == "view" {
+                    crate::state::ExplorerItemKind::View
+                } else {
+                    crate::state::ExplorerItemKind::Table
+                };
+                explorer.items.insert(insert_at + i, crate::state::ExplorerItem {
+                    label: name.clone(), depth: depth + 1, expanded: false, kind,
+                    connection_id: Some(conn_id),
+                    database: self.state.connection_manager.get_connection(conn_id).ok().and_then(|c| c.database.clone()),
+                    schema: Some("main".into()),
+                    table: Some(name.clone()),
+                });
+            }
+            self.state.notify(&format!("Connected: {} objects loaded", rows.len()), crate::state::NotificationLevel::Success);
+            return;
         }
+
+        // Check if this is SQLite and failed
+        if let Ok(conn_info) = self.state.connection_manager.get_connection(conn_id) {
+            if conn_info.kind == tg_core::types::connection::DatabaseKind::Sqlite {
+                self.state.notify("Connection failed", crate::state::NotificationLevel::Error);
+                return;
+            }
+        }
+
+        let insert_at = idx + 1;
+        explorer.items.insert(insert_at, crate::state::ExplorerItem {
+            label: "driver pending...".into(), depth, expanded: false,
+            kind: crate::state::ExplorerItemKind::Column,
+            connection_id: None, database: None, schema: None, table: None,
+        });
+        self.state.notify("Driver not yet implemented", crate::state::NotificationLevel::Warning);
     }
 
     /// Handle keys when the command palette is open.
@@ -351,20 +390,54 @@ impl App {
     fn execute_palette_command(&mut self, cmd: &str) {
         let cmd = cmd.trim();
 
+        // First check for /connect
         if cmd.starts_with("/connect ") {
             let url = &cmd[9..];
             self.add_connection_from_url(url);
-        } else if cmd == "help" || cmd == "?" {
+            return;
+        }
+        if cmd.starts_with("/connect") && cmd.len() <= 9 {
+            self.state.notify("Usage: /connect <url>", crate::state::NotificationLevel::Info);
+            return;
+        }
+
+        // Match by command name
+        let lower = cmd.to_lowercase();
+        if lower.contains("switch theme") || lower.contains("theme") {
+            self.cycle_theme();
+        } else if lower.contains("help") || lower == "?" {
             self.state.notify(
-                "Commands: /connect <url>  |  help  |  Type to fuzzy-search",
+                "Commands: /connect <url>, Switch Theme, help",
                 crate::state::NotificationLevel::Info,
             );
+        } else if lower.contains("new tab") {
+            self.new_tab();
+        } else if lower.contains("close tab") {
+            self.close_tab();
+        } else if lower.contains("format") {
+            self.state.notify("Format SQL not yet wired", crate::state::NotificationLevel::Info);
         } else if !cmd.is_empty() {
             self.state.notify(
-                &format!("Unknown: {cmd}. Try /connect <url> or help"),
+                &format!("Unknown: {cmd}. Try help"),
                 crate::state::NotificationLevel::Warning,
             );
         }
+    }
+
+    fn cycle_theme(&mut self) {
+        let themes = self.state.theme_manager.list_themes();
+        let current = self.state.settings.read().theme.active.clone();
+        let pos = themes.iter().position(|t| *t == current).unwrap_or(0);
+        let next = (pos + 1) % themes.len();
+        let name = &themes[next];
+        if self.state.theme_manager.set_theme(name).is_ok() {
+            self.state.settings.write().theme.active = name.clone();
+            self.state.notify(
+                &format!("Theme: {name} ({}/{})", next + 1, themes.len()),
+                crate::state::NotificationLevel::Success,
+            );
+        }
+        self.needs_redraw = true;
     }
 
     /// Parse a JDBC-style URL into a ConnectionInfo and add it.
@@ -407,7 +480,7 @@ impl App {
                         tab.connection_id = Some(id);
                     }
                 }
-                self.refresh_explorer();
+                self.state.refresh_explorer();
             }
             Err(e) => {
                 self.state.notify(
@@ -591,5 +664,26 @@ impl App {
             }
             _ => {}
         }
+    }
+}
+
+fn read_sqlite_schema(path: &str) -> Vec<(String, String)> {
+    let db = match rusqlite::Connection::open(path) {
+        Ok(db) => db,
+        Err(_) => return Vec::new(),
+    };
+    let _ = db.execute_batch("PRAGMA journal_mode=WAL;");
+    let mut stmt = match db.prepare(
+        "SELECT name, type FROM sqlite_master WHERE type IN ('table','view') ORDER BY type, name"
+    ) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    });
+    match rows {
+        Ok(r) => r.filter_map(|r| r.ok()).collect(),
+        Err(_) => Vec::new(),
     }
 }
