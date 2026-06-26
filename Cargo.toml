@@ -59,6 +59,12 @@ dashmap = "6.1"
 indexmap = { version = "2.7", features = ["serde"] }
 crossbeam-channel = "0.5"
 
+# Database drivers
+tiberius = { version = "0.12", default-features = false, features = ["tds73", "rustls", "chrono", "bigdecimal"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+rustls = "0.23"
+rustls-pemfile = "2"
+
 # Misc
 regex = "1.11"
 unicode-segmentation = "1.12"

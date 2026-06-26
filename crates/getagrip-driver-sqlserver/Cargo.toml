@@ -1,0 +1,19 @@
+[package]
+name = "getagrip-driver-sqlserver"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "GetAGrip: Microsoft SQL Server database driver."
+
+[dependencies]
+getagrip-core = { path = "../getagrip-core" }
+getagrip-database = { path = "../getagrip-database" }
+tiberius = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+async-trait = "0.1"
+chrono = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+futures-util = "0.3"

@@ -26,6 +26,7 @@ getagrip-themes = { path = "../../crates/getagrip-themes" }
 getagrip-telemetry = { path = "../../crates/getagrip-telemetry" }
 getagrip-plugins = { path = "../../crates/getagrip-plugins" }
 getagrip-query-engine = { path = "../../crates/getagrip-query_engine" }
+getagrip-driver-sqlserver = { path = "../../crates/getagrip-driver-sqlserver" }
 slint = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
