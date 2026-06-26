@@ -54,10 +54,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let model = model.clone();
         let app_weak = app.as_weak();
-        app.global::<AppState>().on_submit_connection(move |name: slint::SharedString, host: slint::SharedString, port: slint::SharedString, user: slint::SharedString, pass: slint::SharedString, db: slint::SharedString, trust: bool| {
+        app.global::<AppState>().on_submit_connection(move |conn_url: slint::SharedString, name: slint::SharedString, host: slint::SharedString, port: slint::SharedString, user: slint::SharedString, pass: slint::SharedString, db: slint::SharedString, trust: bool| {
+            let conn_url = conn_url.to_string();
             let name = name.to_string();
             let host = host.to_string();
-            let port: u16 = port.parse().unwrap_or(1433);
+            let port_str = port.to_string();
             let user = user.to_string();
             let pass = pass.to_string();
             let db = db.to_string();
@@ -65,15 +66,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let connecting = model.lock().unwrap().connecting.clone();
             if connecting.swap(true, std::sync::atomic::Ordering::SeqCst) { return; }
 
-            let url = if !db.is_empty() {
-                format!("sqlserver://{user}:{pass}@{host}:{port}/{db}")
+            // Use URL if provided, otherwise build from manual fields
+            let url_full = if !conn_url.is_empty() {
+                conn_url
             } else {
-                format!("sqlserver://{user}:{pass}@{host}:{port}")
-            };
-            let url_full = if trust {
-                format!("{url}?trustServerCertificate=true")
-            } else {
-                url
+                let port: u16 = port_str.parse().unwrap_or(1433);
+                let url = if !db.is_empty() {
+                    format!("sqlserver://{user}:{pass}@{host}:{port}/{db}")
+                } else {
+                    format!("sqlserver://{user}:{pass}@{host}:{port}")
+                };
+                if trust { format!("{url}?trustServerCertificate=true") } else { url }
             };
 
             tracing::info!("Connecting to {url_full} (name: {name})");
@@ -150,9 +153,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Err(e) => {
                         conn_flag.store(false, std::sync::atomic::Ordering::SeqCst);
                         let weak = app_weak2.clone();
-                        let msg = format!("{e}");
+                        let msg = format!("Connection failed: {e}");
+                        tracing::error!("{msg}");
                         let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(a) = weak.upgrade() { a.global::<AppState>().set_connection_status("● Error".into()); a.global::<AppState>().set_status_text(msg.into()); }
+                            if let Some(a) = weak.upgrade() {
+                                a.global::<AppState>().set_connection_status("● Error".into());
+                                a.global::<AppState>().set_status_text(msg.clone().into());
+                                a.global::<AppState>().set_results_visible(true);
+                                a.global::<AppState>().set_result_text(format!("ERROR\n\n{msg}").into());
+                            }
                         });
                     }
                 }

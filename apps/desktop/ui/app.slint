@@ -18,7 +18,7 @@ export global AppState {
     callback execute-command(string);
     callback execute-query(string);
     callback select-sidebar-item(int);
-    callback submit-connection(string, string, string, string, string, string, bool);
+    callback submit-connection(string, string, string, string, string, string, string, bool);
     in-out property <string> current-sql: "SELECT @@VERSION";
     in-out property <string> result-text: "";
     in-out property <[TreeItem]> sidebar-items;
@@ -93,8 +93,8 @@ export component MainWindow inherits Window {
     if AppState.connect-dialog-open : ConnectDialog {
         x: (root.width - 460px) / 2; y: (root.height - 460px) / 2;
         width: 460px; height: 460px;
-        connect(name, host, port, user, pass, db, trust) => {
-            AppState.submit-connection(name, host, port, user, pass, db, trust);
+        connect(url, name, host, port, user, pass, db, trust) => {
+            AppState.submit-connection(url, name, host, port, user, pass, db, trust);
             AppState.connect-dialog-open = false;
         }
         cancel => { AppState.connect-dialog-open = false; }

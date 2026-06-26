@@ -330,7 +330,7 @@ export component CommandPalette {
 
 export component ConnectDialog {
     in-out property <string> conn-url: "";
-    callback connect(string, string, string, string, string, string, bool);
+    callback connect(string, string, string, string, string, string, string, bool);
     callback cancel();
 
     property <string> name: "My SQL Server";
@@ -427,7 +427,7 @@ export component ConnectDialog {
                         Rectangle {
                             border-radius: 4px; background: #a6e3a1; height: 30px;
                             Text { text: "Connect"; font-size: 13px; font-weight: 600; color: #1e1e2e; vertical-alignment: center; horizontal-alignment: center; }
-                            TouchArea { clicked => { root.connect(root.name, root.host, root.port, root.username, root.password, root.database, root.trust-cert); } }
+                            TouchArea { clicked => { root.connect(root.conn-url, root.name, root.host, root.port, root.username, root.password, root.database, root.trust-cert); } }
                         }
                     }
                     Rectangle {
