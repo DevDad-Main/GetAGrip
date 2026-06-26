@@ -367,97 +367,165 @@ pub fn render_status_bar(frame: &mut Frame, area: Rect, state: &AppState, theme:
 pub fn render_command_palette(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
     let query = state.command_palette_query.read().to_lowercase();
     let selected = *state.palette_selected.read();
-    let bg = hex_color(&theme.semantic.command_palette_bg);
     let fg = theme_color(&theme.palette.foreground);
     let dim = theme_color(&theme.palette.bright_black);
     let accent = theme_color(&theme.palette.yellow);
-    let sel_bg = hex_color(&theme.semantic.command_palette_selected);
+    let bg = hex_color(&theme.semantic.panel_bg);
+    let border_color = hex_color(&theme.semantic.panel_border_active);
+    let sel_bg = theme_color(&theme.palette.selection);
 
-    // Available palette commands
-    let commands: Vec<(&str, &str, &str)> = vec![
-        ("/connect <url>",      "Add a database connection", "sqlserver://... postgres://..."),
-        ("/connect sqlite:<path>","Add a SQLite database",    "/connect sqlite:/data/app.db"),
-        ("help",                "Show help",                 ""),
-        ("Switch Theme...",     "Change the color theme",    ""),
-        ("Toggle Vim Mode",     "Enable/disable Vim keys",   ""),
-        ("New Tab",             "Open a new query tab",      "Ctrl+T"),
-        ("Close Tab",           "Close current tab",         "Ctrl+W"),
-        ("Execute Query",       "Run the current SQL",       "Ctrl+Enter"),
-        ("Format SQL",          "Format the current query",  ""),
-        ("Explain Query",       "Show execution plan",       ""),
+    // Dim the entire screen
+    for y in 0..area.height {
+        frame.render_widget(
+            Paragraph::new("").style(Style::default().bg(Color::Black)),
+            Rect::new(0, y, area.width, 1),
+        );
+    }
+
+    let commands: Vec<(&str, &str)> = vec![
+        ("/connect",        "Add a new database connection"),
+        ("Switch Theme",    "Cycle through color themes"),
+        ("New Tab",         "Open a new query tab"),
+        ("Close Tab",       "Close the current tab"),
+        ("Format SQL",      "Format the current query"),
+        ("Toggle Vim Mode", "Enable/disable Vim keys"),
+        ("Execute Query",   "Run the current SQL"),
+        ("Explain Query",   "Show execution plan"),
+        ("help",            "Show available commands"),
     ];
 
-    // Fuzzy filter
-    let filtered: Vec<&(&str, &str, &str)> = if query.is_empty() {
+    let filtered: Vec<&(&str, &str)> = if query.is_empty() {
         commands.iter().collect()
     } else {
-        commands.iter().filter(|(name, desc, _)| {
+        commands.iter().filter(|(name, desc)| {
             name.to_lowercase().contains(&query) || desc.to_lowercase().contains(&query)
         }).collect()
     };
 
-    let palette_height = (filtered.len() + 4).min(16) as u16;
-    let palette_width = 65u16.min(area.width - 4);
-    let palette_x = (area.width - palette_width) / 2;
-    let palette_y = (area.height.saturating_sub(palette_height)) / 3;
-    let palette_area = Rect::new(palette_x, palette_y, palette_width, palette_height);
+    let max_items = (area.height / 2).min(12) as usize;
+    let visible = filtered.len().min(max_items);
 
-    frame.render_widget(Clear, palette_area);
+    let palette_h = (visible + 4).min(16) as u16;
+    let palette_w = 62u16.min(area.width - 4);
+    let palette_x = (area.width - palette_w) / 2;
+    let palette_y = (area.height - palette_h) / 3;
+    let palette_rect = Rect::new(palette_x, palette_y, palette_w, palette_h);
+
+    // Background fill
+    frame.render_widget(Clear, palette_rect);
 
     let block = Block::default()
-        .title(" Search (Esc to close) ")
+        .title("  Search  ")
         .borders(Borders::ALL)
-        .style(Style::default().bg(bg))
-        .border_style(Style::default().fg(accent));
+        .border_style(Style::default().fg(accent))
+        .style(Style::default().bg(bg));
 
-    let inner = block.inner(palette_area);
-    frame.render_widget(block, palette_area);
+    let inner = block.inner(palette_rect);
+    frame.render_widget(block, palette_rect);
 
-    // Input line
-    let input_y = inner.y;
-    let prompt = format!(" {}", state.command_palette_query.read());
+    // Input line with search icon
+    let q = state.command_palette_query.read();
+    let input_text = if q.is_empty() {
+        Span::styled("Type to search commands...", Style::default().fg(dim))
+    } else {
+        Span::styled(format!("{q}"), Style::default().fg(fg))
+    };
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(&prompt, Style::default().fg(fg)))),
-        Rect::new(inner.x + 1, input_y, inner.width - 2, 1),
+        Paragraph::new(Line::from(input_text)),
+        Rect::new(inner.x + 2, inner.y, inner.width - 2, 1),
     );
 
-    // Suggestions
-    let list_y = input_y + 1;
-    let list_height = palette_height.saturating_sub(2);
+    // Separator
+    let sep_y = inner.y + 1;
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled("─".repeat(inner.width as usize - 2), Style::default().fg(dim)))),
+        Rect::new(inner.x + 1, sep_y, inner.width - 2, 1),
+    );
 
+    // Suggestions list
+    let list_y = sep_y + 1;
     let items: Vec<Line> = filtered
         .iter()
         .enumerate()
-        .map(|(i, (name, desc, extra))| {
-            let prefix = if i == selected { "▶ " } else { "  " };
-            let line = if extra.is_empty() {
-                format!("{prefix}{name}  — {desc}")
-            } else {
-                format!("{prefix}{name}  — {desc}  [{extra}]")
-            };
-
+        .take(max_items)
+        .map(|(i, (name, desc))| {
+            let prefix = if i == selected { "▶" } else { " " };
+            let line = format!(" {prefix} {name:<20} {desc}");
             if i == selected {
                 Line::from(Span::styled(line, Style::default().fg(fg).bg(sel_bg)))
             } else {
-                Line::from(Span::styled(line, Style::default().fg(dim)))
+                Line::from(Span::styled(line, Style::default().fg(fg)))
             }
         })
         .collect();
 
+    let item_count = items.len();
     frame.render_widget(
         Paragraph::new(items),
-        Rect::new(inner.x + 1, list_y, inner.width - 2, list_height),
+        Rect::new(inner.x + 1, list_y, inner.width - 2, (item_count as u16).min(inner.height - 3)),
     );
 
-    // Footer
-    let footer_y = list_y + list_height;
+    // Footer hint
+    let footer_y = palette_rect.y + palette_h - 1;
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            "  ↑↓ nav  Enter select  Esc close  Type to filter",
+            " ↑↓ select  Enter confirm  Esc dismiss  Type to filter",
             Style::default().fg(dim),
         ))),
         Rect::new(inner.x + 1, footer_y, inner.width - 2, 1),
     );
+}
+
+/// Render the connection dialog (centered URL input form).
+pub fn render_connection_dialog(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
+    let input = state.connection_dialog_input.read();
+    let fg = theme_color(&theme.palette.foreground);
+    let dim = theme_color(&theme.palette.bright_black);
+    let accent = theme_color(&theme.palette.cyan);
+    let green = theme_color(&theme.palette.green);
+    let bg = hex_color(&theme.semantic.panel_bg);
+    let border_color = theme_color(&theme.palette.blue);
+
+    // Dim backdrop
+    for y in 0..area.height {
+        frame.render_widget(
+            Paragraph::new("").style(Style::default().bg(Color::Black)),
+            Rect::new(0, y, area.width, 1),
+        );
+    }
+
+    let dialog_w = 65u16.min(area.width - 4);
+    let dialog_h = 10;
+    let dx = (area.width - dialog_w) / 2;
+    let dy = (area.height - dialog_h) / 3;
+    let dialog_rect = Rect::new(dx, dy, dialog_w, dialog_h);
+
+    frame.render_widget(Clear, dialog_rect);
+
+    let block = Block::default()
+        .title("   New Connection ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(accent))
+        .style(Style::default().bg(bg));
+
+    let inner = block.inner(dialog_rect);
+    frame.render_widget(block, dialog_rect);
+
+    let lines: Vec<Line> = vec![
+        Line::from(Span::styled("  Database URL:", Style::default().fg(dim))),
+        Line::from(""),
+        Line::from(Span::styled(format!("  ❯ {input}"), Style::default().fg(fg))),
+        Line::from(""),
+        Line::from(Span::styled("  Examples:", Style::default().fg(dim))),
+        Line::from(Span::styled("    postgres://user:pass@host:5432/db", Style::default().fg(dim))),
+        Line::from(Span::styled("    mysql://user:pass@host:3306/db", Style::default().fg(dim))),
+        Line::from(Span::styled("    sqlserver://user:pass@host:1433/db", Style::default().fg(dim))),
+        Line::from(Span::styled("    sqlite:/path/to/file.db", Style::default().fg(dim))),
+        Line::from(""),
+        Line::from(Span::styled("  Enter to connect, Esc to cancel", Style::default().fg(green))),
+    ];
+
+    frame.render_widget(Paragraph::new(lines), Rect::new(inner.x + 1, inner.y, inner.width - 2, dialog_h - 2));
 }
 
 /// Render a notification toast.

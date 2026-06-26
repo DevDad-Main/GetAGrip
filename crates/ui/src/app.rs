@@ -81,6 +81,11 @@ impl App {
             views::render_command_palette(frame, area, &self.state, &theme);
         }
 
+        // Connection dialog (overlay)
+        if *self.state.connection_dialog_open.read() {
+            views::render_connection_dialog(frame, area, &self.state, &theme);
+        }
+
         // Notification toast
         views::render_notification(frame, area, &self.state, &theme);
     }
@@ -117,6 +122,12 @@ impl App {
         let ctrl = key_event.modifiers.contains(KeyModifiers::CONTROL);
         let shift = key_event.modifiers.contains(KeyModifiers::SHIFT);
         let alt = key_event.modifiers.contains(KeyModifiers::ALT);
+
+        // ── Connection dialog open: route input there ──────────
+        if *self.state.connection_dialog_open.read() {
+            self.handle_connection_dialog_key(key_event);
+            return;
+        }
 
         // ── Command palette is open: route all input there ──────────
         if *self.state.command_palette_open.read() {
@@ -389,20 +400,15 @@ impl App {
     /// Execute a command entered in the command palette.
     fn execute_palette_command(&mut self, cmd: &str) {
         let cmd = cmd.trim();
-
-        // First check for /connect
-        if cmd.starts_with("/connect ") {
-            let url = &cmd[9..];
-            self.add_connection_from_url(url);
-            return;
-        }
-        if cmd.starts_with("/connect") && cmd.len() <= 9 {
-            self.state.notify("Usage: /connect <url>", crate::state::NotificationLevel::Info);
-            return;
-        }
-
-        // Match by command name
         let lower = cmd.to_lowercase();
+
+        if lower.starts_with("/connect") {
+            // Open the connection dialog
+            *self.state.connection_dialog_open.write() = true;
+            self.state.connection_dialog_input.write().clear();
+            return;
+        }
+
         if lower.contains("switch theme") || lower.contains("theme") {
             self.cycle_theme();
         } else if lower.contains("help") || lower == "?" {
@@ -458,7 +464,7 @@ impl App {
         // user:pass@host:port/db?params
         let (auth_host, db_params) = rest.split_once('/').unwrap_or((rest, ""));
         let (user_pass, host_port) = auth_host.split_once('@').unwrap_or(("", auth_host));
-        let (user, _password) = user_pass.split_once(':').unwrap_or((user_pass, ""));
+        let (user, password) = user_pass.split_once(':').unwrap_or((user_pass, ""));
         let (host, port_str) = host_port.split_once(':').unwrap_or((host_port, ""));
         let port: u16 = port_str.parse().unwrap_or_else(|_| kind.default_port());
         let (db, _params) = db_params.split_once('?').unwrap_or((db_params, ""));
@@ -467,6 +473,7 @@ impl App {
         let mut info = tg_core::types::connection::ConnectionInfo::new(name.clone(), kind, host, port);
         info.database = if db.is_empty() { None } else { Some(db.to_string()) };
         info.user = if user.is_empty() { None } else { Some(user.to_string()) };
+        info.password = if password.is_empty() { None } else { Some(password.to_string()) };
 
         match self.state.connection_manager.add_connection(info) {
             Ok(id) => {
@@ -572,6 +579,32 @@ impl App {
             *self.state.palette_selected.write() = 0;
         }
         self.needs_redraw = true;
+    }
+
+    /// Handle keys in the connection dialog.
+    fn handle_connection_dialog_key(&mut self, key_event: crossterm::event::KeyEvent) {
+        use crossterm::event::KeyCode;
+        match key_event.code {
+            KeyCode::Esc => {
+                *self.state.connection_dialog_open.write() = false;
+                self.needs_redraw = true;
+            }
+            KeyCode::Enter => {
+                let url = self.state.connection_dialog_input.read().clone();
+                *self.state.connection_dialog_open.write() = false;
+                self.add_connection_from_url(&url);
+                self.needs_redraw = true;
+            }
+            KeyCode::Backspace => {
+                self.state.connection_dialog_input.write().pop();
+                self.needs_redraw = true;
+            }
+            KeyCode::Char(ch) => {
+                self.state.connection_dialog_input.write().push(ch);
+                self.needs_redraw = true;
+            }
+            _ => {}
+        }
     }
 
     fn refresh_explorer(&self) {

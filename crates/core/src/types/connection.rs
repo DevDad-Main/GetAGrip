@@ -199,6 +199,9 @@ pub struct ConnectionInfo {
     pub database: Option<String>,
     /// Username.
     pub user: Option<String>,
+    /// Password (stored in-memory only, never serialized).
+    #[serde(skip)]
+    pub password: Option<String>,
     /// Schema to use.
     pub schema: Option<String>,
     /// SSL mode.
@@ -241,6 +244,7 @@ impl ConnectionInfo {
             port,
             database: None,
             user: None,
+            password: None,
             schema: None,
             ssl_mode: SslMode::default(),
             tunnel: None,

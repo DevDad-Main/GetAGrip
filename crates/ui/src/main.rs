@@ -104,6 +104,7 @@ async fn main() -> anyhow::Result<()> {
     // Initialize drivers
     let driver_registry = Arc::new(tg_database::DriverRegistry::new());
     driver_registry.register(tg_database::drivers::sqlite::SqliteDriver::new());
+    driver_registry.register(tg_database::drivers::sqlserver::SqlServerDriver::new());
 
     // Initialize connection manager
     let connection_manager = Arc::new(

@@ -30,6 +30,10 @@ pub struct AppState {
     pub command_palette_query: parking_lot::RwLock<String>,
     /// Command palette selected index.
     pub palette_selected: parking_lot::RwLock<usize>,
+    /// Connection dialog open.
+    pub connection_dialog_open: parking_lot::RwLock<bool>,
+    /// Connection dialog URL input.
+    pub connection_dialog_input: parking_lot::RwLock<String>,
     /// Explorer tree state.
     pub explorer: parking_lot::RwLock<ExplorerState>,
     /// Sidebar width in columns.
@@ -190,6 +194,8 @@ impl AppState {
             command_palette_open: parking_lot::RwLock::new(false),
             command_palette_query: parking_lot::RwLock::new(String::new()),
             palette_selected: parking_lot::RwLock::new(0),
+            connection_dialog_open: parking_lot::RwLock::new(false),
+            connection_dialog_input: parking_lot::RwLock::new(String::new()),
             explorer: parking_lot::RwLock::new(ExplorerState {
                 items: Vec::new(),
                 selected: 0,
