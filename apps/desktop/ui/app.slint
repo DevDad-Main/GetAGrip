@@ -1,9 +1,10 @@
-import { StatusBar, Sidebar, EditorPanel, ResultsPanel, CommandPalette, ResultRowData, TreeItem } from "components.slint";
+import { StatusBar, Sidebar, EditorPanel, ResultsPanel, CommandPalette, ConnectDialog, ResultRowData, TreeItem } from "components.slint";
 
 export global AppState {
     in-out property <bool> sidebar-visible: false;
     in-out property <bool> results-visible: false;
     in-out property <bool> command-palette-open: false;
+    in-out property <bool> connect-dialog-open: false;
     in-out property <string> active-connection: "";
     in-out property <string> connection-status: "● Disconnected";
     in-out property <string> status-text: "Ready";
@@ -17,6 +18,7 @@ export global AppState {
     callback execute-command(string);
     callback execute-query(string);
     callback select-sidebar-item(int);
+    callback submit-connection(string, string, string, string, string, string, bool);
     in-out property <string> current-sql: "SELECT @@VERSION";
     in-out property <string> result-text: "";
     in-out property <[TreeItem]> sidebar-items;
@@ -30,134 +32,67 @@ export component MainWindow inherits Window {
     min-height: 500px;
     background: #1e1e2e;
 
-    // ---- Absolutely positioned elements ----
-
-    // Menu bar pinned to top
+    // ---- Menu bar ----
     menu := Rectangle {
-        y: 0px;
-        x: 0px;
-        width: root.width;
-        height: 32px;
-        background: #181825;
-
+        y: 0px; x: 0px; width: root.width; height: 32px; background: #181825;
         HorizontalLayout {
-            padding-left: 8px; padding-right: 8px; spacing: 2px;
-
-            Text { text: "GetAGrip"; font-weight: 700; font-size: 13px; color: #cdd6f4; vertical-alignment: center; }
+            padding-left: 6px; padding-right: 6px; spacing: 0px;
+            Rectangle { HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: "File"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { AppState.connect-dialog-open = true; } } }
+            Rectangle { HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: "Edit"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { } } }
+            Rectangle { HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: "View"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { AppState.toggle-sidebar(); } } }
             Rectangle { width: 16px; }
-
-            Rectangle {
-                border-radius: 4px; background: #181825;
-                HorizontalLayout {
-                    padding-left: 10px; padding-right: 10px; padding-top: 4px; padding-bottom: 4px;
-                    Text {
-                        text: AppState.active-connection == "" ? "● Not Connected" : "● " + AppState.active-connection;
-                        font-size: 12px; vertical-alignment: center;
-                        color: AppState.active-connection == "" ? #6c7086 : #a6e3a1;
-                    }
-                }
-                TouchArea { clicked => { AppState.connect(); } }
-            }
-
-            Rectangle {
-                border-radius: 4px;
-                background: AppState.active-connection == "" ? #45475a : #a6e3a1;
-                HorizontalLayout {
-                    padding-left: 14px; padding-right: 14px; padding-top: 4px; padding-bottom: 4px;
-                    Text {
-                        text: AppState.active-connection == "" ? "▶ Not Connected" : "▶ Run (Ctrl+Enter)";
-                        font-size: 12px; font-weight: 600;
-                        color: AppState.active-connection == "" ? #6c7086 : #1e1e2e;
-                        vertical-alignment: center;
-                    }
-                }
-                TouchArea {
-                    clicked => {
-                        if AppState.active-connection != "" {
-                            AppState.execute-query(AppState.current-sql);
-                        }
-                    }
-                }
-            }
-
-            Rectangle { width: 8px; }
-
-            Rectangle {
-                border-radius: 4px; background: #181825;
-                HorizontalLayout {
-                    padding-left: 10px; padding-right: 10px; padding-top: 4px; padding-bottom: 4px;
-                    Text { text: "+ Query"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; }
-                }
-                TouchArea { clicked => { AppState.new-query(); } }
-            }
-
-            Rectangle {
-                border-radius: 4px; background: #181825;
-                HorizontalLayout {
-                    padding-left: 10px; padding-right: 10px; padding-top: 4px; padding-bottom: 4px;
-                    Text { text: "☰"; font-size: 14px; color: #cdd6f4; vertical-alignment: center; }
-                }
-                TouchArea { clicked => { AppState.toggle-sidebar(); } }
-            }
+            Rectangle { border-radius: 4px; background: #181825; HorizontalLayout { padding-left: 10px; padding-right: 10px; padding-top: 6px; padding-bottom: 6px; Text { text: AppState.active-connection == "" ? "● Not Connected" : "● " + AppState.active-connection; font-size: 12px; vertical-alignment: center; color: AppState.active-connection == "" ? #6c7086 : #a6e3a1; } } TouchArea { clicked => { AppState.connect-dialog-open = true; } } }
+            Rectangle { border-radius: 4px; background: AppState.active-connection == "" ? #45475a : #a6e3a1; HorizontalLayout { padding-left: 14px; padding-right: 14px; padding-top: 6px; padding-bottom: 6px; Text { text: AppState.active-connection == "" ? "▶ Not Connected" : "▶ Run"; font-size: 12px; font-weight: 600; color: AppState.active-connection == "" ? #6c7086 : #1e1e2e; vertical-alignment: center; } } TouchArea { clicked => { if AppState.active-connection != "" { AppState.execute-query(AppState.current-sql); } } } }
+            Rectangle { width: 4px; }
+            Rectangle { border-radius: 4px; background: #181825; HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: "☰"; font-size: 14px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { AppState.toggle-sidebar(); } } }
         }
     }
 
-    // Status bar pinned to bottom
+    // ---- Status bar ----
     StatusBar {
-        y: root.height - 24px;
-        x: 0px;
-        width: root.width;
-        height: 24px;
+        y: root.height - 24px; x: 0px; width: root.width; height: 24px;
     }
 
-    // ---- Main content area (between menu and status bar) ----
-
-    // Sidebar
+    // ---- Sidebar ----
     sidebar := Rectangle {
-        y: menu.height;
-        x: 0px;
+        y: menu.height; x: 0px;
         width: AppState.sidebar-visible ? 260px : 0px;
         height: root.height - menu.height - 24px;
         clip: true;
-        Sidebar {
-            width: 260px; height: 100%;
-            items: AppState.sidebar-items;
-            item-selected(idx) => { AppState.select-sidebar-item(idx); }
-        }
+        Sidebar { width: 260px; height: 100%; items: AppState.sidebar-items; item-selected(idx) => { AppState.select-sidebar-item(idx); } }
     }
 
-    // Results panel — pinned to bottom of content area
+    // ---- Results panel ----
     results-area := Rectangle {
         y: root.height - 24px - (AppState.results-visible ? 200px : 28px);
         x: AppState.sidebar-visible ? 260px : 0px;
         width: root.width - (AppState.sidebar-visible ? 260px : 0px);
         height: AppState.results-visible ? 200px : 28px;
-        ResultsPanel {
-            width: 100%; height: 100%;
-            has-data: AppState.results-visible;
-            status: AppState.status-text;
-            output-text: AppState.result-text;
-        }
+        ResultsPanel { width: 100%; height: 100%; has-data: AppState.results-visible; status: AppState.status-text; output-text: AppState.result-text; }
     }
 
-    // Editor — fills remaining space
+    // ---- Editor ----
     editor-area := Rectangle {
         y: menu.height;
         x: AppState.sidebar-visible ? 260px : 0px;
         width: root.width - (AppState.sidebar-visible ? 260px : 0px);
         height: root.height - menu.height - 24px - (AppState.results-visible ? 200px : 28px);
-        EditorPanel {
-            width: 100%; height: 100%;
-            has-connection: AppState.active-connection != "";
-            editor-content <=> AppState.current-sql;
-            execute-query(sql) => { AppState.execute-query(sql); }
-        }
+        EditorPanel { width: 100%; height: 100%; has-connection: AppState.active-connection != ""; editor-content <=> AppState.current-sql; execute-query(sql) => { AppState.execute-query(sql); } }
     }
 
-    // Command palette overlay
+    // ---- Command palette overlay ----
     if AppState.command-palette-open : CommandPalette {
-        x: (root.width - 560px) / 2;
-        y: (root.height - 400px) / 2;
-        width: 560px; height: 400px;
+        x: (root.width - 560px) / 2; y: (root.height - 400px) / 2; width: 560px; height: 400px;
+    }
+
+    // ---- Connect dialog overlay ----
+    if AppState.connect-dialog-open : ConnectDialog {
+        x: (root.width - 460px) / 2; y: (root.height - 460px) / 2;
+        width: 460px; height: 460px;
+        connect(name, host, port, user, pass, db, trust) => {
+            AppState.submit-connection(name, host, port, user, pass, db, trust);
+            AppState.connect-dialog-open = false;
+        }
+        cancel => { AppState.connect-dialog-open = false; }
     }
 }

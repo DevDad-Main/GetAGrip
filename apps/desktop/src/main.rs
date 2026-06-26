@@ -50,7 +50,117 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_weak = app.as_weak();
     app.global::<AppState>().on_new_query(move || { let _ = app_weak; });
 
-    // ---- Connect ----
+    // ---- Connect dialog submit ----
+    {
+        let model = model.clone();
+        let app_weak = app.as_weak();
+        app.global::<AppState>().on_submit_connection(move |name: slint::SharedString, host: slint::SharedString, port: slint::SharedString, user: slint::SharedString, pass: slint::SharedString, db: slint::SharedString, trust: bool| {
+            let name = name.to_string();
+            let host = host.to_string();
+            let port: u16 = port.parse().unwrap_or(1433);
+            let user = user.to_string();
+            let pass = pass.to_string();
+            let db = db.to_string();
+
+            let connecting = model.lock().unwrap().connecting.clone();
+            if connecting.swap(true, std::sync::atomic::Ordering::SeqCst) { return; }
+
+            let url = if !db.is_empty() {
+                format!("sqlserver://{user}:{pass}@{host}:{port}/{db}")
+            } else {
+                format!("sqlserver://{user}:{pass}@{host}:{port}")
+            };
+            let url_full = if trust {
+                format!("{url}?trustServerCertificate=true")
+            } else {
+                url
+            };
+
+            tracing::info!("Connecting to {url_full} (name: {name})");
+
+            let driver = model.lock().unwrap().driver.clone();
+            let handle = tokio::runtime::Handle::current();
+            let model2 = model.clone();
+            let app_weak2 = app_weak.clone();
+            let conn_flag = connecting.clone();
+            let conn_name = name.clone();
+
+            if let Some(a) = app_weak.upgrade() {
+                a.global::<AppState>().set_status_text("Connecting...".into());
+            }
+
+            handle.spawn(async move {
+                match driver.connect(&url_full).await {
+                    Ok(mut conn) => {
+                        let info = conn.info().await.ok();
+                        let version = info.map(|i| i.product_name).unwrap_or_default();
+
+                        // List databases
+                        let db_names: Vec<String> = match conn.execute("SELECT name FROM sys.databases ORDER BY name").await {
+                            Ok(r) => r.rows.iter().filter_map(|row| row.get(0).map(|v| v.to_string())).collect(),
+                            Err(_) => vec![],
+                        };
+
+                        // Get counts
+                        let mut db_labels: Vec<(String, i64, i64)> = Vec::new();
+                        for db_name in &db_names {
+                            let mut tc = 0i64; let mut vc = 0i64;
+                            if let Ok(r) = conn.execute(&format!("SELECT COUNT(*) FROM [{db_name}].INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'")).await {
+                                if let Some(row) = r.rows.first() { tc = row.get(0).and_then(|v| match v { getagrip_database::driver::Value::Int(i) => Some(*i), _ => None }).unwrap_or(0); }
+                            }
+                            if let Ok(r) = conn.execute(&format!("SELECT COUNT(*) FROM [{db_name}].INFORMATION_SCHEMA.VIEWS")).await {
+                                if let Some(row) = r.rows.first() { vc = row.get(0).and_then(|v| match v { getagrip_database::driver::Value::Int(i) => Some(*i), _ => None }).unwrap_or(0); }
+                            }
+                            db_labels.push((db_name.clone(), tc, vc));
+                        }
+
+                        tracing::info!("Connected to {version}! {} databases", db_names.len());
+
+                        // Build sidebar tree
+                        let mut sidebar_items = vec![TreeItem {
+                            label: conn_name.clone().into(), kind: "server".into(),
+                            depth: 0, expanded: true, has_children: true, icon: "".into(),
+                        }];
+                        for (db, tc, vc) in &db_labels {
+                            let label = if *tc > 0 || *vc > 0 { format!("{db}  ({tc} tables, {vc} views)") } else { db.clone() };
+                            sidebar_items.push(TreeItem { label: label.into(), kind: "database".into(), depth: 1, expanded: false, has_children: true, icon: "".into() });
+                        }
+
+                        let sidebar_items2 = sidebar_items.clone();
+                        let weak = app_weak2.clone();
+                        let ver = version;
+                        let url2 = url_full.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(a) = weak.upgrade() {
+                                let m = std::rc::Rc::new(slint::VecModel::from(sidebar_items2));
+                                a.global::<AppState>().set_sidebar_items(m.into());
+                                a.global::<AppState>().set_sidebar_visible(true);
+                                a.global::<AppState>().set_active_connection(url2.into());
+                                a.global::<AppState>().set_connection_status("● Connected".into());
+                                a.global::<AppState>().set_status_text(format!("{ver} — ready").into());
+                            }
+                        });
+                        {
+                            let mut m = model2.lock().unwrap();
+                            m.sidebar_items = sidebar_items;
+                            m.connection_url = Some(url_full);
+                        }
+                        conn_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+                    }
+                    Err(e) => {
+                        conn_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+                        let weak = app_weak2.clone();
+                        let msg = format!("{e}");
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(a) = weak.upgrade() { a.global::<AppState>().set_connection_status("● Error".into()); a.global::<AppState>().set_status_text(msg.into()); }
+                        });
+                    }
+                }
+            });
+        });
+    }
+
+    // ---- Connect (legacy) ----
     {
         let model = model.clone();
         let app_weak = app.as_weak();

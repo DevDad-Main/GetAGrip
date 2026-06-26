@@ -327,3 +327,119 @@ export component CommandPalette {
         }
     }
 }
+
+export component ConnectDialog {
+    in-out property <string> conn-url: "";
+    callback connect(string, string, string, string, string, string, bool);
+    callback cancel();
+
+    property <string> name: "My SQL Server";
+    property <string> host: "localhost";
+    property <string> port: "1433";
+    property <string> username: "sa";
+    property <string> password: "";
+    property <string> database: "";
+    property <bool> trust-cert: true;
+
+    Rectangle {
+        border-radius: 8px; background: #181825; border-width: 1px; border-color: #45475a;
+        drop-shadow-blur: 20px; drop-shadow-color: #000000aa;
+        width: 460px; height: 460px;
+
+        VerticalLayout {
+            Rectangle {
+                height: 36px; background: #11111b;
+                HorizontalLayout {
+                    padding-left: 14px; padding-right: 14px; padding-top: 6px; padding-bottom: 6px;
+                    Text { text: "Connect to Database"; font-size: 13px; font-weight: 600; color: #cdd6f4; vertical-alignment: center; }
+                }
+            }
+
+            VerticalLayout {
+                padding-left: 14px; padding-right: 14px; padding-top: 10px; padding-bottom: 10px;
+                spacing: 8px;
+
+                // Connection URL
+                Text { text: "Connection URL"; font-size: 10px; color: #6c7086; }
+                Rectangle { background: #1e1e2e; height: 28px; border-radius: 3px;
+                    TextInput { text <=> root.conn-url; font-size: 12px; color: #cdd6f4; font-family: "monospace"; }
+                }
+
+                Rectangle { height: 1px; background: #45475a; }
+
+                Text { text: "Connection Name"; font-size: 10px; color: #6c7086; }
+                Rectangle { background: #1e1e2e; height: 28px; border-radius: 3px;
+                    TextInput { text <=> root.name; font-size: 13px; color: #cdd6f4; }
+                }
+
+                HorizontalLayout {
+                    spacing: 10px;
+                    VerticalLayout {
+                        Text { text: "Host"; font-size: 10px; color: #6c7086; }
+                        Rectangle { background: #1e1e2e; height: 28px; border-radius: 3px;
+                            TextInput { text <=> root.host; font-size: 13px; color: #cdd6f4; }
+                        }
+                    }
+                    VerticalLayout {
+                        Text { text: "Port"; font-size: 10px; color: #6c7086; }
+                        Rectangle { background: #1e1e2e; height: 28px; border-radius: 3px;
+                            TextInput { text <=> root.port; font-size: 13px; color: #cdd6f4; }
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 10px;
+                    VerticalLayout {
+                        Text { text: "Username"; font-size: 10px; color: #6c7086; }
+                        Rectangle { background: #1e1e2e; height: 28px; border-radius: 3px;
+                            TextInput { text <=> root.username; font-size: 13px; color: #cdd6f4; }
+                        }
+                    }
+                    VerticalLayout {
+                        Text { text: "Password"; font-size: 10px; color: #6c7086; }
+                        Rectangle { background: #1e1e2e; height: 28px; border-radius: 3px;
+                            TextInput { text <=> root.password; font-size: 13px; color: #cdd6f4; }
+                        }
+                    }
+                }
+
+                Text { text: "Database (optional)"; font-size: 10px; color: #6c7086; }
+                Rectangle { background: #1e1e2e; height: 28px; border-radius: 3px;
+                    TextInput { text <=> root.database; font-size: 13px; color: #cdd6f4; }
+                }
+
+                HorizontalLayout {
+                    spacing: 6px;
+                    Rectangle {
+                        width: 14px; height: 14px; border-width: 1px; border-color: #45475a;
+                        background: root.trust-cert ? #a6e3a1 : #1e1e2e;
+                        Text { text: root.trust-cert ? "✓" : ""; font-size: 10px; color: #1e1e2e; horizontal-alignment: center; }
+                        TouchArea { clicked => { root.trust-cert = !root.trust-cert; } }
+                    }
+                    Text { text: "Trust server certificate"; font-size: 11px; color: #6c7086; vertical-alignment: center; }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        Rectangle {
+                            border-radius: 4px; background: #a6e3a1; height: 30px;
+                            Text { text: "Connect"; font-size: 13px; font-weight: 600; color: #1e1e2e; vertical-alignment: center; horizontal-alignment: center; }
+                            TouchArea { clicked => { root.connect(root.name, root.host, root.port, root.username, root.password, root.database, root.trust-cert); } }
+                        }
+                    }
+                    Rectangle {
+                        border-radius: 4px; background: #45475a; height: 30px;
+                        HorizontalLayout {
+                            padding-left: 14px; padding-right: 14px;
+                            Text { text: "Cancel"; font-size: 13px; color: #cdd6f4; vertical-alignment: center; }
+                        }
+                        TouchArea { clicked => { root.cancel(); } }
+                    }
+                }
+            }
+        }
+    }
+}
