@@ -1,152 +1,103 @@
 [workspace]
+members = ["crates/*", "apps/*"]
 resolver = "2"
-members = [
-    "crates/core",
-    "crates/config",
-    "crates/themes",
-    "crates/database",
-    "crates/query-engine",
-    "crates/telemetry",
-    "crates/plugins",
-    "crates/ui",
-]
-default-members = ["crates/ui"]
 
 [workspace.package]
-version = "0.1.0-dev"
+version = "0.1.0"
 edition = "2024"
-license = "Apache-2.0 OR MIT"
+rust-version = "1.86"
+license = "MIT OR Apache-2.0"
+authors = ["GetAGrip Contributors"]
 repository = "https://github.com/DevDad-Main/GetAGrip"
-rust-version = "1.85"
+description = "GetAGrip — a modern, cross-platform database IDE built with Rust + Slint"
+keywords = ["database", "sql", "ide", "gui", "rust", "slint", "getagrip"]
+categories = ["database", "development-tools", "gui"]
 
 [workspace.dependencies]
+# UI
+slint = { version = "1.9", features = ["backend-winit", "renderer-skia"] }
+
 # Async runtime
-tokio = { version = "1", features = ["full"] }
-async-trait = "0.1"
-futures = "0.3"
-async-stream = "0.3"
+tokio = { version = "1.43", features = ["full"] }
 
 # Serialization
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 serde_yaml = "0.9"
 toml = "0.8"
-ron = "0.8"
 
-# Error handling
-thiserror = "2"
-anyhow = "1"
-miette = "7"
+# Errors
+thiserror = "2.0"
+anyhow = "1.0"
+miette = { version = "7.5", features = ["fancy"] }
 
-# Logging and tracing
+# Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
-opentelemetry = "0.27"
 
-# Database drivers
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "mysql", "sqlite"] }
-rusqlite = { version = "0.32", features = ["bundled", "vtab"] }
-tokio-postgres = "0.7"
-mysql_async = "0.34"
-duckdb = { version = "1", features = ["bundled"] }
-redis = { version = "0.27", features = ["tokio-comp"] }
-mongodb = { version = "3", features = ["sync"] }
+# SQL parsing
+sqlparser = { version = "0.54", features = ["visitor", "serde"] }
 
-# TUI framework
-ratatui = "0.29"
-crossterm = "0.28"
-tui-textarea = "0.7"
+# Config
+figment = { version = "0.10", features = ["toml", "yaml", "json", "env"] }
+dirs = "6.0"
 
-# Parser
-tree-sitter = "0.24"
-
-# Data formats
-csv = "1"
-parquet = "53"
-arrow = "53"
-calamine = "0.26"
-avro-rs = "0.14"
-
-# Encoding
-uuid = { version = "1", features = ["v4", "serde"] }
+# IDs
+uuid = { version = "1.13", features = ["v4", "v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-bytes = "1"
-smallvec = "1"
-hashbrown = "0.15"
-dashmap = "6"
+
+# Crypto
+ring = "0.17"
+aes-gcm = "0.10"
+base64 = "0.22"
+rand = "0.8"
+
+# Concurrency
 parking_lot = "0.12"
-
-# SSH tunnels
-ssh2 = "0.9"
-russh = "0.45"
-
-# Keyring / password vault
-keyring = "3"
-
-# AI / LLM
-reqwest = { version = "0.12", features = ["json", "stream"] }
-tokio-stream = "0.1"
-
-# Plugin system
-wasmtime = "27"
-mlua = "0.10"
-libloading = "0.8"
-
-# Templating
-tera = "1"
-handlebars = "6"
-
-# Graph / layout
-petgraph = "0.7"
-
-# Compression
-flate2 = "1"
-zstd = "0.13"
+dashmap = "6.1"
+indexmap = { version = "2.7", features = ["serde"] }
+crossbeam-channel = "0.5"
 
 # Misc
-dirs = "5"
-once_cell = "1"
-regex = "1"
-sha2 = "0.10"
-hex = "0.4"
-base64 = "0.22"
-url = "2"
-itertools = "0.14"
-rayon = "1"
-indicatif = "0.17"
-clap = { version = "4", features = ["derive"] }
-config = "0.14"
+regex = "1.11"
+unicode-segmentation = "1.12"
+strum = { version = "0.26", features = ["derive"] }
+derive_more = { version = "2.0", features = ["full"] }
+regex-automata = "0.4"
 
-# Internal crates
-tg-core = { path = "crates/core" }
-tg-config = { path = "crates/config" }
-tg-themes = { path = "crates/themes" }
-tg-database = { path = "crates/database" }
-tg-query-engine = { path = "crates/query-engine" }
-tg-telemetry = { path = "crates/telemetry" }
-tg-plugins = { path = "crates/plugins" }
-tg-ui = { path = "crates/ui" }
+# Testing
+insta = { version = "1.43", features = ["json"] }
+proptest = "1.6"
 
 [workspace.lints.rust]
-unsafe_code = "deny"
+unsafe_code = "forbid"
+missing_docs = "warn"
+dead_code = "warn"
+unused_imports = "warn"
+future_incompatible = "warn"
 
-
-
-[profile.release]
-lto = "fat"
-codegen-units = 1
-panic = "abort"
-opt-level = 3
-strip = "symbols"
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "allow"
+cargo = "warn"
+complexity = "warn"
+perf = "warn"
+style = "warn"
+suspicious = "warn"
 
 [profile.dev]
 opt-level = 1
+debug = true
+incremental = true
 
-[profile.dev.package."*"]
-opt-level = 1
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
 
-[profile.profiling]
+[profile.bench]
 inherits = "release"
 debug = true
-strip = "none"

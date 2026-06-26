@@ -1,34 +1,51 @@
-//! GetAGrip — core types, traits, and abstractions.
+//! GetAGrip — core foundation.
 //!
-//! This crate provides the foundational building blocks used by all other
-//! GetAGrip crates. It contains no platform-specific or UI code.
+//! This crate owns every primitive the rest of the workspace depends on and
+//! **nothing else**. No UI, no database driver, no plugin system. Every other
+//! crate is built on top of `atlas-core`.
+//!
+//! ## Module layout
+//!
+//! * [`error`]     — [`AtlasError`] enum + [`AtlasResult`] alias, miette-ready.
+//! * [`id`]        — strongly-typed UUID-backed identifiers for every entity.
+//! * [`events`]    — lock-free [`EventBus`] for inter-subsystem communication.
+//! * [`config`]    — [`WorkspaceConfig`] read via `figment`.
+//! * [`secrets`]   — encrypted credentials vault backed by the OS keyring
+//!                   when available, falling back to an encrypted file.
+//! * [`session`]   — connection profiles, folders, favorites, tags.
+//!
+//! ## Coding conventions
+//!
+//! * Return `AtlasResult<T>` from every public function.
+//! * Construct IDs via `Id::new()` — never hand-craft `Uuid`.
+//! * Keep modules small and focused; each module is one concern.
+//! * composition-over-inheritance: define behavior with traits, not towers of
+//!   `impl A for B for C`.
 
-pub mod cancel;
+#![forbid(unsafe_code)]
+#![warn(missing_docs)]
+
+pub mod config;
 pub mod error;
+pub mod events;
 pub mod id;
-pub mod result;
-pub mod time;
-pub mod traits;
-pub mod types;
+pub mod secrets;
+pub mod session;
 
-/// Prelude module for convenient imports throughout the codebase.
-pub mod prelude {
-    pub use crate::cancel::CancellationToken;
-    pub use crate::error::{CoreError, CoreResult};
-    pub use crate::id::Id;
-    pub use crate::result::{DataCell, DataRow, DataType, QueryResult, Value};
-    pub use crate::time::Timestamp;
-    pub use crate::types::column::ColumnInfo;
-    pub use crate::types::connection::{
-        ConnectionDriver, ConnectionId, ConnectionInfo, ConnectionStatus, DatabaseKind,
-        SslMode, TunnelConfig,
-    };
-    pub use crate::types::database::{
-        ColumnMetadata, ConstraintKind, DatabaseObject, DatabaseObjectKind, DbType, IndexInfo,
-        ProcedureInfo, SchemaInfo, TableInfo, ViewInfo,
-    };
-    pub use crate::types::query::{
-        ExecutionPlan, ExecutionPlanNode, ExplainFormat, Pagination, QueryId,
-        QueryMetadata, QueryParams, QueryStatus,
-    };
-}
+// Ergonomic re-exports: consumers write `atlas_core::AtlasError` instead of
+// reaching into sub-modules.
+pub use error::{err_msg, AtlasError, AtlasResult};
+pub use events::{Event, EventBus, EventHandler, Subscription};
+pub use id::{Id, IdTag, Idable};
+pub use config::WorkspaceConfig;
+pub use secrets::{Secret, SecretKind, SecretsVault};
+pub use session::{
+    ConnectionDriver, ConnectionProfile, ConnectionProfiles, Credential, CredentialStore,
+    EnvironmentColor, SaveRule,
+};
+
+/// Crate version.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Crate name.
+pub const NAME: &str = env!("CARGO_PKG_NAME");

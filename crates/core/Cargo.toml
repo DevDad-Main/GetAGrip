@@ -1,31 +1,36 @@
 [package]
-name = "tg-core"
+name = "atlas-core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
-repository.workspace = true
-description = "GetAGrip core types, traits, and abstractions"
+description = "GetAGrip core: errors, ids, events, config, secrets, session."
 
 [dependencies]
-tokio.workspace = true
-async-trait.workspace = true
-futures.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-thiserror.workspace = true
-miette.workspace = true
-anyhow.workspace = true
-uuid.workspace = true
-chrono.workspace = true
-bytes.workspace = true
-smallvec.workspace = true
-hashbrown.workspace = true
-parking_lot.workspace = true
-regex.workspace = true
-url.workspace = true
-itertools.workspace = true
-tracing.workspace = true
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+miette = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+indexmap = { workspace = true }
+crossbeam-channel = { workspace = true }
+tracing = { workspace = true }
+regex = { workspace = true }
+unicode-segmentation = { workspace = true }
+strum = { workspace = true }
+derive_more = { workspace = true }
+dirs = { workspace = true }
+figment = { workspace = true }
+ring = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
+aes-gcm = { workspace = true }
 
-[features]
-default = []
-vendored = []
+[dev-dependencies]
+insta = { workspace = true }
+proptest = { workspace = true }
+tempfile = "3"

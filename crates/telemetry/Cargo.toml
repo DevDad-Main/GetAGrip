@@ -1,32 +1,12 @@
 [package]
-name = "tg-telemetry"
+name = "atlas-telemetry"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
-repository.workspace = true
-description = "GetAGrip structured logging, tracing, and crash reporting"
+description = "GetAGrip: structured logging and tracing."
 
 [dependencies]
-tg-core.workspace = true
-tokio.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
-tracing-appender = { workspace = true, optional = true }
-opentelemetry = { workspace = true, optional = true }
-anyhow.workspace = true
-thiserror.workspace = true
-chrono.workspace = true
-dirs.workspace = true
-parking_lot.workspace = true
-
-[lints]
-workspace = true
-
-[features]
-default = ["file-logging"]
-file-logging = ["dep:tracing-appender"]
-json-logging = []
-opentelemetry-export = ["dep:opentelemetry"]
-crash-report = []
+atlas-core = { path = "../core" }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

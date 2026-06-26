@@ -1,11 +1,13 @@
 [package]
-name = "atlas-themes"
+name = "atlas-query-engine"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "GetAGrip: theme engine and built-in themes."
+description = "GetAGrip: query execution engine and scheduler."
 
 [dependencies]
 atlas-core = { path = "../core" }
+atlas-database = { path = "../database" }
+tokio = { workspace = true }
 serde = { workspace = true }

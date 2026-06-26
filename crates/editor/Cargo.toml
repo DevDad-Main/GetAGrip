@@ -1,11 +1,12 @@
 [package]
-name = "atlas-themes"
+name = "atlas-editor"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "GetAGrip: theme engine and built-in themes."
+description = "GetAGrip: SQL editor with syntax highlighting and autocomplete."
 
 [dependencies]
 atlas-core = { path = "../core" }
+atlas-sql = { path = "../sql" }
 serde = { workspace = true }

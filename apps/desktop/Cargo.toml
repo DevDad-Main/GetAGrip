@@ -1,0 +1,18 @@
+[package]
+name = "getagrip"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "GetAGrip — a modern, cross-platform database IDE."
+
+[[bin]]
+name = "getagrip"
+path = "src/main.rs"
+
+[dependencies]
+atlas-core = { path = "../../crates/core" }
+slint = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

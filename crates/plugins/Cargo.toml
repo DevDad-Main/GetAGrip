@@ -1,35 +1,11 @@
 [package]
-name = "tg-plugins"
+name = "atlas-plugins"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
-repository.workspace = true
-description = "GetAGrip plugin system: Rust, Lua, WASM host"
+description = "GetAGrip: plugin system for extensibility."
 
 [dependencies]
-tg-core.workspace = true
-anyhow.workspace = true
-toml.workspace = true
-tokio.workspace = true
-async-trait.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-thiserror.workspace = true
-tracing.workspace = true
-dashmap.workspace = true
-parking_lot.workspace = true
-dirs.workspace = true
-libloading = { workspace = true, optional = true }
-
-# Optional plugin runtimes
-wasmtime = { workspace = true, optional = true }
-mlua = { workspace = true, optional = true }
-
-[lints]
-workspace = true
-
-[features]
-default = ["rust-plugins"]
-rust-plugins = ["dep:libloading"]
-wasm-plugins = ["dep:wasmtime"]
-lua-plugins = ["dep:mlua"]
+atlas-core = { path = "../core" }
+serde = { workspace = true }

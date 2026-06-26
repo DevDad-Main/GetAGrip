@@ -1,11 +1,12 @@
 [package]
-name = "atlas-themes"
+name = "atlas-explorer"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "GetAGrip: theme engine and built-in themes."
+description = "GetAGrip: database explorer tree and data viewer."
 
 [dependencies]
 atlas-core = { path = "../core" }
+atlas-database = { path = "../database" }
 serde = { workspace = true }
