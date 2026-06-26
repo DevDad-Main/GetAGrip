@@ -46,6 +46,7 @@ export component MainWindow inherits Window {
             Rectangle { border-radius: 4px; background: #11101a; HorizontalLayout { padding-left: 10px; padding-right: 10px; padding-top: 6px; padding-bottom: 6px; Text { text: AppState.active-connection == "" ? "● Not Connected" : "● " + AppState.active-connection; font-size: 12px; vertical-alignment: center; color: AppState.active-connection == "" ? #6e6e7d : #a5d6a7; } } TouchArea { clicked => { AppState.connect-dialog-open = true; } } }
             Rectangle { border-radius: 3px; background: AppState.active-connection == "" ? #38364a : #a5d6a7; HorizontalLayout { padding-left: 6px; padding-right: 8px; padding-top: 4px; padding-bottom: 4px; spacing: 3px; if AppState.active-connection == "" : Image { source: @image-url("icons/play-off.svg"); width: 12px; height: 12px; } if AppState.active-connection != "" : Image { source: @image-url("icons/play.svg"); width: 12px; height: 12px; } Text { text: "Run"; font-size: 11px; font-weight: 600; color: AppState.active-connection == "" ? #6e6e7d : #181724; vertical-alignment: center; } } TouchArea { clicked => { if AppState.active-connection != "" { AppState.execute-query(AppState.current-sql); } } } }
             Rectangle { width: 4px; }
+            Rectangle { border-radius: 3px; background: #11101a; HorizontalLayout { padding-left: 10px; padding-right: 10px; padding-top: 4px; padding-bottom: 4px; Text { text: "Ctrl+P"; font-size: 11px; color: #6e6e7d; vertical-alignment: center; } } TouchArea { clicked => { AppState.open-command-palette(); } } }
             Rectangle { border-radius: 4px; background: #11101a; HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: "☰"; font-size: 14px; color: #e6e6eb; vertical-alignment: center; } } TouchArea { clicked => { AppState.toggle-sidebar(); } } }
         }
     }
@@ -111,6 +112,10 @@ export component MainWindow inherits Window {
     if AppState.command-palette-open : CommandPalette {
         x: (root.width - 560px) / 2; y: (root.height - 400px) / 2;
         width: 560px; height: 400px;
+        select-command(id) => {
+            AppState.execute-command(id);
+        }
+        dismissed => { AppState.close-command-palette(); }
     }
 
     if AppState.connect-dialog-open : ConnectDialog {

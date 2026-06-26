@@ -170,7 +170,7 @@ export component ResultsPanel {
                 padding-left: 12px; padding-right: 8px;
                 Text { text: "RESULTS"; font-size: 10px; font-weight: 600; color: #6e6e7d; vertical-alignment: center; }
                 Text { text: root.status; font-size: 10px; color: #6e6e7d; vertical-alignment: center; }
-                Rectangle { }
+                Rectangle { horizontal-stretch: 1; }
                 Text { text: "×"; font-size: 14px; color: #6e6e7d; vertical-alignment: center; }
                 TouchArea { clicked => { root.close-results(); } }
             }
