@@ -218,35 +218,30 @@ export component ResultsPanel {
             }
         }
         Rectangle {
-            clip: true;
-            HorizontalLayout {
-                VerticalLayout {
-                    Rectangle {
-                        height: 26px; background: #181825;
-                        HorizontalLayout {
-                            for col in root.columns : Rectangle {
-                                width: 120px;
-                                Text { text: col; font-size: 12px; font-weight: 600; color: #cdd6f4; vertical-alignment: center; }
+            VerticalLayout {
+                Rectangle {
+                    height: 26px; background: #181825;
+                    HorizontalLayout {
+                        for col in root.columns : Rectangle {
+                            width: 120px;
+                            Text { text: col; font-size: 12px; font-weight: 600; color: #cdd6f4; vertical-alignment: center; }
+                        }
+                    }
+                }
+                for row[idx] in root.rows : Rectangle {
+                    height: 24px;
+                    background: idx == root.selected-row ? #45475a : Math.mod(idx, 2) == 0 ? #1e1e2e : #181825;
+                    HorizontalLayout {
+                        for col-i in root.columns.length : Rectangle {
+                            width: 120px;
+                            Text {
+                                text: row-cell(row, col-i);
+                                font-size: 12px; font-family: "monospace"; color: #cdd6f4;
+                                vertical-alignment: center; overflow: elide;
                             }
                         }
                     }
-                    VerticalLayout {
-                        for row[idx] in root.rows : Rectangle {
-                            height: 24px;
-                            background: idx == root.selected-row ? #45475a : Math.mod(idx, 2) == 0 ? #1e1e2e : #181825;
-                            HorizontalLayout {
-                                for col-i in root.columns.length : Rectangle {
-                                    width: 120px;
-                                    Text {
-                                        text: row-cell(row, col-i);
-                                        font-size: 12px; font-family: "monospace"; color: #cdd6f4;
-                                        vertical-alignment: center; overflow: elide;
-                                    }
-                                }
-                            }
-                            TouchArea { clicked => { root.row-selected(idx); } }
-                        }
-                    }
+                    TouchArea { clicked => { root.row-selected(idx); } }
                 }
             }
         }
