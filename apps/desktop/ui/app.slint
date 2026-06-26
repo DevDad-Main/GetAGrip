@@ -1,4 +1,4 @@
-import { StatusBar, Sidebar, EditorPanel, ResultsPanel, CommandPalette, ConnectDialog, TreeItem } from "components.slint";
+import { StatusBar, Sidebar, EditorPanel, ResultsPanel, CommandPalette, ConnectDialog, TreeItem, CommandItem } from "components.slint";
 
 export global AppState {
     in-out property <bool> sidebar-visible: false;
@@ -110,11 +110,17 @@ export component MainWindow inherits Window {
 
     // Overlays
     if AppState.command-palette-open : CommandPalette {
-        x: (root.width - 560px) / 2; y: (root.height - 400px) / 2;
-        width: 560px; height: 400px;
-        select-command(id) => {
-            AppState.execute-command(id);
-        }
+        x: (root.width - 480px) / 2; y: (root.height - 320px) / 2;
+        width: 480px; height: 320px;
+        commands: [
+            { id: "connect", label: "Connect to Database", icon: "🔌", shortcut: "Ctrl+Shift+C" },
+            { id: "disconnect", label: "Disconnect", icon: "✕", shortcut: "" },
+            { id: "execute", label: "Execute Query", icon: "▶", shortcut: "Ctrl+Enter" },
+            { id: "toggle-sidebar", label: "Toggle Explorer", icon: "☰", shortcut: "Ctrl+B" },
+            { id: "toggle-results", label: "Toggle Results", icon: "📊", shortcut: "Ctrl+Shift+R" },
+            { id: "new-query", label: "New Query Tab", icon: "+", shortcut: "Ctrl+N" },
+        ];
+        select-command(id) => { AppState.execute-command(id); }
         dismissed => { AppState.close-command-palette(); }
     }
 
