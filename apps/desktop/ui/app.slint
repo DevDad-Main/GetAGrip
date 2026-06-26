@@ -121,13 +121,13 @@ export component MainWindow inherits Window {
                     execute-query(sql) => { AppState.execute-query(sql); }
                 }
 
-                if AppState.results-visible : Rectangle {
-                    height: 200px; background: #1e1e2e;
-                    ResultsPanel {
-                        width: 100%; height: 100%;
-                        columns: AppState.result-columns;
-                        rows: AppState.result-rows;
-                    }
+                // Results always at bottom — expands when data arrives
+                ResultsPanel {
+                    width: 100%;
+                    height: AppState.results-visible ? 200px : 28px;
+                    columns: AppState.result-columns;
+                    rows: AppState.result-rows;
+                    status: AppState.status-text;
                 }
             }
         }
