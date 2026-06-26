@@ -125,6 +125,7 @@ export component MainWindow inherits Window {
                 ResultsPanel {
                     width: 100%;
                     height: AppState.results-visible ? 200px : 28px;
+                    has-data: AppState.results-visible;
                     columns: AppState.result-columns;
                     rows: AppState.result-rows;
                     status: AppState.status-text;
@@ -140,4 +141,5 @@ export component MainWindow inherits Window {
         y: (root.height - 400px) / 2;
         width: 560px; height: 400px;
     }
+
 }
