@@ -203,6 +203,7 @@ export component ResultsPanel {
     in-out property <string> status: "0 rows — 0ms";
     in-out property <int> selected-row: -1;
     in-out property <bool> has-data: false;
+    in-out property <string> output-text: "";
     callback row-selected(int);
     callback close-results();
 
@@ -213,47 +214,21 @@ export component ResultsPanel {
                 padding-left: 8px; padding-right: 8px; padding-top: 4px; padding-bottom: 4px; spacing: 8px;
                 Text { text: "RESULTS"; font-size: 10px; font-weight: 600; letter-spacing: 1px; color: #6c7086; vertical-alignment: center; }
                 Text { text: root.status; font-size: 11px; color: #6c7086; vertical-alignment: center; }
+                Rectangle { }
+                Text { text: "×"; font-size: 14px; color: #6c7086; vertical-alignment: center; }
+                TouchArea { clicked => { root.close-results(); } }
             }
         }
         if root.has-data : Rectangle {
             clip: true;
-            VerticalLayout {
-                Rectangle {
-                    height: 26px; background: #181825;
-                    HorizontalLayout {
-                        for col in root.columns : Rectangle {
-                            width: 120px;
-                            Text { text: col; font-size: 12px; font-weight: 600; color: #cdd6f4; vertical-alignment: center; }
-                        }
-                    }
-                }
-                for row[idx] in root.rows : Rectangle {
-                    height: 24px;
-                    background: idx == root.selected-row ? #45475a : Math.mod(idx, 2) == 0 ? #1e1e2e : #181825;
-                    HorizontalLayout {
-                        for col-i in root.columns.length : Rectangle {
-                            width: 120px;
-                            Text {
-                                text: row-cell(row, col-i);
-                                font-size: 12px; font-family: "monospace"; color: #cdd6f4;
-                                vertical-alignment: center; overflow: elide;
-                            }
-                        }
-                    }
-                    TouchArea { clicked => { root.row-selected(idx); } }
-                }
+            Text {
+                text: root.output-text;
+                font-size: 13px;
+                font-family: "monospace";
+                color: #cdd6f4;
+                vertical-alignment: top;
             }
         }
-    }
-
-    pure function row-cell(row: ResultRowData, col: int) -> string {
-        if col == 0 { return row.c0; }
-        if col == 1 { return row.c1; }
-        if col == 2 { return row.c2; }
-        if col == 3 { return row.c3; }
-        if col == 4 { return row.c4; }
-        if col == 5 { return row.c5; }
-        "—"
     }
 }
 

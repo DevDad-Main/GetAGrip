@@ -173,47 +173,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let rows = result.rows.len();
                         tracing::info!("Query ok: {rows} rows in {elapsed}ms");
 
-                        // Build result data as plain Vecs (Send-safe)
+                        // Build formatted text output
                         let col_names: Vec<String> = result.columns.iter()
                             .map(|c| c.name.clone())
                             .collect();
-                        let mut row_data = Vec::new();
+                        let col_count = col_names.len();
+                        let mut text_out = String::new();
+                        // Header
+                        text_out.push_str(&col_names.join(" | "));
+                        text_out.push('\n');
+                        text_out.push_str(&"—".repeat( col_names.iter().map(|c| c.len()).max().unwrap_or(4).max(4) * col_count.max(1) ));
+                        text_out.push('\n');
+                        // Rows
                         for row in &result.rows {
-                            let mut cells = Vec::new();
-                            for i in 0..result.columns.len() {
-                                cells.push(row.get(i).map(|v| v.to_string()).unwrap_or_default());
-                            }
-                            row_data.push(cells);
+                            let vals: Vec<String> = (0..col_count)
+                                .map(|i| row.get(i).map(|v| v.to_string()).unwrap_or_else(|| "NULL".into()))
+                                .collect();
+                            text_out.push_str(&vals.join(" | "));
+                            text_out.push('\n');
                         }
 
                         let weak = app_weak2.clone();
                         let row_count = rows;
-                        let col_names2 = col_names.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(a) = weak.upgrade() {
-                                // Build column model
-                                let cols: Vec<slint::SharedString> = col_names2.iter()
-                                    .map(|s| slint::SharedString::from(s.as_str()))
-                                    .collect();
-                                let col_model = slint::VecModel::from(cols);
-
-                                // Build row model
-                                let mut rows_vec = Vec::new();
-                                for cells in &row_data {
-                                    let mut rd = ResultRowData::default();
-                                    for (i, val) in cells.iter().enumerate() {
-                                        set_row_cell(&mut rd, i, val);
-                                    }
-                                    rows_vec.push(rd);
-                                }
-                                let row_model = slint::VecModel::from(rows_vec);
-
-                                let col_rc: std::rc::Rc<dyn slint::Model<Data = slint::SharedString>> =
-                                    std::rc::Rc::new(col_model);
-                                let row_rc: std::rc::Rc<dyn slint::Model<Data = ResultRowData>> =
-                                    std::rc::Rc::new(row_model);
-                                a.global::<AppState>().set_result_columns(col_rc.into());
-                                a.global::<AppState>().set_result_rows(row_rc.into());
+                                a.global::<AppState>().set_result_text(text_out.into());
                                 a.global::<AppState>().set_results_visible(true);
                                 a.global::<AppState>().set_status_text(
                                     format!("{row_count} rows — {elapsed}ms").into(),

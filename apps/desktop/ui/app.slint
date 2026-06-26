@@ -19,6 +19,7 @@ export global AppState {
     in-out property <string> current-sql: "SELECT @@VERSION";
     in-out property <[string]> result-columns;
     in-out property <[ResultRowData]> result-rows;
+    in-out property <string> result-text: "";
 }
 
 export component MainWindow inherits Window {
@@ -129,6 +130,7 @@ export component MainWindow inherits Window {
                     columns: AppState.result-columns;
                     rows: AppState.result-rows;
                     status: AppState.status-text;
+                    output-text: AppState.result-text;
                 }
             }
         }
