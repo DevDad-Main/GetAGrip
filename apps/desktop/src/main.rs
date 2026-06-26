@@ -191,13 +191,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let col_names2 = col_names.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(a) = weak.upgrade() {
-                                // Build Slint models on the UI thread
+                                // Build column model
                                 let cols: Vec<slint::SharedString> = col_names2.iter()
                                     .map(|s| slint::SharedString::from(s.as_str()))
                                     .collect();
-                                let col_model = std::rc::Rc::new(slint::VecModel::from(cols))
-                                    as std::rc::Rc<dyn slint::Model<Data = slint::SharedString>>;
+                                let col_model = slint::VecModel::from(cols);
 
+                                // Build row model
                                 let mut rows_vec = Vec::new();
                                 for cells in &row_data {
                                     let mut rd = ResultRowData::default();
@@ -206,11 +206,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                     rows_vec.push(rd);
                                 }
-                                let row_model = std::rc::Rc::new(slint::VecModel::from(rows_vec))
-                                    as std::rc::Rc<dyn slint::Model<Data = ResultRowData>>;
+                                let row_model = slint::VecModel::from(rows_vec);
 
-                                a.global::<AppState>().set_result_columns(slint::ModelRc::from(col_model));
-                                a.global::<AppState>().set_result_rows(slint::ModelRc::from(row_model));
+                                let col_rc: std::rc::Rc<dyn slint::Model<Data = slint::SharedString>> =
+                                    std::rc::Rc::new(col_model);
+                                let row_rc: std::rc::Rc<dyn slint::Model<Data = ResultRowData>> =
+                                    std::rc::Rc::new(row_model);
+                                a.global::<AppState>().set_result_columns(col_rc.into());
+                                a.global::<AppState>().set_result_rows(row_rc.into());
                                 a.global::<AppState>().set_results_visible(true);
                                 a.global::<AppState>().set_status_text(
                                     format!("{row_count} rows — {elapsed}ms").into(),
