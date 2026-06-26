@@ -173,12 +173,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let rows = result.rows.len();
                         tracing::info!("Query ok: {rows} rows in {elapsed}ms");
 
-                        // Show results panel
+                        // Build result data as plain Vecs (Send-safe)
+                        let col_names: Vec<String> = result.columns.iter()
+                            .map(|c| c.name.clone())
+                            .collect();
+                        let mut row_data = Vec::new();
+                        for row in &result.rows {
+                            let mut cells = Vec::new();
+                            for i in 0..result.columns.len() {
+                                cells.push(row.get(i).map(|v| v.to_string()).unwrap_or_default());
+                            }
+                            row_data.push(cells);
+                        }
+
                         let weak = app_weak2.clone();
-                        let _cols = result.columns.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
                         let row_count = rows;
+                        let col_names2 = col_names.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(a) = weak.upgrade() {
+                                // Build Slint models on the UI thread
+                                let cols: Vec<slint::SharedString> = col_names2.iter()
+                                    .map(|s| slint::SharedString::from(s.as_str()))
+                                    .collect();
+                                let col_model = std::rc::Rc::new(slint::VecModel::from(cols))
+                                    as std::rc::Rc<dyn slint::Model<Data = slint::SharedString>>;
+
+                                let mut rows_vec = Vec::new();
+                                for cells in &row_data {
+                                    let mut rd = ResultRowData::default();
+                                    for (i, val) in cells.iter().enumerate() {
+                                        set_row_cell(&mut rd, i, val);
+                                    }
+                                    rows_vec.push(rd);
+                                }
+                                let row_model = std::rc::Rc::new(slint::VecModel::from(rows_vec))
+                                    as std::rc::Rc<dyn slint::Model<Data = ResultRowData>>;
+
+                                a.global::<AppState>().set_result_columns(slint::ModelRc::from(col_model));
+                                a.global::<AppState>().set_result_rows(slint::ModelRc::from(row_model));
                                 a.global::<AppState>().set_results_visible(true);
                                 a.global::<AppState>().set_status_text(
                                     format!("{row_count} rows — {elapsed}ms").into(),
@@ -247,4 +279,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("GetAGrip window starting...");
     app.run()?;
     Ok(())
+}
+
+fn set_row_cell(row: &mut ResultRowData, idx: usize, val: &str) {
+    match idx {
+        0 => row.c0 = val.into(),
+        1 => row.c1 = val.into(),
+        2 => row.c2 = val.into(),
+        3 => row.c3 = val.into(),
+        4 => row.c4 = val.into(),
+        5 => row.c5 = val.into(),
+        _ => {}
+    }
 }

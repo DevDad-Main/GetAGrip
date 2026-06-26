@@ -91,6 +91,7 @@ export component EditorPanel {
     in-out property <string> editor-content: "/* GetAGrip SQL Editor */\n\nSELECT 1;";
     in-out property <string> cursor-position: "1:1";
     in-out property <bool> editor-modified: false;
+    in-out property <bool> has-connection: false;
     callback tab-selected(int);
     callback tab-closed(int);
     callback new-tab();
@@ -167,12 +168,25 @@ export component EditorPanel {
                 Text { text: root.cursor-position; font-size: 11px; color: #6c7086; vertical-alignment: center; }
                 Rectangle { }
                 Rectangle {
-                    border-radius: 4px; background: #cba6f7; height: 22px;
+                    border-radius: 4px;
+                    background: root.has-connection ? #cba6f7 : #45475a;
+                    height: 22px;
                     HorizontalLayout {
                         padding-left: 14px; padding-right: 14px; padding-top: 2px; padding-bottom: 2px;
-                        Text { text: "▶ Run"; font-size: 11px; font-weight: 600; color: #1e1e2e; vertical-alignment: center; }
+                        Text {
+                            text: "▶ Run";
+                            font-size: 11px; font-weight: 600;
+                            color: root.has-connection ? #1e1e2e : #6c7086;
+                            vertical-alignment: center;
+                        }
                     }
-                    TouchArea { clicked => { root.execute-query(root.editor-content); } }
+                    TouchArea {
+                        clicked => {
+                            if root.has-connection {
+                                root.execute-query(root.editor-content);
+                            }
+                        }
+                    }
                 }
             }
         }

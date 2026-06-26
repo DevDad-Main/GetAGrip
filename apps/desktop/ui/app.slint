@@ -1,4 +1,4 @@
-import { StatusBar, Sidebar, EditorPanel, ResultsPanel, CommandPalette } from "components.slint";
+import { StatusBar, Sidebar, EditorPanel, ResultsPanel, CommandPalette, ResultRowData } from "components.slint";
 
 export global AppState {
     in-out property <bool> sidebar-visible: true;
@@ -16,6 +16,9 @@ export global AppState {
     callback toggle-results();
     callback execute-command(string);
     callback execute-query(string);
+    in-out property <string> current-sql: "SELECT @@VERSION";
+    in-out property <[string]> result-columns;
+    in-out property <[ResultRowData]> result-rows;
 }
 
 export component MainWindow inherits Window {
@@ -50,12 +53,24 @@ export component MainWindow inherits Window {
                 }
 
                 Rectangle {
-                    border-radius: 4px; background: #a6e3a1;
+                    border-radius: 4px;
+                    background: AppState.active-connection == "" ? #45475a : #a6e3a1;
                     HorizontalLayout {
                         padding-left: 14px; padding-right: 14px; padding-top: 4px; padding-bottom: 4px;
-                        Text { text: "▶ Run (Ctrl+Enter)"; font-size: 12px; font-weight: 600; color: #1e1e2e; vertical-alignment: center; }
+                        Text {
+                            text: AppState.active-connection == "" ? "▶ Not Connected" : "▶ Run (Ctrl+Enter)";
+                            font-size: 12px; font-weight: 600;
+                            color: AppState.active-connection == "" ? #6c7086 : #1e1e2e;
+                            vertical-alignment: center;
+                        }
                     }
-                    TouchArea { clicked => { AppState.execute-query("SELECT @@VERSION"); } }
+                    TouchArea {
+                        clicked => {
+                            if AppState.active-connection != "" {
+                                AppState.execute-query(AppState.current-sql);
+                            }
+                        }
+                    }
                 }
 
                 Rectangle { width: 8px; }
@@ -101,12 +116,18 @@ export component MainWindow inherits Window {
             VerticalLayout {
                 EditorPanel {
                     width: 100%;
+                    has-connection: AppState.active-connection != "";
+                    editor-content <=> AppState.current-sql;
                     execute-query(sql) => { AppState.execute-query(sql); }
                 }
 
                 if AppState.results-visible : Rectangle {
                     height: 200px; background: #1e1e2e;
-                    ResultsPanel { width: 100%; height: 100%; }
+                    ResultsPanel {
+                        width: 100%; height: 100%;
+                        columns: AppState.result-columns;
+                        rows: AppState.result-rows;
+                    }
                 }
             }
         }
