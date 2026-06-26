@@ -6,6 +6,7 @@ export global AppState {
     in-out property <bool> command-palette-open: false;
     in-out property <bool> connect-dialog-open: false;
     in-out property <string> active-connection: "";
+    in-out property <string> connection-name: "";
     in-out property <string> connection-status: "● Disconnected";
     in-out property <string> status-text: "Ready";
     callback open-command-palette();
@@ -48,9 +49,9 @@ export component MainWindow inherits Window {
             Rectangle { HorizontalLayout { padding-left: 2px; padding-right: 2px; padding-top: 9px; padding-bottom: 9px; Text { text: "View"; font-size: 12px; color: #e6e6eb; vertical-alignment: center; } } TouchArea { clicked => { AppState.toggle-sidebar(); } } }
             // Spacer — pushes everything after it to the right
             Rectangle { horizontal-stretch: 1; }
-            Rectangle { border-radius: 3px; background: #11101a; HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: AppState.active-connection == "" ? "● Not Connected" : "● " + AppState.active-connection; font-size: 12px; vertical-alignment: center; color: AppState.active-connection == "" ? #6e6e7d : #a5d6a7; } } TouchArea { clicked => { AppState.connect-dialog-open = true; } } }
+            Rectangle { border-radius: 3px; background: #11101a; HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: AppState.connection-name == "" ? "● Not Connected" : "● " + AppState.connection-name; font-size: 12px; vertical-alignment: center; color: AppState.connection-name == "" ? #6e6e7d : #a5d6a7; } } TouchArea { clicked => { AppState.connect-dialog-open = true; } } }
             Rectangle { width: 4px; }
-            Rectangle { border-radius: 3px; background: AppState.active-connection == "" ? #38364a : #a5d6a7; HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 4px; padding-bottom: 4px; spacing: 3px; if AppState.active-connection == "" : Image { source: @image-url("icons/play-off.svg"); width: 10px; height: 10px; } if AppState.active-connection != "" : Image { source: @image-url("icons/play.svg"); width: 10px; height: 10px; } Text { text: "Run"; font-size: 11px; font-weight: 600; color: AppState.active-connection == "" ? #6e6e7d : #181724; vertical-alignment: center; } } TouchArea { clicked => { if AppState.active-connection != "" { AppState.execute-query(AppState.current-sql); } } } }
+            Rectangle { border-radius: 3px; background: AppState.connection-name == "" ? #38364a : #a5d6a7; HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 4px; padding-bottom: 4px; spacing: 3px; if AppState.connection-name == "" : Image { source: @image-url("icons/play-off.svg"); width: 10px; height: 10px; } if AppState.connection-name != "" : Image { source: @image-url("icons/play.svg"); width: 10px; height: 10px; } Text { text: "Run"; font-size: 11px; font-weight: 600; color: AppState.connection-name == "" ? #6e6e7d : #181724; vertical-alignment: center; } } TouchArea { clicked => { if AppState.connection-name != "" { AppState.execute-query(AppState.current-sql); } } } }
             Rectangle { width: 4px; }
             Rectangle { border-radius: 3px; background: #11101a; HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: "Ctrl+P"; font-size: 11px; color: #6e6e7d; vertical-alignment: center; } } TouchArea { clicked => { AppState.open-command-palette(); } } }
             Rectangle { border-radius: 3px; background: #11101a; HorizontalLayout { padding-left: 4px; padding-right: 4px; padding-top: 9px; padding-bottom: 9px; Text { text: "☰"; font-size: 14px; color: #e6e6eb; vertical-alignment: center; } } TouchArea { clicked => { AppState.toggle-sidebar(); } } }
@@ -91,7 +92,7 @@ export component MainWindow inherits Window {
                 height: AppState.results-visible ? 60% : 100%;
                 EditorPanel {
                     width: 100%; height: 100%;
-                    has-connection: AppState.active-connection != "";
+                    has-connection: AppState.connection-name != "";
                     editor-content <=> AppState.current-sql;
                     tabs: AppState.editor-tabs;
                     active-tab: AppState.active-tab-index;

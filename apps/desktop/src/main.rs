@@ -183,6 +183,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 a.global::<AppState>().set_sidebar_items(m.into());
                                 a.global::<AppState>().set_sidebar_visible(true);
                                 a.global::<AppState>().set_active_connection(url2.into());
+                                a.global::<AppState>().set_connection_name(conn_name.clone().into());
                                 a.global::<AppState>().set_connection_status("● Connected".into());
                                 a.global::<AppState>().set_status_text(format!("{ver} — ready").into());
                             }
@@ -213,122 +214,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    // ---- Connect (legacy) ----
+    // ---- Connect (opens dialog) ----
     {
-        let model = model.clone();
         let app_weak = app.as_weak();
-        let driver2 = driver.clone();
         app.global::<AppState>().on_connect(move || {
-            let connecting = model.lock().unwrap().connecting.clone();
-            if connecting.swap(true, std::sync::atomic::Ordering::SeqCst) { return; }
-
-            let url = "sqlserver://sa:Str0ngP4ssw0rd!@localhost:1433?trustServerCertificate=true";
-            let handle = tokio::runtime::Handle::current();
-            let driver = driver2.clone();
-            let model2 = model.clone();
-            let app_weak2 = app_weak.clone();
-            let conn_flag = connecting.clone();
-            let url_owned = url.to_string();
-
             if let Some(a) = app_weak.upgrade() {
-                a.global::<AppState>().set_status_text("Connecting...".into());
+                a.global::<AppState>().set_connect_dialog_open(true);
             }
-
-            handle.spawn(async move {
-                match driver.connect(&url_owned).await {
-                    Ok(mut conn) => {
-                        // Get server info + list databases for sidebar
-                        let info = conn.info().await.ok();
-                        let version = info.map(|i| i.product_name).unwrap_or_default();
-
-                        // Introspect databases
-                        let db_names = match conn.execute("SELECT name FROM sys.databases ORDER BY name").await {
-                            Ok(r) => r.rows.iter()
-                                .filter_map(|row| row.get(0).map(|v| v.to_string()))
-                                .collect::<Vec<_>>(),
-                            Err(e) => { tracing::warn!("Introspection failed: {e}"); vec![] }
-                        };
-
-                        tracing::info!("Connected to {version}! {} databases found.", db_names.len());
-
-                        let weak = app_weak2.clone();
-                        let url2 = url_owned.clone();
-                        let ver = version;
-                        // Build DataGrip-style sidebar tree
-                        let mut sidebar_items: Vec<TreeItem> = vec![
-                            TreeItem {
-                                label: "localhost:1433".into(), kind: "server".into(),
-                                depth: 0, expanded: true, has_children: true, icon: "".into(),
-                            }
-                        ];
-                        // Run count queries for each database so labels show immediately
-                        let mut db_labels: Vec<(String, i64, i64)> = Vec::new();
-                        for db in &db_names {
-                            let tbl_count_sql = format!("SELECT COUNT(*) FROM [{db}].INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'");
-                            let view_count_sql = format!("SELECT COUNT(*) FROM [{db}].INFORMATION_SCHEMA.VIEWS");
-                            let mut tc = 0i64;
-                            let mut vc = 0i64;
-                            if let Ok(r) = conn.execute(&tbl_count_sql).await {
-                                if let Some(row) = r.rows.first() {
-                                    tc = row.get(0).and_then(|v| match v {
-                                        getagrip_database::driver::Value::Int(i) => Some(*i),
-                                        _ => None,
-                                    }).unwrap_or(0);
-                                }
-                            }
-                            if let Ok(r) = conn.execute(&view_count_sql).await {
-                                if let Some(row) = r.rows.first() {
-                                    vc = row.get(0).and_then(|v| match v {
-                                        getagrip_database::driver::Value::Int(i) => Some(*i),
-                                        _ => None,
-                                    }).unwrap_or(0);
-                                }
-                            }
-                            db_labels.push((db.clone(), tc, vc));
-                        }
-
-                        for (db, tc, vc) in &db_labels {
-                            let label = if *tc > 0 || *vc > 0 {
-                                format!("{db}  ({tc} tables, {vc} views)")
-                            } else {
-                                db.clone()
-                            };
-                            sidebar_items.push(TreeItem {
-                                label: label.into(), kind: "database".into(),
-                                depth: 1, expanded: false, has_children: true, icon: "".into(),
-                            });
-                        }
-                        let sidebar_items2 = sidebar_items.clone();
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(a) = weak.upgrade() {
-                                let m = std::rc::Rc::new(slint::VecModel::from(sidebar_items2));
-                                a.global::<AppState>().set_sidebar_items(m.into());
-                                a.global::<AppState>().set_sidebar_visible(true);
-                                a.global::<AppState>().set_active_connection(url2.into());
-                                a.global::<AppState>().set_connection_status("● Connected".into());
-                                a.global::<AppState>().set_status_text(format!("{ver} — ready").into());
-                            }
-                        });
-                        {
-                            let mut m = model2.lock().unwrap();
-                            m.sidebar_items = sidebar_items;
-                            m.connection_url = Some(url_owned);
-                        }
-                        conn_flag.store(false, std::sync::atomic::Ordering::SeqCst);
-                    }
-                    Err(e) => {
-                        conn_flag.store(false, std::sync::atomic::Ordering::SeqCst);
-                        let weak = app_weak2.clone();
-                        let msg = format!("{e}");
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(a) = weak.upgrade() {
-                                a.global::<AppState>().set_connection_status("● Error".into());
-                                a.global::<AppState>().set_status_text(msg.into());
-                            }
-                        });
-                    }
-                }
-            });
         });
     }
 
@@ -342,6 +234,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             m.connecting.store(false, std::sync::atomic::Ordering::SeqCst);
             if let Some(a) = app_weak.upgrade() {
                 a.global::<AppState>().set_active_connection("".into());
+                a.global::<AppState>().set_connection_name("".into());
                 a.global::<AppState>().set_connection_status("● Disconnected".into());
                 a.global::<AppState>().set_status_text("Disconnected".into());
             }
