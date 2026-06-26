@@ -26,6 +26,7 @@ export global AppState {
     in-out property <[TabData]> editor-tabs;
     in-out property <int> active-tab-index: 0;
     callback new-tab();
+    callback close-tab(int);
 }
 
 export component MainWindow inherits Window {
@@ -98,6 +99,7 @@ export component MainWindow inherits Window {
                     active-tab: AppState.active-tab-index;
                     execute-query(sql) => { AppState.execute-query(sql); }
                     tab-selected(idx) => { AppState.active-tab-index = idx; }
+                    tab-closed(idx) => { AppState.close-tab(idx); }
                     new-tab => { AppState.new-tab(); }
                 }
             }

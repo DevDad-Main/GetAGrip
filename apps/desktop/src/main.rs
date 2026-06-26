@@ -73,6 +73,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_weak = app.as_weak();
     app.global::<AppState>().on_new_query(move || { let _ = app_weak; });
 
+    // ---- Close Tab ----
+    {
+        let model = model.clone();
+        let app_weak = app.as_weak();
+        app.global::<AppState>().on_close_tab(move |idx: i32| {
+            let mut m = model.lock().unwrap();
+            if m.tabs.len() <= 1 { return; } // keep at least 1 tab
+            let idx = idx as usize;
+            if idx < m.tabs.len() {
+                m.tabs.remove(idx);
+                let tabs_data: Vec<TabData> = m.tabs.iter().map(|t| TabData { title: t.title.clone().into(), is_query: true, modified: t.modified }).collect();
+                let active = if idx == 0 { 0 } else { idx.saturating_sub(1) } as i32;
+                if let Some(a) = app_weak.upgrade() {
+                    let tab_model = std::rc::Rc::new(slint::VecModel::from(tabs_data));
+                    a.global::<AppState>().set_editor_tabs(tab_model.into());
+                    a.global::<AppState>().set_active_tab_index(active);
+                    if let Some(tab) = m.tabs.get(active as usize) {
+                        a.global::<AppState>().set_current_sql(tab.sql.clone().into());
+                    }
+                }
+            }
+        });
+    }
+
     // ---- New Tab ----
     {
         let model = model.clone();
