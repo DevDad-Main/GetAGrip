@@ -109,6 +109,12 @@ export component MainWindow inherits Window {
     }
 
     // Overlays
+    // Backdrop to dismiss command palette on click-outside
+    if AppState.command-palette-open : TouchArea {
+        x: 0px; y: 0px; width: root.width; height: root.height;
+        clicked => { AppState.close-command-palette(); }
+    }
+
     if AppState.command-palette-open : CommandPalette {
         x: (root.width - 480px) / 2; y: (root.height - 320px) / 2;
         width: 480px; height: 320px;
@@ -121,7 +127,6 @@ export component MainWindow inherits Window {
             { id: "new-query", label: "New Query Tab", icon: "+", shortcut: "Ctrl+N" },
         ];
         select-command(id) => { AppState.execute-command(id); }
-        dismissed => { AppState.close-command-palette(); }
     }
 
     if AppState.connect-dialog-open : ConnectDialog {
