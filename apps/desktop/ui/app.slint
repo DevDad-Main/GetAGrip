@@ -32,10 +32,9 @@ export component MainWindow inherits Window {
     background: #1e1e2e;
 
     VerticalLayout {
-        // Menu bar (fixed height)
+        // Menu bar
         Rectangle {
             height: 32px; background: #181825;
-            vertical-stretch: 0;
             HorizontalLayout {
                 padding-left: 8px; padding-right: 8px; spacing: 2px;
 
@@ -95,27 +94,14 @@ export component MainWindow inherits Window {
                     }
                     TouchArea { clicked => { AppState.toggle-sidebar(); } }
                 }
-
-                Rectangle { width: 1px; background: #45475a; }
-
-                Rectangle {
-                    border-radius: 4px; background: #181825;
-                    HorizontalLayout {
-                        padding-left: 14px; padding-right: 14px; padding-top: 4px; padding-bottom: 4px;
-                        Text { text: "Ctrl+P  Search..."; font-size: 11px; color: #6c7086; vertical-alignment: center; }
-                    }
-                    TouchArea { clicked => { AppState.open-command-palette(); } }
-                }
             }
         }
 
-        // Main content (fills remaining space)
+        // Main content area — fills remaining space naturally
         HorizontalLayout {
-            vertical-stretch: 1;
+            // Sidebar (0px when hidden, 260px when visible)
             Rectangle {
                 width: AppState.sidebar-visible ? 260px : 0px;
-                background: #181825;
-                vertical-stretch: 1;
                 clip: true;
                 Sidebar {
                     width: 260px; height: 100%;
@@ -123,30 +109,27 @@ export component MainWindow inherits Window {
                 }
             }
 
+            // Center column
             VerticalLayout {
+                // Editor fills remaining space after results
                 EditorPanel {
-                    vertical-stretch: 1;
                     has-connection: AppState.active-connection != "";
                     editor-content <=> AppState.current-sql;
                     execute-query(sql) => { AppState.execute-query(sql); }
                 }
 
+                // Results panel at bottom of center column
                 ResultsPanel {
                     height: AppState.results-visible ? 200px : 28px;
                     has-data: AppState.results-visible;
-                    columns: AppState.result-columns;
-                    rows: AppState.result-rows;
                     status: AppState.status-text;
                     output-text: AppState.result-text;
                 }
             }
         }
 
-        // Status bar (fixed at bottom)
-        StatusBar {
-            height: 24px; width: 100%;
-            vertical-stretch: 0;
-        }
+        // Status bar pinned to the bottom
+        StatusBar { height: 24px; }
     }
 
     if AppState.command-palette-open : CommandPalette {
@@ -154,5 +137,4 @@ export component MainWindow inherits Window {
         y: (root.height - 400px) / 2;
         width: 560px; height: 400px;
     }
-
 }
