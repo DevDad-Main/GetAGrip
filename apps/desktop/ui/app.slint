@@ -46,7 +46,7 @@ export component MainWindow inherits Window {
             Rectangle { HorizontalLayout { padding-left: 10px; padding-right: 10px; padding-top: 6px; padding-bottom: 6px; Text { text: "View"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { AppState.toggle-sidebar(); } } }
             Rectangle { width: 16px; }
             Rectangle { border-radius: 4px; background: #181825; HorizontalLayout { padding-left: 10px; padding-right: 10px; padding-top: 6px; padding-bottom: 6px; Text { text: AppState.active-connection == "" ? "● Not Connected" : "● " + AppState.active-connection; font-size: 12px; vertical-alignment: center; color: AppState.active-connection == "" ? #6c7086 : #a6e3a1; } } TouchArea { clicked => { AppState.connect-dialog-open = true; } } }
-            Rectangle { border-radius: 4px; background: AppState.active-connection == "" ? #45475a : #a6e3a1; HorizontalLayout { padding-left: 14px; padding-right: 14px; padding-top: 6px; padding-bottom: 6px; Text { text: AppState.active-connection == "" ? "▶ Not Connected" : "▶ Run"; font-size: 12px; font-weight: 600; color: AppState.active-connection == "" ? #6c7086 : #1e1e2e; vertical-alignment: center; } } TouchArea { clicked => { if AppState.active-connection != "" { AppState.execute-query(AppState.current-sql); } } } }
+            Rectangle { border-radius: 4px; background: AppState.active-connection == "" ? #45475a : #45475a; HorizontalLayout { padding-left: 14px; padding-right: 14px; padding-top: 6px; padding-bottom: 6px; Text { text: AppState.active-connection == "" ? "▶ Not Connected" : "▶ Run"; font-size: 12px; font-weight: 600; color: AppState.active-connection == "" ? #6c7086 : #a6e3a1; vertical-alignment: center; } } TouchArea { clicked => { if AppState.active-connection != "" { AppState.execute-query(AppState.current-sql); } } } }
             Rectangle { width: 4px; }
             Rectangle { border-radius: 4px; background: #181825; HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: "☰"; font-size: 14px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { AppState.toggle-sidebar(); } } }
         }
@@ -55,6 +55,8 @@ export component MainWindow inherits Window {
     // ---- Status bar ----
     StatusBar {
         y: root.height - 24px; x: 0px; width: root.width; height: 24px;
+        left-text: AppState.connection-status;
+        center-text: AppState.status-text;
     }
 
     // ---- Sidebar ----
