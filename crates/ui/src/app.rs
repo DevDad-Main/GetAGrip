@@ -167,16 +167,142 @@ impl App {
                 self.needs_redraw = true;
             }
 
-            // ── Editor text input ─────────────────────────────────
+            // ── Editor/Explorer input ────────────────────────────
             _ => {
-                if *self.state.focused_panel.read() == FocusedPanel::Editor {
+                let focus = *self.state.focused_panel.read();
+                if focus == FocusedPanel::Editor {
                     if let KeyCode::Char(ch) = key_event.code {
                         self.insert_char(ch);
                     } else {
                         self.handle_editor_key(key_event);
                     }
+                } else if focus == FocusedPanel::Explorer {
+                    self.handle_explorer_key(key_event);
                 }
             }
+        }
+    }
+
+    /// Handle keys when the explorer sidebar is focused.
+    fn handle_explorer_key(&mut self, key_event: crossterm::event::KeyEvent) {
+        use crossterm::event::KeyCode;
+        let mut explorer = self.state.explorer.write();
+        let max = explorer.items.len().saturating_sub(1);
+
+        match key_event.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                explorer.selected = explorer.selected.saturating_sub(1);
+                drop(explorer);
+                self.needs_redraw = true;
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if explorer.selected < max {
+                    explorer.selected += 1;
+                }
+                drop(explorer);
+                self.needs_redraw = true;
+            }
+            KeyCode::Enter => {
+                let idx = explorer.selected;
+                if idx < explorer.items.len() {
+                    let item = explorer.items[idx].clone();
+                    drop(explorer);
+                    self.handle_explorer_enter_item(&item, idx);
+                }
+            }
+            KeyCode::Char(' ') => {
+                let idx = explorer.selected;
+                if idx < explorer.items.len() {
+                    let item = &mut explorer.items[idx];
+                    if matches!(item.kind,
+                        crate::state::ExplorerItemKind::Connection
+                        | crate::state::ExplorerItemKind::Database
+                        | crate::state::ExplorerItemKind::Schema
+                    ) {
+                        item.expanded = !item.expanded;
+                    }
+                }
+                drop(explorer);
+                self.needs_redraw = true;
+            }
+            _ => {}
+        }
+    }
+
+    /// Handle Enter on an explorer item: connect or expand.
+    fn handle_explorer_enter_item(&mut self, item: &crate::state::ExplorerItem, idx: usize) {
+        let mut explorer = self.state.explorer.write();
+        match item.kind {
+            crate::state::ExplorerItemKind::Connection => {
+                if item.expanded {
+                    explorer.items[idx].expanded = false;
+                    self.collapse_explorer_node(&mut explorer, idx);
+                } else {
+                    if let Some(conn_id) = item.connection_id {
+                        self.state.notify(
+                            &format!("Connecting to {}...", item.label),
+                            crate::state::NotificationLevel::Info,
+                        );
+                        explorer.items[idx].expanded = true;
+                        self.expand_connection_node(&mut explorer, idx, conn_id);
+                    }
+                }
+            }
+            crate::state::ExplorerItemKind::Schema | crate::state::ExplorerItemKind::Table => {
+                if !item.expanded {
+                    explorer.items[idx].expanded = true;
+                } else {
+                    explorer.items[idx].expanded = false;
+                    self.collapse_explorer_node(&mut explorer, idx);
+                }
+            }
+            _ => {}
+        }
+        self.needs_redraw = true;
+    }
+
+    fn collapse_explorer_node(&self, explorer: &mut crate::state::ExplorerState, idx: usize) {
+        let depth = explorer.items[idx].depth;
+        let mut remove_count = 0;
+        for i in (idx + 1)..explorer.items.len() {
+            if explorer.items[i].depth <= depth {
+                break;
+            }
+            remove_count += 1;
+        }
+        if remove_count > 0 {
+            explorer.items.drain((idx + 1)..=(idx + remove_count));
+        }
+    }
+
+    fn expand_connection_node(&self, explorer: &mut crate::state::ExplorerState, idx: usize, _conn_id: tg_core::types::connection::ConnectionId) {
+        let depth = explorer.items[idx].depth + 1;
+        let children = vec![
+            crate::state::ExplorerItem {
+                label: "Tables".into(),
+                depth,
+                expanded: false,
+                kind: crate::state::ExplorerItemKind::Header,
+                connection_id: None, database: None, schema: None, table: None,
+            },
+            crate::state::ExplorerItem {
+                label: "Views".into(),
+                depth,
+                expanded: false,
+                kind: crate::state::ExplorerItemKind::Header,
+                connection_id: None, database: None, schema: None, table: None,
+            },
+            crate::state::ExplorerItem {
+                label: "Connect to load schema...".into(),
+                depth: depth + 1,
+                expanded: false,
+                kind: crate::state::ExplorerItemKind::Column,
+                connection_id: None, database: None, schema: None, table: None,
+            },
+        ];
+        let insert_at = idx + 1;
+        for (i, child) in children.into_iter().enumerate() {
+            explorer.items.insert(insert_at + i, child);
         }
     }
 
@@ -189,19 +315,32 @@ impl App {
                 *self.state.command_palette_open.write() = false;
                 self.needs_redraw = true;
             }
+            KeyCode::Up => {
+                let mut sel = self.state.palette_selected.write();
+                *sel = sel.saturating_sub(1);
+                self.needs_redraw = true;
+            }
+            KeyCode::Down => {
+                let mut sel = self.state.palette_selected.write();
+                *sel += 1;
+                self.needs_redraw = true;
+            }
             KeyCode::Enter => {
                 let query = self.state.command_palette_query.read().clone();
                 *self.state.command_palette_open.write() = false;
+                *self.state.palette_selected.write() = 0;
                 self.execute_palette_command(&query);
                 self.needs_redraw = true;
             }
             KeyCode::Backspace => {
                 let mut q = self.state.command_palette_query.write();
                 q.pop();
+                *self.state.palette_selected.write() = 0;
                 self.needs_redraw = true;
             }
             KeyCode::Char(ch) => {
                 self.state.command_palette_query.write().push(ch);
+                *self.state.palette_selected.write() = 0;
                 self.needs_redraw = true;
             }
             _ => {}
@@ -268,6 +407,7 @@ impl App {
                         tab.connection_id = Some(id);
                     }
                 }
+                self.refresh_explorer();
             }
             Err(e) => {
                 self.state.notify(
@@ -356,8 +496,41 @@ impl App {
         *open = !*open;
         if *open {
             self.state.command_palette_query.write().clear();
+            *self.state.palette_selected.write() = 0;
         }
         self.needs_redraw = true;
+    }
+
+    fn refresh_explorer(&self) {
+        let conns = self.state.connection_manager.list_connections().unwrap_or_default();
+        let mut explorer = self.state.explorer.write();
+        explorer.items.clear();
+
+        if conns.is_empty() {
+            return;
+        }
+
+        for conn in &conns {
+            let depth = 0;
+            let status_icon = match conn.status {
+                tg_core::types::connection::ConnectionStatus::Connected => "●",
+                _ => "○",
+            };
+            explorer.items.push(crate::state::ExplorerItem {
+                label: format!("{status_icon} {}", conn.name),
+                depth,
+                expanded: false,
+                kind: crate::state::ExplorerItemKind::Connection,
+                connection_id: Some(conn.id),
+                database: conn.database.clone(),
+                schema: conn.schema.clone(),
+                table: None,
+            });
+        }
+
+        if explorer.selected >= explorer.items.len() {
+            explorer.selected = explorer.items.len().saturating_sub(1);
+        }
     }
 
     /// Handle editor-specific key events.

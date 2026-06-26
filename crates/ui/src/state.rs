@@ -28,6 +28,10 @@ pub struct AppState {
     pub command_palette_open: parking_lot::RwLock<bool>,
     /// Command palette query text.
     pub command_palette_query: parking_lot::RwLock<String>,
+    /// Command palette selected index.
+    pub palette_selected: parking_lot::RwLock<usize>,
+    /// Explorer tree state.
+    pub explorer: parking_lot::RwLock<ExplorerState>,
     /// Current notification message.
     pub notification: parking_lot::RwLock<Option<Notification>>,
 }
@@ -92,6 +96,55 @@ pub enum NotificationLevel {
     Error,
 }
 
+/// Explorer tree state for the sidebar.
+#[derive(Clone, Debug)]
+pub struct ExplorerState {
+    /// The flat list of visible tree items.
+    pub items: Vec<ExplorerItem>,
+    /// Currently selected index.
+    pub selected: usize,
+}
+
+/// A single node in the explorer tree.
+#[derive(Clone, Debug)]
+pub struct ExplorerItem {
+    /// Display label.
+    pub label: String,
+    /// Indentation depth (0 = root).
+    pub depth: u8,
+    /// Whether this node is expanded.
+    pub expanded: bool,
+    /// The kind of item.
+    pub kind: ExplorerItemKind,
+    /// Associated connection ID (for connection nodes).
+    pub connection_id: Option<tg_core::types::connection::ConnectionId>,
+    /// Database name (for schema/table nodes).
+    pub database: Option<String>,
+    /// Schema name.
+    pub schema: Option<String>,
+    /// Table name (for column nodes).
+    pub table: Option<String>,
+}
+
+/// Kind of explorer tree item.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExplorerItemKind {
+    /// A connection entry.
+    Connection,
+    /// A database within a connection.
+    Database,
+    /// A schema.
+    Schema,
+    /// A table.
+    Table,
+    /// A view.
+    View,
+    /// A column.
+    Column,
+    /// A section header.
+    Header,
+}
+
 impl AppState {
     /// Create a new application state.
     ///
@@ -132,6 +185,11 @@ impl AppState {
             active_tab: parking_lot::RwLock::new(Some(tab_id)),
             command_palette_open: parking_lot::RwLock::new(false),
             command_palette_query: parking_lot::RwLock::new(String::new()),
+            palette_selected: parking_lot::RwLock::new(0),
+            explorer: parking_lot::RwLock::new(ExplorerState {
+                items: Vec::new(),
+                selected: 0,
+            }),
             notification: parking_lot::RwLock::new(None),
         })
     }

@@ -97,9 +97,11 @@ pub fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState, theme: &T
     let fg = theme_color(&theme.palette.foreground);
     let dim = theme_color(&theme.palette.bright_black);
     let accent = theme_color(&theme.palette.blue);
+    let sel_bg = theme_color(&theme.palette.selection);
+    let green = theme_color(&theme.palette.green);
 
     let block = Block::default()
-        .title(" Explorer ")
+        .title(if is_focused { " Explorer [Alt+3] " } else { " Explorer " })
         .borders(Borders::ALL)
         .style(Style::default().bg(bg).fg(fg))
         .border_style(if is_focused {
@@ -108,61 +110,72 @@ pub fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState, theme: &T
             Style::default().fg(dim)
         });
 
-    let sidebar_split = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage(40),
-            Constraint::Percentage(60),
-        ])
-        .split(block.inner(area));
-
-    // Connections panel
-    let conn_block = Block::default()
-        .title(" Connections ")
-        .borders(Borders::BOTTOM);
-
-    // Build connection list from the connection manager
-    let conns = state.connection_manager.list_connections().unwrap_or_default();
-    let mut conn_items: Vec<ListItem> = if conns.is_empty() {
-        vec![
-            "  No connections".into(),
-            "".into(),
-            "  Press Ctrl+K then type:".into(),
-            "  /connect <url>".into(),
-            "".into(),
-            "  e.g.:".into(),
-            "  /connect postgres://user@host/db".into(),
-            "  /connect sqlserver://user@host/db".into(),
-        ]
-    } else {
-        conns.iter().map(|c| {
-            let status = match c.status {
-                tg_core::types::connection::ConnectionStatus::Connected => "●",
-                _ => "○",
-            };
-            format!("  {status} {} ({})", c.name, c.kind).into()
-        }).collect()
-    };
-    let conn_list = List::new(conn_items);
-
-    frame.render_widget(conn_block, sidebar_split[0]);
-    frame.render_widget(conn_list, sidebar_split[0].inner(Margin::new(1, 0)));
-
-    // Object explorer tree
-    let explorer_block = Block::default()
-        .title(" Database Explorer ")
-        .borders(Borders::NONE);
-
-    let tree_items: Vec<ListItem> = vec![
-        "  Connect to a database".into(),
-        "  to browse objects".into(),
-    ];
-    let tree = List::new(tree_items);
-
-    frame.render_widget(explorer_block, sidebar_split[1]);
-    frame.render_widget(tree, sidebar_split[1].inner(Margin::new(1, 0)));
-
+    let inner = block.inner(area);
     frame.render_widget(block, area);
+
+    // Build tree items from explorer state
+    let explorer = state.explorer.read();
+    let items = &explorer.items;
+    let selected = explorer.selected;
+
+    // If no items, show help
+    if items.is_empty() {
+        let help_lines: Vec<Line> = vec![
+            Line::from(""),
+            Line::from(Span::styled("  Ctrl+K → /connect <url>", Style::default().fg(green))),
+            Line::from(""),
+            Line::from(Span::styled("  e.g.:", Style::default().fg(dim))),
+            Line::from(Span::styled("  /connect postgres://user@host/db", Style::default().fg(dim))),
+            Line::from(Span::styled("  /connect sqlserver://user@host/db", Style::default().fg(dim))),
+            Line::from(""),
+            Line::from(Span::styled("  ↓/↑ navigate  Enter expand/connect", Style::default().fg(dim))),
+        ];
+        frame.render_widget(Paragraph::new(help_lines).style(Style::default().fg(fg)), inner);
+        return;
+    }
+
+    // Render visible items with scroll
+    let visible_height = inner.height as usize;
+    let scroll = selected.saturating_sub(visible_height.saturating_sub(3));
+
+    let rendered_items: Vec<Line> = items
+        .iter()
+        .enumerate()
+        .skip(scroll)
+        .take(visible_height)
+        .map(|(i, item)| {
+            let indent = "  ".repeat(item.depth as usize);
+            let expand_icon = match item.kind {
+                crate::state::ExplorerItemKind::Connection
+                | crate::state::ExplorerItemKind::Database
+                | crate::state::ExplorerItemKind::Schema => {
+                    if item.expanded { " " } else { " " }
+                }
+                _ => "  ",
+            };
+            let icon = match item.kind {
+                crate::state::ExplorerItemKind::Connection => " ", // nf-fa-plug / database
+                crate::state::ExplorerItemKind::Database => " ",    // nf-dev-database
+                crate::state::ExplorerItemKind::Schema => " ",      // nf-fa-folder
+                crate::state::ExplorerItemKind::Table => " ",       // nf-fa-table
+                crate::state::ExplorerItemKind::View => " ",        // nf-fa-eye
+                crate::state::ExplorerItemKind::Column => " ",      // nf-fa-file
+                crate::state::ExplorerItemKind::Header => "──",
+            };
+            let text = format!("{indent}{expand_icon}{icon} {}", item.label);
+
+            if i == selected {
+                Line::from(Span::styled(text, Style::default().fg(fg).bg(sel_bg)))
+            } else {
+                Line::from(Span::styled(text, Style::default().fg(fg)))
+            }
+        })
+        .collect();
+
+    frame.render_widget(
+        Paragraph::new(rendered_items),
+        inner,
+    );
 }
 
 /// Render the query editor with tabs.
@@ -350,54 +363,101 @@ pub fn render_status_bar(frame: &mut Frame, area: Rect, state: &AppState, theme:
     frame.render_widget(bar, area);
 }
 
-/// Render the command palette overlay.
+/// Render the command palette overlay with fuzzy suggestions.
 pub fn render_command_palette(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
-    let query = state.command_palette_query.read();
+    let query = state.command_palette_query.read().to_lowercase();
+    let selected = *state.palette_selected.read();
     let bg = hex_color(&theme.semantic.command_palette_bg);
     let fg = theme_color(&theme.palette.foreground);
-    let sel = hex_color(&theme.semantic.command_palette_selected);
-    let accent = theme_color(&theme.palette.yellow);
     let dim = theme_color(&theme.palette.bright_black);
+    let accent = theme_color(&theme.palette.yellow);
+    let sel_bg = hex_color(&theme.semantic.command_palette_selected);
 
-    // Center the palette
-    let palette_width = 60u16.min(area.width - 4);
-    let palette_height = 12u16.min(area.height - 4);
+    // Available palette commands
+    let commands: Vec<(&str, &str, &str)> = vec![
+        ("/connect <url>",      "Add a database connection", "sqlserver://... postgres://..."),
+        ("/connect sqlite:<path>","Add a SQLite database",    "/connect sqlite:/data/app.db"),
+        ("help",                "Show help",                 ""),
+        ("Switch Theme...",     "Change the color theme",    ""),
+        ("Toggle Vim Mode",     "Enable/disable Vim keys",   ""),
+        ("New Tab",             "Open a new query tab",      "Ctrl+T"),
+        ("Close Tab",           "Close current tab",         "Ctrl+W"),
+        ("Execute Query",       "Run the current SQL",       "Ctrl+Enter"),
+        ("Format SQL",          "Format the current query",  ""),
+        ("Explain Query",       "Show execution plan",       ""),
+    ];
+
+    // Fuzzy filter
+    let filtered: Vec<&(&str, &str, &str)> = if query.is_empty() {
+        commands.iter().collect()
+    } else {
+        commands.iter().filter(|(name, desc, _)| {
+            name.to_lowercase().contains(&query) || desc.to_lowercase().contains(&query)
+        }).collect()
+    };
+
+    let palette_height = (filtered.len() + 4).min(16) as u16;
+    let palette_width = 65u16.min(area.width - 4);
     let palette_x = (area.width - palette_width) / 2;
-    let palette_y = (area.height - palette_height) / 3;
+    let palette_y = (area.height.saturating_sub(palette_height)) / 3;
     let palette_area = Rect::new(palette_x, palette_y, palette_width, palette_height);
 
     frame.render_widget(Clear, palette_area);
 
     let block = Block::default()
-        .title(" Command Palette (Esc to close) ")
+        .title(" Search (Esc to close) ")
         .borders(Borders::ALL)
         .style(Style::default().bg(bg))
         .border_style(Style::default().fg(accent));
 
-    let prompt = format!("> {query}");
-    let cursor_pos = 2 + query.len() as u16;
+    let inner = block.inner(palette_area);
+    frame.render_widget(block, palette_area);
 
-    let items = vec![
-        Line::from(Span::styled(&prompt, Style::default().fg(fg))),
-        Line::from(""),
-        Line::from(Span::styled("  Type /connect <url> to add a connection", Style::default().fg(accent))),
-        Line::from(Span::styled("  e.g. /connect sqlserver://user:pass@host/db", Style::default().fg(dim))),
-        Line::from(""),
-        Line::from(Span::styled("  Alt+1/2/3    Switch panes (editor/results/explorer)", Style::default().fg(dim))),
-        Line::from(Span::styled("  Ctrl+K/F1    Toggle this palette", Style::default().fg(dim))),
-        Line::from(Span::styled("  Ctrl+T/W     New/close tab", Style::default().fg(dim))),
-        Line::from(Span::styled("  Ctrl+B       Toggle sidebar", Style::default().fg(dim))),
-        Line::from(Span::styled("  Ctrl+C       Quit", Style::default().fg(dim))),
-    ];
+    // Input line
+    let input_y = inner.y;
+    let prompt = format!(" {}", state.command_palette_query.read());
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(&prompt, Style::default().fg(fg)))),
+        Rect::new(inner.x + 1, input_y, inner.width - 2, 1),
+    );
 
-    let paragraph = Paragraph::new(items).block(block);
+    // Suggestions
+    let list_y = input_y + 1;
+    let list_height = palette_height.saturating_sub(2);
 
-    frame.render_widget(paragraph, palette_area);
+    let items: Vec<Line> = filtered
+        .iter()
+        .enumerate()
+        .map(|(i, (name, desc, extra))| {
+            let prefix = if i == selected { "▶ " } else { "  " };
+            let line = if extra.is_empty() {
+                format!("{prefix}{name}  — {desc}")
+            } else {
+                format!("{prefix}{name}  — {desc}  [{extra}]")
+            };
 
-    // Render cursor
-    if palette_x + cursor_pos < area.width {
-        frame.set_cursor_position((palette_x + cursor_pos + 1, palette_y + 1));
-    }
+            if i == selected {
+                Line::from(Span::styled(line, Style::default().fg(fg).bg(sel_bg)))
+            } else {
+                Line::from(Span::styled(line, Style::default().fg(dim)))
+            }
+        })
+        .collect();
+
+    frame.render_widget(
+        Paragraph::new(items),
+        Rect::new(inner.x + 1, list_y, inner.width - 2, list_height),
+    );
+
+    // Footer
+    let footer_y = list_y + list_height;
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            "  ↑↓ nav  Enter select  Esc close  Type to filter",
+            Style::default().fg(dim),
+        ))),
+        Rect::new(inner.x + 1, footer_y, inner.width - 2, 1),
+    );
 }
 
 /// Render a notification toast.
