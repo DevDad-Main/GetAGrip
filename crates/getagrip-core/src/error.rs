@@ -1,4 +1,4 @@
-//! Unified error types for AtlasDB Studio.
+//! Unified error types for GetAGrip Studio.
 //!
 //! Every crate in the workspace returns [`AtlasError`] (or its [`AtlasResult`]
 //! alias). Errors are:
@@ -25,7 +25,7 @@ use thiserror::Error;
 /// Prefer this over `std::result::Result<T, AtlasError>` in public APIs.
 pub type AtlasResult<T> = std::result::Result<T, AtlasError>;
 
-/// Root error enum for AtlasDB Studio.
+/// Root error enum for GetAGrip Studio.
 ///
 /// Variants are grouped by subsystem. The `with_source` helper lets callers
 /// attach lower-level errors (e.g. `sqlparser` or `tokio::io`) without losing

@@ -1,6 +1,6 @@
 //! Encrypted credential vault.
 //!
-//! AtlasDB Studio stores database credentials in a local encrypted vault.
+//! GetAGrip Studio stores database credentials in a local encrypted vault.
 //! The vault uses AES-256-GCM with a key derived from:
 //!
 //! 1. An OS keyring entry (when available via `secret-service` or similar),

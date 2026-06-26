@@ -1,6 +1,6 @@
 //! Lock-free event bus for inter-subsystem communication.
 //!
-//! AtlasDB Studio's subsystems (editor, explorer, connection manager, etc.)
+//! GetAGrip Studio's subsystems (editor, explorer, connection manager, etc.)
 //! communicate through a shared [`EventBus`]. The bus is:
 //!
 //! * **Typed** — events are serialisable structs, not opaque strings.

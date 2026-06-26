@@ -1,6 +1,6 @@
 //! Strongly-typed UUID-backed identifiers.
 //!
-//! Every entity in AtlasDB Studio—connections, editor tabs, query sessions,
+//! Every entity in GetAGrip Studio—connections, editor tabs, query sessions,
 //! results, plugins, etc.—is identified by a typed [`Id<T>`]. This eliminates
 //! confusion between e.g. a `ConnectionId` and a `QueryId`, both of which
 //! would be `Uuid` in a naive design.

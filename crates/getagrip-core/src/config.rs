@@ -1,6 +1,6 @@
 //! Application and workspace configuration.
 //!
-//! AtlasDB Studio uses a layered config system built on [`figment`]:
+//! GetAGrip Studio uses a layered config system built on [`figment`]:
 //!
 //! 1. Built-in defaults (shipped with the binary).
 //! 2. Global user config (`$XDG_CONFIG_HOME/atlasdb/config.toml`).
@@ -16,7 +16,7 @@ use figment::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Root configuration for AtlasDB Studio.
+/// Root configuration for GetAGrip Studio.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceConfig {
     /// General application settings.

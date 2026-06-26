@@ -50,6 +50,17 @@ export component MainWindow inherits Window {
                 }
 
                 Rectangle {
+                    border-radius: 4px; background: #a6e3a1;
+                    HorizontalLayout {
+                        padding-left: 14px; padding-right: 14px; padding-top: 4px; padding-bottom: 4px;
+                        Text { text: "▶ Run (Ctrl+Enter)"; font-size: 12px; font-weight: 600; color: #1e1e2e; vertical-alignment: center; }
+                    }
+                    TouchArea { clicked => { AppState.execute-query("SELECT @@VERSION"); } }
+                }
+
+                Rectangle { width: 8px; }
+
+                Rectangle {
                     border-radius: 4px; background: #181825;
                     HorizontalLayout {
                         padding-left: 10px; padding-right: 10px; padding-top: 4px; padding-bottom: 4px;
