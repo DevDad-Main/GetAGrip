@@ -38,16 +38,13 @@ export component MainWindow inherits Window {
         HorizontalLayout {
             padding-left: 6px; padding-right: 6px; spacing: 0px;
             Text { text: "GetAGrip"; font-weight: 700; font-size: 13px; color: #cdd6f4; vertical-alignment: center; }
-            Rectangle { width: 16px; }
-            Rectangle { HorizontalLayout { padding-left: 10px; padding-right: 10px; padding-top: 6px; padding-bottom: 6px; Text { text: "File"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { AppState.connect-dialog-open = true; } } }
-            Rectangle { width: 6px; }
-            Rectangle { HorizontalLayout { padding-left: 10px; padding-right: 10px; padding-top: 6px; padding-bottom: 6px; Text { text: "Edit"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { } } }
-            Rectangle { width: 6px; }
-            Rectangle { HorizontalLayout { padding-left: 10px; padding-right: 10px; padding-top: 6px; padding-bottom: 6px; Text { text: "View"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { AppState.toggle-sidebar(); } } }
+            Rectangle { width: 8px; }
+            Rectangle { HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: "File"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { AppState.connect-dialog-open = true; } } }
+            Rectangle { HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: "Edit"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { } } }
+            Rectangle { HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: "View"; font-size: 12px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { AppState.toggle-sidebar(); } } }
             Rectangle { width: 16px; }
             Rectangle { border-radius: 4px; background: #181825; HorizontalLayout { padding-left: 10px; padding-right: 10px; padding-top: 6px; padding-bottom: 6px; Text { text: AppState.active-connection == "" ? "● Not Connected" : "● " + AppState.active-connection; font-size: 12px; vertical-alignment: center; color: AppState.active-connection == "" ? #6c7086 : #a6e3a1; } } TouchArea { clicked => { AppState.connect-dialog-open = true; } } }
-            Rectangle { border-radius: 4px; background: #45475a; HorizontalLayout { padding-left: 8px; padding-right: 10px; padding-top: 5px; padding-bottom: 5px; spacing: 4px;                                 if AppState.active-connection == "" : Image { source: @image-url("icons/play-off.svg"); width: 14px; height: 14px; }
-                                if AppState.active-connection != "" : Image { source: @image-url("icons/play.svg"); width: 14px; height: 14px; } Text { text: AppState.active-connection == "" ? "Run" : "Run"; font-size: 12px; font-weight: 600; color: AppState.active-connection == "" ? #6c7086 : #a6e3a1; vertical-alignment: center; } } TouchArea { clicked => { if AppState.active-connection != "" { AppState.execute-query(AppState.current-sql); } } } }
+            Rectangle { border-radius: 3px; background: #45475a; HorizontalLayout { padding-left: 6px; padding-right: 8px; padding-top: 4px; padding-bottom: 4px; spacing: 3px; if AppState.active-connection == "" : Image { source: @image-url("icons/play-off.svg"); width: 12px; height: 12px; } if AppState.active-connection != "" : Image { source: @image-url("icons/play.svg"); width: 12px; height: 12px; } Text { text: "Run"; font-size: 11px; font-weight: 600; color: AppState.active-connection == "" ? #6c7086 : #a6e3a1; vertical-alignment: center; } } TouchArea { clicked => { if AppState.active-connection != "" { AppState.execute-query(AppState.current-sql); } } } }
             Rectangle { width: 4px; }
             Rectangle { border-radius: 4px; background: #181825; HorizontalLayout { padding-left: 8px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; Text { text: "☰"; font-size: 14px; color: #cdd6f4; vertical-alignment: center; } } TouchArea { clicked => { AppState.toggle-sidebar(); } } }
         }
