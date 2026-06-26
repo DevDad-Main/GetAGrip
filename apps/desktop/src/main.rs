@@ -268,14 +268,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn set_row_cell(row: &mut ResultRowData, idx: usize, val: &str) {
-    match idx {
-        0 => row.c0 = val.into(),
-        1 => row.c1 = val.into(),
-        2 => row.c2 = val.into(),
-        3 => row.c3 = val.into(),
-        4 => row.c4 = val.into(),
-        5 => row.c5 = val.into(),
-        _ => {}
-    }
-}
+

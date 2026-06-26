@@ -136,14 +136,17 @@ export component EditorPanel {
         Rectangle {
             vertical-stretch: 1;
             background: #1e1e2e;
-            padding: 8px;
-            Text {
-                text: root.editor-content;
-                font-size: 14px;
-                font-family: "monospace";
-                color: #cdd6f4;
-                horizontal-alignment: left;
-                vertical-alignment: top;
+            VerticalLayout {
+                padding-left: 8px;
+                padding-top: 8px;
+                Text {
+                    text: root.editor-content;
+                    font-size: 14px;
+                    font-family: "monospace";
+                    color: #cdd6f4;
+                    horizontal-alignment: left;
+                    vertical-alignment: top;
+                }
             }
         }
 
