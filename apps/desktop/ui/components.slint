@@ -1,5 +1,3 @@
-import { TextEdit } from "std-widgets.slint";
-
 export struct TreeItem {
     label: string,
     kind: string,
@@ -136,30 +134,14 @@ export component EditorPanel {
         }
 
         Rectangle { background: #1e1e2e;
-            HorizontalLayout {
-                Rectangle {
-                    width: 44px; background: #181825; clip: true;
-                    VerticalLayout {
-                        for i in 50 : Rectangle {
-                            height: 20px;
-                            Text {
-                                text: i + 1; font-size: 11px; font-family: "monospace";
-                                color: #6c7086; horizontal-alignment: right; vertical-alignment: center;
-                            }
-                        }
-                    }
-                }
-                Rectangle {
-                    TextEdit {
-                        text <=> root.editor-content;
-                        font-size: 14px;
-                        font-family: "monospace";
-                        width: 100%;
-                        edited(str) => {
-                            root.editor-content = str;
-                            root.editor-changed(str);
-                        }
-                    }
+            VerticalLayout {
+                padding: 8px;
+                Text {
+                    text: root.editor-content;
+                    font-size: 14px;
+                    font-family: "monospace";
+                    color: #cdd6f4;
+                    vertical-alignment: top;
                 }
             }
         }
