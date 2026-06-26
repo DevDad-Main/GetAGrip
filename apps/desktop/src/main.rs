@@ -91,10 +91,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let weak = app_weak2.clone();
                         let url2 = url_owned.clone();
                         let ver = version;
-                        // Build sidebar items
+                        // Build DataGrip-style sidebar tree
                         let mut sidebar_items: Vec<TreeItem> = vec![
                             TreeItem {
-                                label: url2.clone().into(), kind: "server".into(),
+                                label: "localhost:1433".into(), kind: "server".into(),
                                 depth: 0, expanded: true, has_children: true, icon: "".into(),
                             }
                         ];
@@ -318,35 +318,78 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let items2 = items.clone();
 
                 handle.spawn(async move {
+                    // Get counts for the database node label
+                    let tbl_count_sql = format!("SELECT COUNT(*) FROM [{db_name}].INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'");
+                    let view_count_sql = format!("SELECT COUNT(*) FROM [{db_name}].INFORMATION_SCHEMA.VIEWS");
                     let tbl_sql = format!("SELECT TABLE_NAME FROM [{db_name}].INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME");
                     let view_sql = format!("SELECT TABLE_NAME FROM [{db_name}].INFORMATION_SCHEMA.VIEWS ORDER BY TABLE_NAME");
 
-                    let mut new_items = Vec::new();
+                    let mut table_names = Vec::new();
+                    let mut view_names = Vec::new();
+                    let mut tbl_count = 0i64;
+                    let mut view_count = 0i64;
+
                     if let Ok(mut conn) = driver2.connect(&url2).await {
-                        if let Ok(r) = conn.execute(&tbl_sql).await {
-                            for row in &r.rows {
-                                if let Some(name) = row.get(0).map(|v| v.to_string()) {
-                                    new_items.push(TreeItem {
-                                        label: name.into(), kind: "table".into(),
-                                        depth: 2, expanded: false, has_children: true, icon: "".into(),
-                                    });
-                                }
+                        // Get counts
+                        if let Ok(r) = conn.execute(&tbl_count_sql).await {
+                            if let Some(row) = r.rows.first() {
+                                tbl_count = row.get(0).and_then(|v| match v {
+                                    getagrip_database::driver::Value::Int(i) => Some(*i),
+                                    _ => None,
+                                }).unwrap_or(0);
                             }
                         }
+                        if let Ok(r) = conn.execute(&view_count_sql).await {
+                            if let Some(row) = r.rows.first() {
+                                view_count = row.get(0).and_then(|v| match v {
+                                    getagrip_database::driver::Value::Int(i) => Some(*i),
+                                    _ => None,
+                                }).unwrap_or(0);
+                            }
+                        }
+                        // Get tables
+                        if let Ok(r) = conn.execute(&tbl_sql).await {
+                            for row in &r.rows {
+                                if let Some(name) = row.get(0).map(|v| v.to_string()) { table_names.push(name); }
+                            }
+                        }
+                        // Get views
                         if let Ok(r) = conn.execute(&view_sql).await {
                             for row in &r.rows {
-                                if let Some(name) = row.get(0).map(|v| v.to_string()) {
-                                    new_items.push(TreeItem {
-                                        label: name.into(), kind: "view".into(),
-                                        depth: 2, expanded: false, has_children: false, icon: "".into(),
-                                    });
-                                }
+                                if let Some(name) = row.get(0).map(|v| v.to_string()) { view_names.push(name); }
                             }
                         }
                     }
 
                     let mut updated_items = items2.clone();
+                    // Update database label with counts
+                    updated_items[idx].label = format!("{db_name}  ({tbl_count} tables, {view_count} views)").into();
                     updated_items[idx].expanded = true;
+
+                    let mut new_items = Vec::new();
+                    // Tables folder
+                    new_items.push(TreeItem {
+                        label: format!("Tables ({tbl_count})").into(), kind: "folder".into(),
+                        depth: 2, expanded: false, has_children: true, icon: "".into(),
+                    });
+                    for name in &table_names {
+                        new_items.push(TreeItem {
+                            label: name.clone().into(), kind: "table".into(),
+                            depth: 3, expanded: false, has_children: true, icon: "".into(),
+                        });
+                    }
+                    // Views folder
+                    new_items.push(TreeItem {
+                        label: format!("Views ({view_count})").into(), kind: "folder".into(),
+                        depth: 2, expanded: false, has_children: true, icon: "".into(),
+                    });
+                    for name in &view_names {
+                        new_items.push(TreeItem {
+                            label: name.clone().into(), kind: "view".into(),
+                            depth: 3, expanded: false, has_children: false, icon: "".into(),
+                        });
+                    }
+
                     let insert_pos = idx + 1;
                     for (i, ni) in new_items.iter().enumerate() {
                         updated_items.insert(insert_pos + i, ni.clone());
@@ -358,14 +401,56 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(a) = app_weak2.upgrade() {
-                            let m = std::rc::Rc::new(slint::VecModel::from(updated_items.clone()));
+                            let m = std::rc::Rc::new(slint::VecModel::from(updated_items));
                             a.global::<AppState>().set_sidebar_items(m.into());
                         }
                     });
                 });
             }
 
-            if item.kind == "table" && item.depth == 2 && !item.expanded {
+            // Handle "folder" click — toggle expand (show/hide children)
+            if item.kind == "folder" && item.depth == 2 {
+                let items2 = items.clone();
+                let mut updated = items2.clone();
+                updated[idx].expanded = !item.expanded;
+
+                if !item.expanded {
+                    // Currently collapsed — show children
+                    let model2 = model.clone();
+                    {
+                        let mut m = model2.lock().unwrap();
+                        m.sidebar_items = updated.clone();
+                    }
+                    let weak2 = app_weak.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(a) = weak2.upgrade() {
+                            let m = std::rc::Rc::new(slint::VecModel::from(updated));
+                            a.global::<AppState>().set_sidebar_items(m.into());
+                        }
+                    });
+                } else {
+                    // Currently expanded — hide children (collapse)
+                    let i = idx + 1;
+                    while i < updated.len() && updated[i].depth > item.depth {
+                        updated.remove(i);
+                    }
+                    let model2 = model.clone();
+                    {
+                        let mut m = model2.lock().unwrap();
+                        m.sidebar_items = updated.clone();
+                    }
+                    let weak3 = app_weak.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(a) = weak3.upgrade() {
+                            let m = std::rc::Rc::new(slint::VecModel::from(updated));
+                            a.global::<AppState>().set_sidebar_items(m.into());
+                        }
+                    });
+                }
+                return;
+            }
+
+            if item.kind == "table" && item.depth == 3 && !item.expanded {
                 let db_name: String = items.iter()
                     .take(idx)
                     .rev()
@@ -392,7 +477,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let dtype = row.get(1).map(|v| v.to_string()).unwrap_or_default();
                                 new_items.push(TreeItem {
                                     label: format!("{name}  {dtype}").into(), kind: "column".into(),
-                                    depth: 3, expanded: false, has_children: false, icon: "".into(),
+                                    depth: 4, expanded: false, has_children: false, icon: "".into(),
                                 });
                             }
                         }

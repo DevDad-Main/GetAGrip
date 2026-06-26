@@ -40,30 +40,41 @@ export component Sidebar {
                         padding-right: 8px;
                         spacing: 6px;
 
-                        if item.has-children : Text {
-                            text: item.expanded ? "▾" : "▸";
-                            font-size: 11px; color: #6c7086; vertical-alignment: center;
+                        // Chevron or spacer (fixed width for alignment)
+                        Rectangle {
+                            width: 16px;
+                            if item.has-children : Text {
+                                text: item.expanded ? "▾" : "▸";
+                                font-size: 11px; color: #6c7086; vertical-alignment: center;
+                            }
                         }
-                        if item.kind == "server" : Text {
-                            text: "⬢"; font-size: 14px; color: #89b4fa; vertical-alignment: center;
+                        if item.kind == "server" : Image {
+                            source: @image-url("icons/server.svg");
+                            width: 16px; height: 16px;
                         }
-                        if item.kind == "database" : Text {
-                            text: "⬡"; font-size: 14px; color: #a6e3a1; vertical-alignment: center;
+                        if item.kind == "database" : Image {
+                            source: @image-url("icons/database.svg");
+                            width: 16px; height: 16px;
                         }
-                        if item.kind == "schema" : Text {
-                            text: "▸"; font-size: 11px; color: #6c7086; vertical-alignment: center;
+                        if item.kind == "folder" : Image {
+                            source: @image-url("icons/folder.svg");
+                            width: 16px; height: 16px;
                         }
-                        if item.kind == "table" : Text {
-                            text: "⊞"; font-size: 13px; color: #f9e2af; vertical-alignment: center;
+                        if item.kind == "table" : Image {
+                            source: @image-url("icons/table.svg");
+                            width: 16px; height: 16px;
                         }
-                        if item.kind == "view" : Text {
-                            text: "◎"; font-size: 14px; color: #cba6f7; vertical-alignment: center;
+                        if item.kind == "view" : Image {
+                            source: @image-url("icons/view.svg");
+                            width: 16px; height: 16px;
                         }
-                        if item.kind == "function" : Text {
-                            text: "λ"; font-size: 13px; color: #89b4fa; vertical-alignment: center;
+                        if item.kind == "function" : Image {
+                            source: @image-url("icons/function.svg");
+                            width: 16px; height: 16px;
                         }
-                        if item.kind == "column" : Text {
-                            text: "┆"; font-size: 12px; color: #585b70; vertical-alignment: center;
+                        if item.kind == "column" : Image {
+                            source: @image-url("icons/column.svg");
+                            width: 14px; height: 14px;
                         }
 
                         Text {
