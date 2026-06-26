@@ -518,9 +518,9 @@ pub fn render_command_palette(frame: &mut Frame, area: Rect, state: &AppState, t
     let visible = filtered.len().min(max_items);
 
     let palette_h = (visible + 4).min(16) as u16;
-    let palette_w = 62u16.min(area.width - 4);
-    let palette_x = (area.width - palette_w) / 2;
-    let palette_y = (area.height - palette_h) / 3;
+    let palette_w = 62u16.min(area.width.saturating_sub(4));
+    let palette_x = (area.width.saturating_sub(palette_w)) / 2;
+    let palette_y = (area.height.saturating_sub(palette_h)) / 3;
     let palette_rect = Rect::new(palette_x, palette_y, palette_w, palette_h);
 
     // Background fill
@@ -544,14 +544,14 @@ pub fn render_command_palette(frame: &mut Frame, area: Rect, state: &AppState, t
     };
     frame.render_widget(
         Paragraph::new(Line::from(input_text)),
-        Rect::new(inner.x + 2, inner.y, inner.width - 2, 1),
+        Rect::new(inner.x + 2, inner.y, inner.width.saturating_sub(2), 1),
     );
 
     // Separator
     let sep_y = inner.y + 1;
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled("─".repeat(inner.width as usize - 2), Style::default().fg(dim)))),
-        Rect::new(inner.x + 1, sep_y, inner.width - 2, 1),
+        Paragraph::new(Line::from(Span::styled("─".repeat(inner.width.saturating_sub(2) as usize), Style::default().fg(dim)))),
+        Rect::new(inner.x + 1, sep_y, inner.width.saturating_sub(2), 1),
     );
 
     // Suggestions list
@@ -574,17 +574,17 @@ pub fn render_command_palette(frame: &mut Frame, area: Rect, state: &AppState, t
     let item_count = items.len();
     frame.render_widget(
         Paragraph::new(items),
-        Rect::new(inner.x + 1, list_y, inner.width - 2, (item_count as u16).min(inner.height - 3)),
+        Rect::new(inner.x + 1, list_y, inner.width.saturating_sub(2), (item_count as u16).min(inner.height.saturating_sub(3))),
     );
 
     // Footer hint
-    let footer_y = palette_rect.y + palette_h - 1;
+    let footer_y = palette_rect.y + palette_h.saturating_sub(1);
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             " ↑↓ select  Enter confirm  Esc dismiss  Type to filter",
             Style::default().fg(dim),
         ))),
-        Rect::new(inner.x + 1, footer_y, inner.width - 2, 1),
+        Rect::new(inner.x + 1, footer_y, inner.width.saturating_sub(2), 1),
     );
 }
 
@@ -606,10 +606,10 @@ pub fn render_connection_dialog(frame: &mut Frame, area: Rect, state: &AppState,
         );
     }
 
-    let dialog_w = 65u16.min(area.width - 4);
-    let dialog_h = 10;
-    let dx = (area.width - dialog_w) / 2;
-    let dy = (area.height - dialog_h) / 3;
+    let dialog_w = 65u16.min(area.width.saturating_sub(4));
+    let dialog_h = 10u16;
+    let dx = (area.width.saturating_sub(dialog_w)) / 2;
+    let dy = (area.height.saturating_sub(dialog_h)) / 3;
     let dialog_rect = Rect::new(dx, dy, dialog_w, dialog_h);
 
     frame.render_widget(Clear, dialog_rect);
@@ -637,7 +637,7 @@ pub fn render_connection_dialog(frame: &mut Frame, area: Rect, state: &AppState,
         Line::from(Span::styled("  Enter to connect, Esc to cancel", Style::default().fg(green))),
     ];
 
-    frame.render_widget(Paragraph::new(lines), Rect::new(inner.x + 1, inner.y, inner.width - 2, dialog_h - 2));
+    frame.render_widget(Paragraph::new(lines), Rect::new(inner.x + 1, inner.y, inner.width.saturating_sub(2), dialog_h.saturating_sub(2)));
 }
 
 /// Render a notification toast.
