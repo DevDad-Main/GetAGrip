@@ -143,7 +143,7 @@ export component EditorPanel {
                 for tab[idx] in root.tabs : Rectangle {
                     width: 150px;
                     height: 100%;
-                    background: idx == root.active-tab ? #282a36 : #181724;
+                    background: idx == root.active-tab ? #282a36 : #1e1c2a;
 
                     // Active indicator bar at bottom of tab
                     if idx == root.active-tab : Rectangle {
@@ -159,7 +159,7 @@ export component EditorPanel {
                         Text {
                             text: tab.title;
                             font-size: 12px; vertical-alignment: center;
-                            color: idx == root.active-tab ? #e6e6eb : #6e6e7d;
+                            color: idx == root.active-tab ? #e6e6eb : #8a8a93;
                             overflow: elide; horizontal-alignment: left;
                         }
                         if tab.modified : Text {
