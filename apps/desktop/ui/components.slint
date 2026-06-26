@@ -215,12 +215,18 @@ export component ResultsPanel {
         }
         if root.has-data : Rectangle {
             clip: true;
-            Text {
-                text: root.output-text;
-                font-size: 13px;
-                font-family: "monospace";
-                color: #cdd6f4;
-                vertical-alignment: top;
+            VerticalLayout {
+                padding-left: 4px; padding-top: 2px;
+                Text {
+                    text: root.output-text;
+                    font-size: 13px;
+                    font-family: "monospace";
+                    color: #cdd6f4;
+                    vertical-alignment: top;
+                    horizontal-alignment: left;
+                    wrap: word-wrap;
+                    overflow: elide;
+                }
             }
         }
     }
