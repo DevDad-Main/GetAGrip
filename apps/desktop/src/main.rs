@@ -478,6 +478,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if idx >= items.len() { return; }
             let item = &items[idx];
 
+            // Column click — insert into editor
+            if item.kind == "column" {
+                let col_name = item.label.to_string().split("  ").next().unwrap_or("").to_string();
+                if let Some(a) = app_weak.upgrade() {
+                    let current = a.global::<AppState>().get_current_sql();
+                    let mut sql = current.to_string();
+                    if !sql.is_empty() && !sql.ends_with('\n') { sql.push('\n'); }
+                    sql.push_str(&col_name);
+                    a.global::<AppState>().set_current_sql(sql.into());
+                }
+                return;
+            }
+
             // Toggle collapse: if already expanded, remove children
             if item.expanded {
                 let mut updated = items.clone();

@@ -144,8 +144,15 @@ export component EditorPanel {
                     width: 150px;
                     height: 100%;
                     background: idx == root.active-tab ? #282a36 : #181724;
-                    border-width: 1px;
-                    border-color: idx == root.active-tab ? #38364a : transparent;
+
+                    // Active indicator bar at bottom of tab
+                    if idx == root.active-tab : Rectangle {
+                        y: parent.height - 2px;
+                        height: 2px;
+                        x: 0px;
+                        width: parent.width;
+                        background: #a5d6a7;
+                    }
 
                     HorizontalLayout {
                         padding-left: 8px; padding-right: 4px; spacing: 4px;
