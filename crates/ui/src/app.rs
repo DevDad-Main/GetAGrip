@@ -64,6 +64,10 @@ impl App {
 
         // Main layout: sidebar | editor | results
         let layout = views::main_layout(area, *self.state.sidebar_width.read());
+
+        // Menu bar at top
+        views::render_menu_bar(frame, layout.menu, &self.state, &theme);
+
         views::render_sidebar(frame, layout.sidebar, &self.state, &theme);
         let editor_layout = views::editor_results_split(layout.content, *self.state.editor_split_pct.read());
 
@@ -99,8 +103,8 @@ impl App {
             Event::Key(key_event) => {
                 self.handle_key(key_event);
             }
-            Event::Mouse(_mouse_event) => {
-                // Mouse handling will be implemented in a future phase
+            Event::Mouse(mouse_event) => {
+                self.handle_mouse(mouse_event);
             }
             Event::Resize(_, _) => {
                 self.needs_redraw = true;
@@ -579,6 +583,127 @@ impl App {
             *self.state.palette_selected.write() = 0;
         }
         self.needs_redraw = true;
+    }
+
+    /// Handle mouse events using layout cache for hit-testing.
+    fn handle_mouse(&mut self, mouse: crossterm::event::MouseEvent) {
+        use crossterm::event::{MouseButton, MouseEventKind};
+
+        let col = mouse.column;
+        let row = mouse.row;
+
+        // Scroll wheel
+        if mouse.kind == MouseEventKind::ScrollDown || mouse.kind == MouseEventKind::ScrollUp {
+            let delta: i32 = if mouse.kind == MouseEventKind::ScrollDown { 1 } else { -1 };
+            let cache = self.state.layout_cache.read();
+
+            // Scroll explorer
+            if let Some((ex, ey, ew, eh)) = cache.explorer_rect {
+                if col >= ex && col < ex + ew && row >= ey && row < ey + eh {
+                    let mut explorer = self.state.explorer.write();
+                    let new = (explorer.selected as i32 + delta).max(0) as usize;
+                    if new < explorer.items.len() {
+                        explorer.selected = new;
+                        self.needs_redraw = true;
+                        return;
+                    }
+                }
+            }
+            // Scroll palette
+            if *self.state.command_palette_open.read() {
+                let mut sel = self.state.palette_selected.write();
+                let new = (*sel as i32 + delta).max(0) as usize;
+                *sel = new;
+                self.needs_redraw = true;
+                return;
+            }
+            return;
+        }
+
+        if mouse.kind != MouseEventKind::Down(MouseButton::Left) {
+            return;
+        }
+        let cache = self.state.layout_cache.read();
+
+        // Menu bar clicks
+        for (mx, mw) in &cache.menu_positions {
+            if row == 0 && col >= *mx && col < *mx + *mw {
+                let idx = cache.menu_positions.iter().position(|(x, _)| x == mx).unwrap_or(0);
+                let mut menu = self.state.menu_open.write();
+                *menu = if *menu == Some(idx) { None } else { Some(idx) };
+                self.needs_redraw = true;
+                return;
+            }
+        }
+
+        // Close menu if clicking elsewhere
+        if *self.state.menu_open.read() != None {
+            *self.state.menu_open.write() = None;
+            self.needs_redraw = true;
+            // Fall through to handle other clicks
+        }
+
+        // Tab bar clicks
+        if let Some((tx, ty, tw, th)) = cache.tab_bar {
+            if row >= ty && row < ty + th && col >= tx && col < tx + tw {
+                for (tab_x, tab_w, tab_id) in &cache.tabs {
+                    if col >= *tab_x && col < *tab_x + *tab_w {
+                        *self.state.active_tab.write() = Some(*tab_id);
+                        self.needs_redraw = true;
+                        return;
+                    }
+                }
+                return;
+            }
+        }
+
+        // Explorer clicks
+        if let Some((ex, ey, ew, eh)) = cache.explorer_rect {
+            if col >= ex && col < ex + ew && row >= ey && row < ey + eh {
+                let rel_row = (row - ey) as usize;
+                let mut explorer = self.state.explorer.write();
+                let visible = eh as usize;
+                let scroll = explorer.selected.saturating_sub(visible.saturating_sub(3));
+                let clicked = scroll + rel_row;
+                if clicked < explorer.items.len() {
+                    explorer.selected = clicked;
+                }
+                *self.state.focused_panel.write() = FocusedPanel::Explorer;
+                self.needs_redraw = true;
+                return;
+            }
+        }
+
+        // Editor/Results focus on click
+        if let Some((ex, ey, ew, eh)) = cache.editor_rect {
+            if col >= ex && col < ex + ew && row >= ey && row < ey + eh {
+                *self.state.focused_panel.write() = FocusedPanel::Editor;
+                self.needs_redraw = true;
+                return;
+            }
+        }
+        if let Some((rx, ry, rw, rh)) = cache.results_rect {
+            if col >= rx && col < rx + rw && row >= ry && row < ry + rh {
+                *self.state.focused_panel.write() = FocusedPanel::Results;
+                self.needs_redraw = true;
+            }
+        }
+
+        // Palette clicks
+        if *self.state.command_palette_open.read() {
+            if let Some((px, py, pw, ph)) = cache.palette_rect {
+                if col >= px && col < px + pw && row >= py && row < py + ph {
+                    let rel_row = (row - py) as usize;
+                    for (item_y, idx) in &cache.palette_items {
+                        if rel_row == *item_y as usize {
+                            *self.state.palette_selected.write() = *idx;
+                            self.needs_redraw = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Handle keys in the connection dialog.

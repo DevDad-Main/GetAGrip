@@ -36,6 +36,7 @@ fn parse_hex_color(s: &str) -> Color {
 
 /// The main application layout sections.
 pub struct MainLayout {
+    pub menu: Rect,
     pub sidebar: Rect,
     pub content: Rect,
     pub status: Rect,
@@ -50,9 +51,10 @@ pub struct EditorResultsLayout {
 /// Compute the main application layout.
 #[must_use]
 pub fn main_layout(area: Rect, sidebar_width: u16) -> MainLayout {
-    let body = Layout::default()
+    let vertical = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(1),
             Constraint::Min(0),
             Constraint::Length(1),
         ])
@@ -64,12 +66,13 @@ pub fn main_layout(area: Rect, sidebar_width: u16) -> MainLayout {
             Constraint::Length(sidebar_width),
             Constraint::Min(0),
         ])
-        .split(body[0]);
+        .split(vertical[1]);
 
     MainLayout {
+        menu: vertical[0],
         sidebar: content_area[0],
         content: content_area[1],
-        status: body[1],
+        status: vertical[2],
     }
 }
 
@@ -92,6 +95,7 @@ pub fn editor_results_split(area: Rect, split_pct: u16) -> EditorResultsLayout {
 
 /// Render the sidebar (connections + object explorer).
 pub fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
+    state.layout_cache.write().explorer_rect = Some((area.x, area.y, area.width, area.height));
     let is_focused = *state.focused_panel.read() == FocusedPanel::Explorer;
     let bg = theme_color(&theme.palette.background);
     let fg = theme_color(&theme.palette.foreground);
@@ -180,6 +184,7 @@ pub fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState, theme: &T
 
 /// Render the query editor with tabs.
 pub fn render_editor(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
+    state.layout_cache.write().editor_rect = Some((area.x, area.y, area.width, area.height));
     let is_focused = *state.focused_panel.read() == FocusedPanel::Editor;
     let bg = hex_color(&theme.editor.bg);
     let fg = hex_color(&theme.editor.fg);
@@ -196,7 +201,7 @@ pub fn render_editor(frame: &mut Frame, area: Rect, state: &AppState, theme: &Th
         .split(area);
 
     // Render tab bar
-    let tab_bar = render_tab_bar(state, theme);
+    let tab_bar = render_tab_bar(state, theme, split[0]);
     frame.render_widget(tab_bar, split[0]);
 
     // Render editor content
@@ -249,14 +254,17 @@ pub fn render_editor(frame: &mut Frame, area: Rect, state: &AppState, theme: &Th
 }
 
 /// Render the tab bar.
-fn render_tab_bar(state: &AppState, theme: &Theme) -> Paragraph<'static> {
+fn render_tab_bar(state: &AppState, theme: &Theme, area: Rect) -> Paragraph<'static> {
     let active = *state.active_tab.read();
     let mut spans = Vec::new();
+    let mut tab_positions: Vec<(u16, u16, tg_core::id::Id<tg_core::id::TabTag>)> = Vec::new();
     let tab_bg = hex_color(&theme.semantic.tab_bar_bg);
     let tab_active = hex_color(&theme.semantic.tab_active);
     let tab_inactive = hex_color(&theme.semantic.tab_inactive);
     let fg = theme_color(&theme.palette.foreground);
     let dim = theme_color(&theme.palette.bright_black);
+
+    let mut x_offset = area.x;
 
     for entry in state.tabs.iter() {
         let id = *entry.key();
@@ -264,7 +272,10 @@ fn render_tab_bar(state: &AppState, theme: &Theme) -> Paragraph<'static> {
         let is_active = Some(id) == active;
 
         let prefix = if tab.dirty { " ● " } else { "   " };
-        let title = format!("{prefix}{} ", tab.title);
+        let title = format!("{prefix}{}  ", tab.title);
+        let title_width = title.len() as u16;
+
+        tab_positions.push((x_offset, title_width, id));
 
         spans.push(Span::styled(
             title,
@@ -275,7 +286,11 @@ fn render_tab_bar(state: &AppState, theme: &Theme) -> Paragraph<'static> {
             },
         ));
         spans.push(Span::raw(" "));
+
+        x_offset += title_width + 1;
     }
+
+    state.layout_cache.write().tabs = tab_positions;
 
     Paragraph::new(Line::from(spans))
         .style(Style::default().bg(tab_bg))
@@ -283,6 +298,7 @@ fn render_tab_bar(state: &AppState, theme: &Theme) -> Paragraph<'static> {
 
 /// Render the results grid.
 pub fn render_results(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
+    state.layout_cache.write().results_rect = Some((area.x, area.y, area.width, area.height));
     let is_focused = *state.focused_panel.read() == FocusedPanel::Results;
     let bg = hex_color(&theme.grid.bg);
     let fg = theme_color(&theme.palette.foreground);
@@ -319,6 +335,68 @@ pub fn render_results(frame: &mut Frame, area: Rect, state: &AppState, theme: &T
     .alignment(Alignment::Left);
 
     frame.render_widget(message, area);
+}
+
+/// Render the menu bar at the top.
+pub fn render_menu_bar(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
+    let bg = hex_color(&theme.semantic.panel_bg);
+    let fg = theme_color(&theme.palette.foreground);
+    let dim = theme_color(&theme.palette.bright_black);
+    let accent = theme_color(&theme.palette.blue);
+    let menu = state.menu_open.read();
+    let open_idx = *menu;
+
+    let items = [" File ", " Edit ", " View ", " Help "];
+    let mut spans: Vec<Span> = Vec::new();
+    let mut positions: Vec<(u16, u16)> = Vec::new();
+    let mut x = area.x;
+
+    for (i, item) in items.iter().enumerate() {
+        let w = item.len() as u16;
+        positions.push((x, w));
+        let style = if Some(i) == open_idx {
+            Style::default().fg(fg).bg(accent)
+        } else {
+            Style::default().fg(dim)
+        };
+        spans.push(Span::styled(*item, style));
+        x += w;
+    }
+
+    state.layout_cache.write().menu_positions = positions.clone();
+
+    frame.render_widget(
+        Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)),
+        area,
+    );
+
+    // Dropdown for open menu
+    if let Some(idx) = open_idx {
+        let dropdown_items = match idx {
+            0 => vec![" New Connection  Ctrl+K", " Open Workspace", " Save All", "────", " Quit  Ctrl+C"],
+            1 => vec![" Undo  Ctrl+Z", " Redo  Ctrl+Y", " Cut", " Copy", " Paste"],
+            2 => vec![" Toggle Sidebar  Ctrl+B", " Command Palette  Ctrl+K", " Cycle Theme", " Toggle Vim Mode"],
+            3 => vec![" About GetAGrip", " Keybindings", " Check for Updates"],
+            _ => vec![],
+        };
+        let dropdown_w = 30u16;
+        let dropdown_h = dropdown_items.len() as u16 + 2;
+        let dx = positions.get(idx).map(|(x, _)| *x).unwrap_or(0);
+        let dy = area.y + 1;
+        let dropdown_rect = Rect::new(dx.min(area.width.saturating_sub(dropdown_w)), dy, dropdown_w, dropdown_h);
+
+        frame.render_widget(Clear, dropdown_rect);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .style(Style::default().bg(bg))
+            .border_style(Style::default().fg(accent));
+        let inner = block.inner(dropdown_rect);
+        frame.render_widget(block, dropdown_rect);
+        let items: Vec<Line> = dropdown_items.iter().map(|s| {
+            Line::from(Span::styled(format!("  {s}"), Style::default().fg(fg)))
+        }).collect();
+        frame.render_widget(Paragraph::new(items), inner);
+    }
 }
 
 /// Render the status bar at the bottom.

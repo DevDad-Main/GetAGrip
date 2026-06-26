@@ -36,6 +36,10 @@ pub struct AppState {
     pub connection_dialog_input: parking_lot::RwLock<String>,
     /// Explorer tree state.
     pub explorer: parking_lot::RwLock<ExplorerState>,
+    /// Cached layout for mouse hit-testing.
+    pub layout_cache: parking_lot::RwLock<LayoutCache>,
+    /// Menu bar state — which menu is open (None = closed).
+    pub menu_open: parking_lot::RwLock<Option<usize>>,
     /// Sidebar width in columns.
     pub sidebar_width: parking_lot::RwLock<u16>,
     /// Editor/results split percentage (0-100).
@@ -111,6 +115,29 @@ pub struct ExplorerState {
     pub items: Vec<ExplorerItem>,
     /// Currently selected index.
     pub selected: usize,
+}
+
+/// Cached layout positions for mouse hit-testing.
+#[derive(Clone, Debug, Default)]
+pub struct LayoutCache {
+    /// Tab bar rectangle.
+    pub tab_bar: Option<(u16, u16, u16, u16)>,
+    /// Individual tab positions: (x, width, tab_id).
+    pub tabs: Vec<(u16, u16, tg_core::id::Id<tg_core::id::TabTag>)>,
+    /// Menu bar item positions: (x, width).
+    pub menu_positions: Vec<(u16, u16)>,
+    /// Explorer area (x, y, w, h).
+    pub explorer_rect: Option<(u16, u16, u16, u16)>,
+    /// Editor area (x, y, w, h).
+    pub editor_rect: Option<(u16, u16, u16, u16)>,
+    /// Results area (x, y, w, h).
+    pub results_rect: Option<(u16, u16, u16, u16)>,
+    /// Palette area (x, y, w, h).
+    pub palette_rect: Option<(u16, u16, u16, u16)>,
+    /// Palette item positions: (y, index).
+    pub palette_items: Vec<(u16, usize)>,
+    /// Connection dialog rect.
+    pub dialog_rect: Option<(u16, u16, u16, u16)>,
 }
 
 /// A single node in the explorer tree.
@@ -200,6 +227,8 @@ impl AppState {
                 items: Vec::new(),
                 selected: 0,
             }),
+            layout_cache: parking_lot::RwLock::new(LayoutCache::default()),
+            menu_open: parking_lot::RwLock::new(None),
             sidebar_width: parking_lot::RwLock::new(38),
             editor_split_pct: parking_lot::RwLock::new(50),
             notification: parking_lot::RwLock::new(None),
