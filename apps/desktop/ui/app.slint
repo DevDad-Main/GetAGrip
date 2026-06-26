@@ -15,6 +15,7 @@ export global AppState {
     callback toggle-sidebar();
     callback toggle-results();
     callback execute-command(string);
+    callback execute-query(string);
 }
 
 export component MainWindow inherits Window {
@@ -87,7 +88,10 @@ export component MainWindow inherits Window {
             }
 
             VerticalLayout {
-                EditorPanel { width: 100%; }
+                EditorPanel {
+                    width: 100%;
+                    execute-query(sql) => { AppState.execute-query(sql); }
+                }
 
                 if AppState.results-visible : Rectangle {
                     height: 200px; background: #1e1e2e;
