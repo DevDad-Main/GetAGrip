@@ -78,9 +78,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let model = model.clone();
         let app_weak = app.as_weak();
         app.global::<AppState>().on_close_tab(move |idx: i32| {
-            tracing::info!("Close tab {idx}");
             let mut m = model.lock().unwrap();
-            if m.tabs.len() <= 1 { tracing::info!("Only 1 tab, not closing"); return; }
+            if m.tabs.len() <= 1 { return; }
             let idx = idx as usize;
             if idx < m.tabs.len() {
                 m.tabs.remove(idx);
