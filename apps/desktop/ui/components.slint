@@ -133,7 +133,9 @@ export component EditorPanel {
             }
         }
 
-        Rectangle { background: #1e1e2e;
+        Rectangle {
+            vertical-stretch: 1;
+            background: #1e1e2e;
             HorizontalLayout {
                 Rectangle {
                     width: 44px; background: #181825; clip: true;
@@ -148,8 +150,7 @@ export component EditorPanel {
                     }
                 }
                 Rectangle {
-                    border-width: 1px;
-                    border-color: #cba6f7;
+                    horizontal-stretch: 1;
                     Text {
                         text: root.editor-content;
                         font-size: 14px;

@@ -116,15 +116,13 @@ export component MainWindow inherits Window {
 
             VerticalLayout {
                 EditorPanel {
-                    width: 100%;
+                    vertical-stretch: 1;
                     has-connection: AppState.active-connection != "";
                     editor-content <=> AppState.current-sql;
                     execute-query(sql) => { AppState.execute-query(sql); }
                 }
 
-                // Results always at bottom — expands when data arrives
                 ResultsPanel {
-                    width: 100%;
                     height: AppState.results-visible ? 200px : 28px;
                     has-data: AppState.results-visible;
                     columns: AppState.result-columns;
