@@ -173,23 +173,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let rows = result.rows.len();
                         tracing::info!("Query ok: {rows} rows in {elapsed}ms");
 
-                        // Build formatted text output
+                        // Build aligned table output
                         let col_names: Vec<String> = result.columns.iter()
                             .map(|c| c.name.clone())
                             .collect();
-                        let col_count = col_names.len();
+                        let col_count = col_names.len().max(1);
+                        // Calculate column widths
+                        let mut widths: Vec<usize> = col_names.iter().map(|c| c.len()).collect();
+                        for row in &result.rows {
+                            for i in 0..col_count {
+                                let val_len = row.get(i).map(|v| v.to_string().len()).unwrap_or(4);
+                                if i < widths.len() {
+                                    widths[i] = widths[i].max(val_len);
+                                }
+                            }
+                        }
+                        widths.iter_mut().for_each(|w| *w = (*w).max(4));
+
                         let mut text_out = String::new();
                         // Header
-                        text_out.push_str(&col_names.join(" | "));
+                        for (i, name) in col_names.iter().enumerate() {
+                            text_out.push_str(&format!(" {:<w$} ", name, w = widths[i]));
+                            if i < col_count - 1 { text_out.push('│'); }
+                        }
                         text_out.push('\n');
-                        text_out.push_str(&"—".repeat( col_names.iter().map(|c| c.len()).max().unwrap_or(4).max(4) * col_count.max(1) ));
+                        // Separator
+                        for (i, w) in widths.iter().enumerate() {
+                            text_out.push_str(&"─".repeat(w + 2));
+                            if i < col_count - 1 { text_out.push('┼'); }
+                        }
                         text_out.push('\n');
                         // Rows
                         for row in &result.rows {
-                            let vals: Vec<String> = (0..col_count)
-                                .map(|i| row.get(i).map(|v| v.to_string()).unwrap_or_else(|| "NULL".into()))
-                                .collect();
-                            text_out.push_str(&vals.join(" | "));
+                            for (i, w) in widths.iter().enumerate() {
+                                let val = row.get(i).map(|v| v.to_string()).unwrap_or_else(|| "NULL".into());
+                                text_out.push_str(&format!(" {:<w$} ", val, w = w));
+                                if i < col_count - 1 { text_out.push('│'); }
+                            }
                             text_out.push('\n');
                         }
 
