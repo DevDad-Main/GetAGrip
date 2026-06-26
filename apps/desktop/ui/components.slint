@@ -45,29 +45,33 @@ export component Sidebar {
                             font-size: 11px; color: #6c7086; vertical-alignment: center;
                         }
                         if item.kind == "server" : Text {
-                            text: "🖥"; font-size: 13px; vertical-alignment: center;
+                            text: "◈"; font-size: 13px; color: #89b4fa; vertical-alignment: center;
                         }
                         if item.kind == "database" : Text {
-                            text: "🗄"; font-size: 13px; vertical-alignment: center;
+                            text: "◆"; font-size: 11px; color: #a6e3a1; vertical-alignment: center;
                         }
                         if item.kind == "schema" : Text {
-                            text: "📁"; font-size: 13px; vertical-alignment: center;
+                            text: "▸"; font-size: 11px; color: #6c7086; vertical-alignment: center;
                         }
                         if item.kind == "table" : Text {
-                            text: "📋"; font-size: 13px; vertical-alignment: center;
+                            text: "▤"; font-size: 13px; color: #f9e2af; vertical-alignment: center;
                         }
                         if item.kind == "view" : Text {
-                            text: "👁"; font-size: 13px; vertical-alignment: center;
+                            text: "◎"; font-size: 13px; color: #cba6f7; vertical-alignment: center;
                         }
                         if item.kind == "function" : Text {
-                            text: "ƒ"; font-size: 12px; color: #89b4fa; vertical-alignment: center;
+                            text: "λ"; font-size: 13px; color: #89b4fa; vertical-alignment: center;
                         }
 
                         Text {
                             text: item.label;
                             font-size: 12px; vertical-alignment: center;
-                            color: item.kind == "function" ? #89b4fa :
-                                   item.kind == "table" ? #cdd6f4 : #6c7086;
+                            color: item.kind == "server" ? #cdd6f4 :
+                                   item.kind == "database" ? #a6e3a1 :
+                                   item.kind == "table" ? #cdd6f4 :
+                                   item.kind == "function" ? #89b4fa :
+                                   item.kind == "view" ? #cba6f7 :
+                                   #6c7086;
                             overflow: elide;
                         }
                     }
