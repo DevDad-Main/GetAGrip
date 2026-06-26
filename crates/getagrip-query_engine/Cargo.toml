@@ -1,0 +1,15 @@
+[package]
+name = "getagrip-query-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "GetAGrip: query execution engine and scheduler."
+
+[dependencies]
+getagrip-core = { path = "../getagrip-core" }
+getagrip-database = { path = "../getagrip-database" }
+tokio = { workspace = true }
+serde = { workspace = true }
+chrono = { workspace = true }
+parking_lot = { workspace = true }

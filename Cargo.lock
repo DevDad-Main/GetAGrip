@@ -420,143 +420,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "atlas-core"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "base64",
- "chrono",
- "crossbeam-channel",
- "dashmap",
- "derive_more",
- "dirs",
- "figment",
- "indexmap",
- "insta",
- "miette",
- "parking_lot",
- "proptest",
- "rand 0.8.6",
- "regex",
- "ring",
- "serde",
- "serde_json",
- "strum 0.26.3",
- "tempfile",
- "thiserror 2.0.18",
- "tracing",
- "unicode-segmentation",
- "uuid",
-]
-
-[[package]]
-name = "atlas-database"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "atlas-core",
- "base64",
- "bitflags 2.13.0",
- "chrono",
- "dashmap",
- "parking_lot",
- "serde",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "atlas-editor"
-version = "0.1.0"
-dependencies = [
- "atlas-core",
- "atlas-sql",
- "serde",
-]
-
-[[package]]
-name = "atlas-explorer"
-version = "0.1.0"
-dependencies = [
- "atlas-core",
- "atlas-database",
- "serde",
-]
-
-[[package]]
-name = "atlas-plugins"
-version = "0.1.0"
-dependencies = [
- "atlas-core",
- "serde",
-]
-
-[[package]]
-name = "atlas-query-engine"
-version = "0.1.0"
-dependencies = [
- "atlas-core",
- "atlas-database",
- "chrono",
- "parking_lot",
- "serde",
- "tokio",
-]
-
-[[package]]
-name = "atlas-results"
-version = "0.1.0"
-dependencies = [
- "atlas-core",
- "serde",
-]
-
-[[package]]
-name = "atlas-schema"
-version = "0.1.0"
-dependencies = [
- "atlas-core",
- "atlas-database",
- "serde",
-]
-
-[[package]]
-name = "atlas-settings"
-version = "0.1.0"
-dependencies = [
- "atlas-core",
- "serde",
-]
-
-[[package]]
-name = "atlas-sql"
-version = "0.1.0"
-dependencies = [
- "atlas-core",
- "serde",
- "sqlparser",
-]
-
-[[package]]
-name = "atlas-telemetry"
-version = "0.1.0"
-dependencies = [
- "atlas-core",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "atlas-themes"
-version = "0.1.0"
-dependencies = [
- "atlas-core",
- "serde",
-]
-
-[[package]]
 name = "atomic"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1764,11 +1627,148 @@ dependencies = [
 name = "getagrip"
 version = "0.1.0"
 dependencies = [
- "atlas-core",
+ "getagrip-core",
  "slint",
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "getagrip-core"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "base64",
+ "chrono",
+ "crossbeam-channel",
+ "dashmap",
+ "derive_more",
+ "dirs",
+ "figment",
+ "indexmap",
+ "insta",
+ "miette",
+ "parking_lot",
+ "proptest",
+ "rand 0.8.6",
+ "regex",
+ "ring",
+ "serde",
+ "serde_json",
+ "strum 0.26.3",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+ "unicode-segmentation",
+ "uuid",
+]
+
+[[package]]
+name = "getagrip-database"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "bitflags 2.13.0",
+ "chrono",
+ "dashmap",
+ "getagrip-core",
+ "parking_lot",
+ "serde",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "getagrip-editor"
+version = "0.1.0"
+dependencies = [
+ "getagrip-core",
+ "getagrip-sql",
+ "serde",
+]
+
+[[package]]
+name = "getagrip-explorer"
+version = "0.1.0"
+dependencies = [
+ "getagrip-core",
+ "getagrip-database",
+ "serde",
+]
+
+[[package]]
+name = "getagrip-plugins"
+version = "0.1.0"
+dependencies = [
+ "getagrip-core",
+ "serde",
+]
+
+[[package]]
+name = "getagrip-query-engine"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "getagrip-core",
+ "getagrip-database",
+ "parking_lot",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "getagrip-results"
+version = "0.1.0"
+dependencies = [
+ "getagrip-core",
+ "serde",
+]
+
+[[package]]
+name = "getagrip-schema"
+version = "0.1.0"
+dependencies = [
+ "getagrip-core",
+ "getagrip-database",
+ "serde",
+]
+
+[[package]]
+name = "getagrip-settings"
+version = "0.1.0"
+dependencies = [
+ "getagrip-core",
+ "serde",
+]
+
+[[package]]
+name = "getagrip-sql"
+version = "0.1.0"
+dependencies = [
+ "getagrip-core",
+ "serde",
+ "sqlparser",
+]
+
+[[package]]
+name = "getagrip-telemetry"
+version = "0.1.0"
+dependencies = [
+ "getagrip-core",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "getagrip-themes"
+version = "0.1.0"
+dependencies = [
+ "getagrip-core",
+ "serde",
 ]
 
 [[package]]

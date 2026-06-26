@@ -1,0 +1,11 @@
+[package]
+name = "getagrip-results"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "GetAGrip: query results data grid and export."
+
+[dependencies]
+getagrip-core = { path = "../getagrip-core" }
+serde = { workspace = true }

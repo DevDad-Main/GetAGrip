@@ -11,7 +11,7 @@ name = "getagrip"
 path = "src/main.rs"
 
 [dependencies]
-atlas-core = { path = "../../crates/core" }
+getagrip-core = { path = "../../crates/getagrip-core" }
 slint = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

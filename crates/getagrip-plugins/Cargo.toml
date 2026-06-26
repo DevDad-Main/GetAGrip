@@ -1,0 +1,11 @@
+[package]
+name = "getagrip-plugins"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "GetAGrip: plugin system for extensibility."
+
+[dependencies]
+getagrip-core = { path = "../getagrip-core" }
+serde = { workspace = true }

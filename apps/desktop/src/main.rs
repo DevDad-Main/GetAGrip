@@ -8,9 +8,9 @@ fn main() {
         )
         .init();
 
-    tracing::info!("GetAGrip v{} starting...", atlas_core::VERSION);
+    tracing::info!("GetAGrip v{} starting...", getagrip_core::VERSION);
 
-    let config = atlas_core::WorkspaceConfig::default();
+    let config = getagrip_core::WorkspaceConfig::default();
     tracing::info!(
         "Loaded config: theme={}, font={}, tab_width={}",
         config.appearance.theme,
@@ -18,7 +18,7 @@ fn main() {
         config.editor.tab_width,
     );
 
-    let profiles = atlas_core::session::ConnectionProfiles::new();
+    let profiles = getagrip_core::session::ConnectionProfiles::new();
     tracing::info!("Connection profiles loaded: {} profiles", profiles.profiles.len());
 
     tracing::info!("GetAGrip is ready (Phase 1 — core initialisation).");

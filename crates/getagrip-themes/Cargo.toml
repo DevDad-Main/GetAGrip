@@ -1,0 +1,11 @@
+[package]
+name = "getagrip-themes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "GetAGrip: theme engine and built-in themes."
+
+[dependencies]
+getagrip-core = { path = "../getagrip-core" }
+serde = { workspace = true }

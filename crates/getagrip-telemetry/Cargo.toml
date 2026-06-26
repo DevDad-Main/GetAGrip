@@ -1,0 +1,13 @@
+[package]
+name = "getagrip-telemetry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "GetAGrip: structured logging and tracing."
+
+[dependencies]
+getagrip-core = { path = "../getagrip-core" }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }

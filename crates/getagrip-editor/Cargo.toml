@@ -1,0 +1,12 @@
+[package]
+name = "getagrip-editor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "GetAGrip: SQL editor with syntax highlighting and autocomplete."
+
+[dependencies]
+getagrip-core = { path = "../getagrip-core" }
+getagrip-sql = { path = "../getagrip-sql" }
+serde = { workspace = true }

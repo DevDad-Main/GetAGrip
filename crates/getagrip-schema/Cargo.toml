@@ -1,0 +1,12 @@
+[package]
+name = "getagrip-schema"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "GetAGrip: schema introspection and comparison."
+
+[dependencies]
+getagrip-core = { path = "../getagrip-core" }
+getagrip-database = { path = "../getagrip-database" }
+serde = { workspace = true }
