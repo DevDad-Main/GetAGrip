@@ -10,3 +10,10 @@ description = "GetAGrip: database driver abstraction layer."
 atlas-core = { path = "../core" }
 tokio = { workspace = true }
 serde = { workspace = true }
+async-trait = "0.1"
+bitflags = "2"
+uuid = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true }
+dashmap = { workspace = true }
+parking_lot = { workspace = true }

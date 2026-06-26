@@ -10,3 +10,4 @@ description = "GetAGrip: structured logging and tracing."
 atlas-core = { path = "../core" }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }

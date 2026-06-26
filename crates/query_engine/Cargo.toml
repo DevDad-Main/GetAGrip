@@ -11,3 +11,5 @@ atlas-core = { path = "../core" }
 atlas-database = { path = "../database" }
 tokio = { workspace = true }
 serde = { workspace = true }
+chrono = { workspace = true }
+parking_lot = { workspace = true }
