@@ -386,7 +386,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             if item.kind == "database" && item.depth == 1 && !item.expanded {
-                let db_name = item.label.to_string();
+                let db_name = item.label.to_string().split("  (").next().unwrap_or("").to_string();
                 let handle = tokio::runtime::Handle::current();
                 let model2 = model.clone();
                 let app_weak2 = app_weak.clone();
