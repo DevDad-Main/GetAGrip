@@ -8,11 +8,11 @@ use std::sync::{atomic::AtomicBool, Arc, Mutex};
 use slint::ComponentHandle;
 use slint_ui::*;
 
-use getagrip_database::driver::{DatabaseDriver, DriverConnection};
+use getagrip_database::driver::DatabaseDriver;
 
 struct AppModel {
     driver: Arc<dyn DatabaseDriver>,
-    active_connection: Option<Box<dyn DriverConnection>>,
+    connection_url: Option<String>,
     connecting: Arc<AtomicBool>,
 }
 
@@ -28,15 +28,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let driver: Arc<dyn DatabaseDriver> =
         Arc::new(getagrip_driver_sqlserver::SqlServerDriver::new());
     let model = Arc::new(Mutex::new(AppModel {
-        driver,
-        active_connection: None,
+        driver: driver.clone(),
+        connection_url: None,
         connecting: Arc::new(AtomicBool::new(false)),
     }));
 
     app.global::<AppState>().set_connection_status("● Disconnected".into());
     app.global::<AppState>().set_status_text("Ready".into());
 
-    // ---- Callbacks that don't need async ----
+    // ---- Simple callbacks ----
     let app_weak = app.as_weak();
     app.global::<AppState>().on_open_command_palette(move || {
         AppState::get(&app_weak.unwrap()).set_command_palette_open(true);
@@ -45,34 +45,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.global::<AppState>().on_close_command_palette(move || {
         AppState::get(&app_weak.unwrap()).set_command_palette_open(false);
     });
-
     let app_weak = app.as_weak();
-    app.global::<AppState>().on_new_query(move || {
-        if let Some(a) = app_weak.upgrade() {
-            a.global::<AppState>().set_status_text("New query tab".into());
-        }
-    });
+    app.global::<AppState>().on_new_query(move || { let _ = app_weak; });
 
     // ---- Connect ----
     {
         let model = model.clone();
         let app_weak = app.as_weak();
+        let driver2 = driver.clone();
         app.global::<AppState>().on_connect(move || {
             let connecting = model.lock().unwrap().connecting.clone();
-            if connecting.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                tracing::warn!("Already connecting or connected");
-                return;
-            }
+            if connecting.swap(true, std::sync::atomic::Ordering::SeqCst) { return; }
 
             let url = "sqlserver://sa:Str0ngP4ssw0rd!@localhost:1433?trustServerCertificate=true";
-            tracing::info!("Connecting to {url}...");
-
-            let driver = { model.lock().unwrap().driver.clone() };
             let handle = tokio::runtime::Handle::current();
-            let url_owned = url.to_string();
-            let app_weak2 = app_weak.clone();
+            let driver = driver2.clone();
             let model2 = model.clone();
+            let app_weak2 = app_weak.clone();
             let conn_flag = connecting.clone();
+            let url_owned = url.to_string();
 
             if let Some(a) = app_weak.upgrade() {
                 a.global::<AppState>().set_status_text("Connecting...".into());
@@ -80,31 +71,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             handle.spawn(async move {
                 match driver.connect(&url_owned).await {
-                    Ok(conn) => {
-                        // Grab server version
+                    Ok(mut conn) => {
+                        // Get server info + list databases for sidebar
                         let info = conn.info().await.ok();
                         let version = info.map(|i| i.product_name).unwrap_or_default();
 
-                        tracing::info!("Connected to {version}!");
+                        // Introspect databases
+                        let db_names = match conn.execute("SELECT name FROM sys.databases ORDER BY name").await {
+                            Ok(r) => r.rows.iter()
+                                .filter_map(|row| row.get(0).map(|v| v.to_string()))
+                                .collect::<Vec<_>>(),
+                            Err(e) => { tracing::warn!("Introspection failed: {e}"); vec![] }
+                        };
+
+                        tracing::info!("Connected to {version}! {} databases found.", db_names.len());
 
                         let weak = app_weak2.clone();
                         let url2 = url_owned.clone();
-                        let ver = version.clone();
+                        let ver = version;
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(a) = weak.upgrade() {
+                                // Build sidebar tree
+                                let mut items: Vec<TreeItem> = vec![
+                                    TreeItem {
+                                        label: url2.clone().into(), kind: "server".into(),
+                                        depth: 0, expanded: true, has_children: true, icon: "".into(),
+                                    }
+                                ];
+                                for db in &db_names {
+                                    items.push(TreeItem {
+                                        label: db.clone().into(), kind: "database".into(),
+                                        depth: 1, expanded: false, has_children: true, icon: "".into(),
+                                    });
+                                }
+                                let model = std::rc::Rc::new(slint::VecModel::from(items));
+                                a.global::<AppState>().set_sidebar_items(model.into());
+                                a.global::<AppState>().set_sidebar_visible(true);
                                 a.global::<AppState>().set_active_connection(url2.into());
                                 a.global::<AppState>().set_connection_status("● Connected".into());
                                 a.global::<AppState>().set_status_text(format!("{ver} — ready").into());
                             }
                         });
-                        {
-                            let mut m = model2.lock().unwrap();
-                            m.active_connection = Some(conn);
-                            conn_flag.store(false, std::sync::atomic::Ordering::SeqCst);
-                        }
+                        model2.lock().unwrap().connection_url = Some(url_owned);
+                        conn_flag.store(false, std::sync::atomic::Ordering::SeqCst);
                     }
                     Err(e) => {
-                        tracing::error!("Connection failed: {e}");
                         conn_flag.store(false, std::sync::atomic::Ordering::SeqCst);
                         let weak = app_weak2.clone();
                         let msg = format!("{e}");
@@ -126,7 +137,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let app_weak = app.as_weak();
         app.global::<AppState>().on_disconnect(move || {
             let mut m = model.lock().unwrap();
-            m.active_connection = None;
+            m.connection_url = None;
             m.connecting.store(false, std::sync::atomic::Ordering::SeqCst);
             if let Some(a) = app_weak.upgrade() {
                 a.global::<AppState>().set_active_connection("".into());
@@ -143,23 +154,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         app.global::<AppState>().on_execute_query(move |sql: slint::SharedString| {
             let sql = sql.to_string();
             if sql.trim().is_empty() { return; }
-            tracing::info!("Execute: {sql}");
 
-            let conn = {
-                let mut m = model.lock().unwrap();
-                m.active_connection.take()
-            };
-            let Some(mut conn) = conn else {
+            let driver = model.lock().unwrap().driver.clone();
+            let url = model.lock().unwrap().connection_url.clone();
+            let Some(ref url) = url else {
                 if let Some(a) = app_weak.upgrade() {
                     a.global::<AppState>().set_status_text("Not connected".into());
                 }
                 return;
             };
+            let url = url.clone();
 
             let handle = tokio::runtime::Handle::current();
             let app_weak2 = app_weak.clone();
-            let sql2 = sql.clone();
-            let model2 = model.clone();
 
             if let Some(a) = app_weak.upgrade() {
                 a.global::<AppState>().set_status_text("Running query...".into());
@@ -167,43 +174,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             handle.spawn(async move {
                 let started = std::time::Instant::now();
-                match conn.execute(&sql2).await {
+                let mut conn = match driver.connect(&url).await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let weak = app_weak2.clone();
+                        let msg = format!("{e}");
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(a) = weak.upgrade() {
+                                a.global::<AppState>().set_status_text(msg.into());
+                            }
+                        });
+                        return;
+                    }
+                };
+
+                match conn.execute(&sql).await {
                     Ok(result) => {
                         let elapsed = started.elapsed().as_millis();
                         let rows = result.rows.len();
-                        tracing::info!("Query ok: {rows} rows in {elapsed}ms");
 
                         // Build aligned table output
-                        let col_names: Vec<String> = result.columns.iter()
-                            .map(|c| c.name.clone())
-                            .collect();
+                        let col_names: Vec<String> = result.columns.iter().map(|c| c.name.clone()).collect();
                         let col_count = col_names.len().max(1);
-                        // Calculate column widths
                         let mut widths: Vec<usize> = col_names.iter().map(|c| c.len()).collect();
                         for row in &result.rows {
                             for i in 0..col_count {
                                 let val_len = row.get(i).map(|v| v.to_string().len()).unwrap_or(4);
-                                if i < widths.len() {
-                                    widths[i] = widths[i].max(val_len);
-                                }
+                                if i < widths.len() { widths[i] = widths[i].max(val_len); }
                             }
                         }
                         widths.iter_mut().for_each(|w| *w = (*w).max(4));
-
                         let mut text_out = String::new();
-                        // Header
                         for (i, name) in col_names.iter().enumerate() {
                             text_out.push_str(&format!(" {:<w$} ", name, w = widths[i]));
                             if i < col_count - 1 { text_out.push('│'); }
                         }
                         text_out.push('\n');
-                        // Separator
                         for (i, w) in widths.iter().enumerate() {
                             text_out.push_str(&"─".repeat(w + 2));
                             if i < col_count - 1 { text_out.push('┼'); }
                         }
                         text_out.push('\n');
-                        // Rows
                         for row in &result.rows {
                             for (i, w) in widths.iter().enumerate() {
                                 let val = row.get(i).map(|v| v.to_string()).unwrap_or_else(|| "NULL".into());
@@ -219,32 +230,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if let Some(a) = weak.upgrade() {
                                 a.global::<AppState>().set_result_text(text_out.into());
                                 a.global::<AppState>().set_results_visible(true);
-                                a.global::<AppState>().set_status_text(
-                                    format!("{row_count} rows — {elapsed}ms").into(),
-                                );
+                                a.global::<AppState>().set_status_text(format!("{row_count} rows — {elapsed}ms").into());
                             }
                         });
-
-                        // Return the connection
-                        {
-                            let mut m = model2.lock().unwrap();
-                            m.active_connection = Some(conn);
-                        }
                     }
                     Err(e) => {
-                        tracing::error!("Query failed: {e}");
                         let weak = app_weak2.clone();
                         let msg = format!("{e}");
                         let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(a) = weak.upgrade() {
-                                a.global::<AppState>().set_status_text(msg.into());
-                            }
+                            if let Some(a) = weak.upgrade() { a.global::<AppState>().set_status_text(msg.into()); }
                         });
-                        // Return connection
-                        {
-                            let mut m = model2.lock().unwrap();
-                            m.active_connection = Some(conn);
-                        }
                     }
                 }
             });
@@ -267,7 +262,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // ---- Command palette execute ----
+    // ---- Command palette ----
     let app_weak = app.as_weak();
     app.global::<AppState>().on_execute_command(move |cmd| {
         let cmd: String = cmd.into();
@@ -287,5 +282,3 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.run()?;
     Ok(())
 }
-
-
