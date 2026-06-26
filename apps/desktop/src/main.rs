@@ -288,7 +288,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if item.expanded {
                 let mut updated = items.clone();
                 updated[idx].expanded = false;
-                // Remove all children (items with depth > current depth until next same-or-lower depth)
                 let i = idx + 1;
                 while i < updated.len() && updated[i].depth > item.depth {
                     updated.remove(i);
@@ -304,6 +303,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let m = std::rc::Rc::new(slint::VecModel::from(items2));
                         a.global::<AppState>().set_sidebar_items(m.into());
                     }
+                });
+                return;
+            }
+
+            // Expand server: re-run database list
+            if item.kind == "server" && item.depth == 0 && !item.expanded {
+                let handle = tokio::runtime::Handle::current();
+                let model2 = model.clone();
+                let app_weak2 = app_weak.clone();
+                let driver2 = driver.clone();
+                let url2 = url.clone();
+                let items2 = items.clone();
+
+                handle.spawn(async move {
+                    let mut updated = items2.clone();
+                    updated[idx].expanded = true;
+
+                    let mut new_items = Vec::new();
+                    if let Ok(mut conn) = driver2.connect(&url2).await {
+                        if let Ok(r) = conn.execute("SELECT name FROM sys.databases ORDER BY name").await {
+                            for row in &r.rows {
+                                if let Some(name) = row.get(0).map(|v| v.to_string()) {
+                                    new_items.push(TreeItem {
+                                        label: name.into(), kind: "database".into(),
+                                        depth: 1, expanded: false, has_children: true, icon: "".into(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    let insert_pos = idx + 1;
+                    for (i, ni) in new_items.iter().enumerate() {
+                        updated.insert(insert_pos + i, ni.clone());
+                    }
+
+                    {
+                        let mut m = model2.lock().unwrap();
+                        m.sidebar_items = updated.clone();
+                    }
+                    let weak2 = app_weak2.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(a) = weak2.upgrade() {
+                            let m = std::rc::Rc::new(slint::VecModel::from(updated));
+                            a.global::<AppState>().set_sidebar_items(m.into());
+                        }
+                    });
                 });
                 return;
             }
@@ -408,45 +454,74 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
             }
 
-            // Handle "folder" click — toggle expand (show/hide children)
-            if item.kind == "folder" && item.depth == 2 {
-                let items2 = items.clone();
-                let mut updated = items2.clone();
-                updated[idx].expanded = !item.expanded;
+            // Handle "folder" click — expand re-runs parent introspection
+            if item.kind == "folder" && item.depth == 2 && !item.expanded {
+                // Find the database name (walk backwards to find parent database)
+                let db_name: String = items.iter()
+                    .take(idx)
+                    .rev()
+                    .find(|i| i.kind == "database")
+                    .map(|i| i.label.to_string().split("  (").next().unwrap_or("").to_string())
+                    .unwrap_or_default();
+                let is_tables = item.label.to_string().starts_with("Tables");
 
-                if !item.expanded {
-                    // Currently collapsed — show children
-                    let model2 = model.clone();
+                let handle = tokio::runtime::Handle::current();
+                let model2 = model.clone();
+                let app_weak2 = app_weak.clone();
+                let driver2 = driver.clone();
+                let url2 = url.clone();
+                let items2 = items.clone();
+
+                handle.spawn(async move {
+                    let mut updated = items2.clone();
+                    updated[idx].expanded = true;
+
+                    let mut new_items = Vec::new();
+                    if let Ok(mut conn) = driver2.connect(&url2).await {
+                        if is_tables {
+                            let sql = format!("SELECT TABLE_NAME FROM [{db_name}].INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME");
+                            if let Ok(r) = conn.execute(&sql).await {
+                                for row in &r.rows {
+                                    if let Some(name) = row.get(0).map(|v| v.to_string()) {
+                                        new_items.push(TreeItem {
+                                            label: name.into(), kind: "table".into(),
+                                            depth: 3, expanded: false, has_children: true, icon: "".into(),
+                                        });
+                                    }
+                                }
+                            }
+                        } else {
+                            let sql = format!("SELECT TABLE_NAME FROM [{db_name}].INFORMATION_SCHEMA.VIEWS ORDER BY TABLE_NAME");
+                            if let Ok(r) = conn.execute(&sql).await {
+                                for row in &r.rows {
+                                    if let Some(name) = row.get(0).map(|v| v.to_string()) {
+                                        new_items.push(TreeItem {
+                                            label: name.into(), kind: "view".into(),
+                                            depth: 3, expanded: false, has_children: false, icon: "".into(),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let insert_pos = idx + 1;
+                    for (i, ni) in new_items.iter().enumerate() {
+                        updated.insert(insert_pos + i, ni.clone());
+                    }
+
                     {
                         let mut m = model2.lock().unwrap();
                         m.sidebar_items = updated.clone();
                     }
-                    let weak2 = app_weak.clone();
+                    let weak2 = app_weak2.clone();
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(a) = weak2.upgrade() {
                             let m = std::rc::Rc::new(slint::VecModel::from(updated));
                             a.global::<AppState>().set_sidebar_items(m.into());
                         }
                     });
-                } else {
-                    // Currently expanded — hide children (collapse)
-                    let i = idx + 1;
-                    while i < updated.len() && updated[i].depth > item.depth {
-                        updated.remove(i);
-                    }
-                    let model2 = model.clone();
-                    {
-                        let mut m = model2.lock().unwrap();
-                        m.sidebar_items = updated.clone();
-                    }
-                    let weak3 = app_weak.clone();
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(a) = weak3.upgrade() {
-                            let m = std::rc::Rc::new(slint::VecModel::from(updated));
-                            a.global::<AppState>().set_sidebar_items(m.into());
-                        }
-                    });
-                }
+                });
                 return;
             }
 
