@@ -128,8 +128,14 @@ export component MainWindow inherits Window {
             }
         }
 
-        // Status bar pinned to the bottom
-        StatusBar { height: 24px; }
+    }
+
+    // Status bar — absolutely positioned at bottom of window
+    StatusBar {
+        y: root.height - 24px;
+        x: 0px;
+        width: root.width;
+        height: 24px;
     }
 
     if AppState.command-palette-open : CommandPalette {
