@@ -49,7 +49,7 @@ pub enum DatabaseKind {
 impl DatabaseKind {
     /// The default port for this database kind.
     #[must_use]
-    pub fn default_port(self) -> u16 {
+    pub fn default_port(&self) -> u16 {
         match self {
             Self::Postgres | Self::CockroachDb | Self::Redshift => 5432,
             Self::Mysql | Self::MariaDb => 3306,

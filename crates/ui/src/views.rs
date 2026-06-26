@@ -121,12 +121,28 @@ pub fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState, theme: &T
         .title(" Connections ")
         .borders(Borders::BOTTOM);
 
-    let conn_items: Vec<ListItem> = vec![
-        "  No connections yet".into(),
-        "".into(),
-        "  Connect a database to".into(),
-        "  browse tables and objects".into(),
-    ];
+    // Build connection list from the connection manager
+    let conns = state.connection_manager.list_connections().unwrap_or_default();
+    let mut conn_items: Vec<ListItem> = if conns.is_empty() {
+        vec![
+            "  No connections".into(),
+            "".into(),
+            "  Press Ctrl+K then type:".into(),
+            "  /connect <url>".into(),
+            "".into(),
+            "  e.g.:".into(),
+            "  /connect postgres://user@host/db".into(),
+            "  /connect sqlserver://user@host/db".into(),
+        ]
+    } else {
+        conns.iter().map(|c| {
+            let status = match c.status {
+                tg_core::types::connection::ConnectionStatus::Connected => "●",
+                _ => "○",
+            };
+            format!("  {status} {} ({})", c.name, c.kind).into()
+        }).collect()
+    };
     let conn_list = List::new(conn_items);
 
     frame.render_widget(conn_block, sidebar_split[0]);
@@ -364,13 +380,14 @@ pub fn render_command_palette(frame: &mut Frame, area: Rect, state: &AppState, t
     let items = vec![
         Line::from(Span::styled(&prompt, Style::default().fg(fg))),
         Line::from(""),
-        Line::from(Span::styled("  Ctrl+K / F1     Toggle this palette", Style::default().fg(dim))),
-        Line::from(Span::styled("  Ctrl+1/2/3      Switch panes (editor/results/explorer)", Style::default().fg(dim))),
-        Line::from(Span::styled("  Ctrl+T          New tab", Style::default().fg(dim))),
-        Line::from(Span::styled("  Ctrl+W          Close tab", Style::default().fg(dim))),
-        Line::from(Span::styled("  Ctrl+Enter      Execute query (not wired yet)", Style::default().fg(dim))),
-        Line::from(Span::styled("  Ctrl+B          Toggle sidebar", Style::default().fg(dim))),
-        Line::from(Span::styled("  Ctrl+C          Quit", Style::default().fg(dim))),
+        Line::from(Span::styled("  Type /connect <url> to add a connection", Style::default().fg(accent))),
+        Line::from(Span::styled("  e.g. /connect sqlserver://user:pass@host/db", Style::default().fg(dim))),
+        Line::from(""),
+        Line::from(Span::styled("  Alt+1/2/3    Switch panes (editor/results/explorer)", Style::default().fg(dim))),
+        Line::from(Span::styled("  Ctrl+K/F1    Toggle this palette", Style::default().fg(dim))),
+        Line::from(Span::styled("  Ctrl+T/W     New/close tab", Style::default().fg(dim))),
+        Line::from(Span::styled("  Ctrl+B       Toggle sidebar", Style::default().fg(dim))),
+        Line::from(Span::styled("  Ctrl+C       Quit", Style::default().fg(dim))),
     ];
 
     let paragraph = Paragraph::new(items).block(block);

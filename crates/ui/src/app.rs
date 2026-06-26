@@ -119,32 +119,25 @@ impl App {
 
         let ctrl = key_event.modifiers.contains(KeyModifiers::CONTROL);
         let shift = key_event.modifiers.contains(KeyModifiers::SHIFT);
-        let _alt = key_event.modifiers.contains(KeyModifiers::ALT);
+        let alt = key_event.modifiers.contains(KeyModifiers::ALT);
+
+        // ── Command palette is open: route all input there ──────────
+        if *self.state.command_palette_open.read() {
+            self.handle_palette_key(key_event);
+            return;
+        }
 
         match key_event.code {
             // ── Global shortcuts ──────────────────────────────────
             KeyCode::Char('c') if ctrl => {
                 self.should_quit = true;
             }
-            KeyCode::Char('k') if ctrl => {
-                // Toggle command palette (Ctrl+K works in all terminals)
-                self.toggle_command_palette();
-            }
-            KeyCode::F(1) => {
-                self.toggle_command_palette();
-            }
-            KeyCode::Char('p') if ctrl => {
-                // Ctrl+P alone = command palette
-                self.toggle_command_palette();
-            }
-            KeyCode::Esc => {
-                if *self.state.command_palette_open.read() {
-                    *self.state.command_palette_open.write() = false;
-                    self.needs_redraw = true;
-                }
-            }
+            KeyCode::Char('k') if ctrl => { self.toggle_command_palette(); }
+            KeyCode::F(1) => { self.toggle_command_palette(); }
+            KeyCode::Char('p') if ctrl => { self.toggle_command_palette(); }
+            KeyCode::Esc => { /* no-op when palette closed */ }
+
             KeyCode::Char('b') if ctrl => {
-                // Toggle sidebar focus
                 let mut focus = self.state.focused_panel.write();
                 *focus = match *focus {
                     FocusedPanel::Editor | FocusedPanel::Results => FocusedPanel::Explorer,
@@ -152,102 +145,209 @@ impl App {
                 };
                 self.needs_redraw = true;
             }
-            // Pane switching
-            KeyCode::Char('1') if ctrl => { *self.state.focused_panel.write() = FocusedPanel::Editor; self.needs_redraw = true; }
-            KeyCode::Char('2') if ctrl => { *self.state.focused_panel.write() = FocusedPanel::Results; self.needs_redraw = true; }
-            KeyCode::Char('3') if ctrl => { *self.state.focused_panel.write() = FocusedPanel::Explorer; self.needs_redraw = true; }
-            KeyCode::Char('t') if ctrl => {
-                // New tab
-                let tab_id = tg_core::id::Id::new();
-                let tab_count = self.state.tabs.len() + 1;
-                self.state.tabs.insert(
-                    tab_id,
-                    crate::state::TabState {
-                        title: format!("Query {tab_count}"),
-                        content: String::new(),
-                        pinned: false,
-                        dirty: false,
-                        connection_id: None,
-                        cursor: (0, 0),
-                        scroll: 0,
-                    },
-                );
-                *self.state.active_tab.write() = Some(tab_id);
-                self.needs_redraw = true;
-            }
-            KeyCode::Char('w') if ctrl => {
-                // Close tab
-                let active = *self.state.active_tab.read();
-                if let Some(id) = active {
-                    self.state.tabs.remove(&id);
-                    // Switch to another tab
-                    let remaining: Vec<_> = self.state.tabs.iter().map(|e| *e.key()).collect();
-                    *self.state.active_tab.write() = remaining.first().copied();
-                }
-                self.needs_redraw = true;
-            }
+
+            // Pane switching: Alt+1/2/3 (terminals reliably send Alt+digit)
+            KeyCode::Char('1') if alt => { *self.state.focused_panel.write() = FocusedPanel::Editor; self.needs_redraw = true; }
+            KeyCode::Char('2') if alt => { *self.state.focused_panel.write() = FocusedPanel::Results; self.needs_redraw = true; }
+            KeyCode::Char('3') if alt => { *self.state.focused_panel.write() = FocusedPanel::Explorer; self.needs_redraw = true; }
+
+            // Tabs
+            KeyCode::Char('t') if ctrl => { self.new_tab(); }
+            KeyCode::Char('w') if ctrl => { self.close_tab(); }
+            KeyCode::Tab if !shift => { self.next_tab(); }
+            KeyCode::BackTab => { self.prev_tab(); }
+
             // ── Editor shortcuts ──────────────────────────────────
             KeyCode::Enter if ctrl && shift => {
-                // Execute query
                 self.state.notify("Query execution not yet wired up", crate::state::NotificationLevel::Info);
                 self.needs_redraw = true;
             }
             KeyCode::Char('s') if ctrl => {
-                // Save
                 self.state.notify("Save not yet implemented", crate::state::NotificationLevel::Info);
                 self.needs_redraw = true;
             }
-            // ── Tab navigation ────────────────────────────────────
-            KeyCode::Tab if !shift => {
-                // Next tab
-                let active = *self.state.active_tab.read();
-                if let Some(id) = active {
-                    let ids: Vec<_> = self.state.tabs.iter().map(|e| *e.key()).collect();
-                    if let Some(pos) = ids.iter().position(|k| *k == id) {
-                        let next = (pos + 1) % ids.len();
-                        *self.state.active_tab.write() = Some(ids[next]);
-                    }
-                }
-                self.needs_redraw = true;
-            }
-            KeyCode::BackTab => {
-                // Previous tab
-                let active = *self.state.active_tab.read();
-                if let Some(id) = active {
-                    let ids: Vec<_> = self.state.tabs.iter().map(|e| *e.key()).collect();
-                    if let Some(pos) = ids.iter().position(|k| *k == id) {
-                        let prev = if pos == 0 { ids.len() - 1 } else { pos - 1 };
-                        *self.state.active_tab.write() = Some(ids[prev]);
-                    }
-                }
-                self.needs_redraw = true;
-            }
+
+            // ── Editor text input ─────────────────────────────────
             _ => {
-                // Handle editor input when editor is focused
-                if *self.state.focused_panel.read() == FocusedPanel::Editor
-                    && !*self.state.command_palette_open.read()
-                {
+                if *self.state.focused_panel.read() == FocusedPanel::Editor {
                     if let KeyCode::Char(ch) = key_event.code {
-                        if let Some(tab) = self.state.active_tab_state() {
-                            let mut content = tab.content.clone();
-                            let cursor = tab.cursor;
-                            if cursor.1 <= content.len() {
-                                content.insert(cursor.1, ch);
-                            }
-                            drop(tab);
-                            // Update the tab
-                            if let Some(mut tab) = self.state.tabs.get_mut(&self.state.active_tab.read().unwrap()) {
-                                tab.content = content;
-                                tab.cursor.1 = tab.cursor.1.saturating_add(1);
-                                tab.dirty = true;
-                            }
-                            self.needs_redraw = true;
-                        }
+                        self.insert_char(ch);
                     } else {
                         self.handle_editor_key(key_event);
                     }
                 }
             }
+        }
+    }
+
+    /// Handle keys when the command palette is open.
+    fn handle_palette_key(&mut self, key_event: crossterm::event::KeyEvent) {
+        use crossterm::event::KeyCode;
+
+        match key_event.code {
+            KeyCode::Esc => {
+                *self.state.command_palette_open.write() = false;
+                self.needs_redraw = true;
+            }
+            KeyCode::Enter => {
+                let query = self.state.command_palette_query.read().clone();
+                *self.state.command_palette_open.write() = false;
+                self.execute_palette_command(&query);
+                self.needs_redraw = true;
+            }
+            KeyCode::Backspace => {
+                let mut q = self.state.command_palette_query.write();
+                q.pop();
+                self.needs_redraw = true;
+            }
+            KeyCode::Char(ch) => {
+                self.state.command_palette_query.write().push(ch);
+                self.needs_redraw = true;
+            }
+            _ => {}
+        }
+    }
+
+    /// Execute a command entered in the command palette.
+    fn execute_palette_command(&mut self, cmd: &str) {
+        let cmd = cmd.trim();
+
+        if cmd.starts_with("/connect ") {
+            let url = &cmd[9..];
+            self.add_connection_from_url(url);
+        } else if cmd == "help" || cmd == "?" {
+            self.state.notify(
+                "Commands: /connect <url>  |  help  |  Type to fuzzy-search",
+                crate::state::NotificationLevel::Info,
+            );
+        } else if !cmd.is_empty() {
+            self.state.notify(
+                &format!("Unknown: {cmd}. Try /connect <url> or help"),
+                crate::state::NotificationLevel::Warning,
+            );
+        }
+    }
+
+    /// Parse a JDBC-style URL into a ConnectionInfo and add it.
+    fn add_connection_from_url(&mut self, url: &str) {
+        // Parse: kind://user:pass@host:port/db?params
+        let (kind_str, rest) = url.split_once("://").unwrap_or(("postgres", url));
+        let kind = match kind_str.to_lowercase().as_str() {
+            "postgres" | "postgresql" | "pg" => tg_core::types::connection::DatabaseKind::Postgres,
+            "mysql" | "mariadb" => tg_core::types::connection::DatabaseKind::Mysql,
+            "sqlite" => tg_core::types::connection::DatabaseKind::Sqlite,
+            "duckdb" => tg_core::types::connection::DatabaseKind::DuckDb,
+            "sqlserver" | "mssql" | "sql server" => tg_core::types::connection::DatabaseKind::SqlServer,
+            "redis" => tg_core::types::connection::DatabaseKind::Redis,
+            "clickhouse" => tg_core::types::connection::DatabaseKind::ClickHouse,
+            other => tg_core::types::connection::DatabaseKind::Custom(other.to_string()),
+        };
+
+        // user:pass@host:port/db?params
+        let (auth_host, db_params) = rest.split_once('/').unwrap_or((rest, ""));
+        let (user_pass, host_port) = auth_host.split_once('@').unwrap_or(("", auth_host));
+        let (user, _password) = user_pass.split_once(':').unwrap_or((user_pass, ""));
+        let (host, port_str) = host_port.split_once(':').unwrap_or((host_port, ""));
+        let port: u16 = port_str.parse().unwrap_or_else(|_| kind.default_port());
+        let (db, _params) = db_params.split_once('?').unwrap_or((db_params, ""));
+
+        let name = format!("{user}@{host}/{db}");
+        let mut info = tg_core::types::connection::ConnectionInfo::new(name.clone(), kind, host, port);
+        info.database = if db.is_empty() { None } else { Some(db.to_string()) };
+        info.user = if user.is_empty() { None } else { Some(user.to_string()) };
+
+        match self.state.connection_manager.add_connection(info) {
+            Ok(id) => {
+                self.state.notify(
+                    &format!("Connection added: {name}"),
+                    crate::state::NotificationLevel::Success,
+                );
+                // Wire connection to active tab
+                if let Some(active_id) = *self.state.active_tab.read() {
+                    if let Some(mut tab) = self.state.tabs.get_mut(&active_id) {
+                        tab.connection_id = Some(id);
+                    }
+                }
+            }
+            Err(e) => {
+                self.state.notify(
+                    &format!("Failed to add connection: {e}"),
+                    crate::state::NotificationLevel::Error,
+                );
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    fn new_tab(&mut self) {
+        let tab_id = tg_core::id::Id::new();
+        let tab_count = self.state.tabs.len() + 1;
+        self.state.tabs.insert(
+            tab_id,
+            crate::state::TabState {
+                title: format!("Query {tab_count}"),
+                content: String::new(),
+                pinned: false,
+                dirty: false,
+                connection_id: None,
+                cursor: (0, 0),
+                scroll: 0,
+            },
+        );
+        *self.state.active_tab.write() = Some(tab_id);
+        self.needs_redraw = true;
+    }
+
+    fn close_tab(&mut self) {
+        let active = *self.state.active_tab.read();
+        if let Some(id) = active {
+            self.state.tabs.remove(&id);
+            let remaining: Vec<_> = self.state.tabs.iter().map(|e| *e.key()).collect();
+            *self.state.active_tab.write() = remaining.first().copied();
+        }
+        self.needs_redraw = true;
+    }
+
+    fn next_tab(&mut self) {
+        let active = *self.state.active_tab.read();
+        if let Some(id) = active {
+            let ids: Vec<_> = self.state.tabs.iter().map(|e| *e.key()).collect();
+            if let Some(pos) = ids.iter().position(|k| *k == id) {
+                let next = (pos + 1) % ids.len();
+                *self.state.active_tab.write() = Some(ids[next]);
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    fn prev_tab(&mut self) {
+        let active = *self.state.active_tab.read();
+        if let Some(id) = active {
+            let ids: Vec<_> = self.state.tabs.iter().map(|e| *e.key()).collect();
+            if let Some(pos) = ids.iter().position(|k| *k == id) {
+                let prev = if pos == 0 { ids.len() - 1 } else { pos - 1 };
+                *self.state.active_tab.write() = Some(ids[prev]);
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    fn insert_char(&mut self, ch: char) {
+        if let Some(tab) = self.state.active_tab_state() {
+            let mut content = tab.content.clone();
+            let cursor = tab.cursor;
+            if cursor.1 <= content.len() {
+                content.insert(cursor.1, ch);
+            }
+            drop(tab);
+            if let Some(active_id) = *self.state.active_tab.read() {
+                if let Some(mut tab) = self.state.tabs.get_mut(&active_id) {
+                    tab.content = content;
+                    tab.cursor.1 = tab.cursor.1.saturating_add(1);
+                    tab.dirty = true;
+                }
+            }
+            self.needs_redraw = true;
         }
     }
 
