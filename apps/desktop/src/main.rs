@@ -98,9 +98,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 depth: 0, expanded: true, has_children: true, icon: "".into(),
                             }
                         ];
+                        // Run count queries for each database so labels show immediately
+                        let mut db_labels: Vec<(String, i64, i64)> = Vec::new();
                         for db in &db_names {
+                            let tbl_count_sql = format!("SELECT COUNT(*) FROM [{db}].INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'");
+                            let view_count_sql = format!("SELECT COUNT(*) FROM [{db}].INFORMATION_SCHEMA.VIEWS");
+                            let mut tc = 0i64;
+                            let mut vc = 0i64;
+                            if let Ok(r) = conn.execute(&tbl_count_sql).await {
+                                if let Some(row) = r.rows.first() {
+                                    tc = row.get(0).and_then(|v| match v {
+                                        getagrip_database::driver::Value::Int(i) => Some(*i),
+                                        _ => None,
+                                    }).unwrap_or(0);
+                                }
+                            }
+                            if let Ok(r) = conn.execute(&view_count_sql).await {
+                                if let Some(row) = r.rows.first() {
+                                    vc = row.get(0).and_then(|v| match v {
+                                        getagrip_database::driver::Value::Int(i) => Some(*i),
+                                        _ => None,
+                                    }).unwrap_or(0);
+                                }
+                            }
+                            db_labels.push((db.clone(), tc, vc));
+                        }
+
+                        for (db, tc, vc) in &db_labels {
+                            let label = if *tc > 0 || *vc > 0 {
+                                format!("{db}  ({tc} tables, {vc} views)")
+                            } else {
+                                db.clone()
+                            };
                             sidebar_items.push(TreeItem {
-                                label: db.clone().into(), kind: "database".into(),
+                                label: label.into(), kind: "database".into(),
                                 depth: 1, expanded: false, has_children: true, icon: "".into(),
                             });
                         }
