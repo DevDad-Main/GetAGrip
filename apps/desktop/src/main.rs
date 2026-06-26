@@ -14,6 +14,7 @@ struct AppModel {
     driver: Arc<dyn DatabaseDriver>,
     connection_url: Option<String>,
     connecting: Arc<AtomicBool>,
+    sidebar_items: Vec<TreeItem>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -31,6 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         driver: driver.clone(),
         connection_url: None,
         connecting: Arc::new(AtomicBool::new(false)),
+        sidebar_items: Vec::new(),
     }));
 
     app.global::<AppState>().set_connection_status("● Disconnected".into());
@@ -89,30 +91,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let weak = app_weak2.clone();
                         let url2 = url_owned.clone();
                         let ver = version;
+                        // Build sidebar items
+                        let mut sidebar_items: Vec<TreeItem> = vec![
+                            TreeItem {
+                                label: url2.clone().into(), kind: "server".into(),
+                                depth: 0, expanded: true, has_children: true, icon: "".into(),
+                            }
+                        ];
+                        for db in &db_names {
+                            sidebar_items.push(TreeItem {
+                                label: db.clone().into(), kind: "database".into(),
+                                depth: 1, expanded: false, has_children: true, icon: "".into(),
+                            });
+                        }
+                        let sidebar_items2 = sidebar_items.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(a) = weak.upgrade() {
-                                // Build sidebar tree
-                                let mut items: Vec<TreeItem> = vec![
-                                    TreeItem {
-                                        label: url2.clone().into(), kind: "server".into(),
-                                        depth: 0, expanded: true, has_children: true, icon: "".into(),
-                                    }
-                                ];
-                                for db in &db_names {
-                                    items.push(TreeItem {
-                                        label: db.clone().into(), kind: "database".into(),
-                                        depth: 1, expanded: false, has_children: true, icon: "".into(),
-                                    });
-                                }
-                                let model = std::rc::Rc::new(slint::VecModel::from(items));
-                                a.global::<AppState>().set_sidebar_items(model.into());
+                                let m = std::rc::Rc::new(slint::VecModel::from(sidebar_items2));
+                                a.global::<AppState>().set_sidebar_items(m.into());
                                 a.global::<AppState>().set_sidebar_visible(true);
                                 a.global::<AppState>().set_active_connection(url2.into());
                                 a.global::<AppState>().set_connection_status("● Connected".into());
                                 a.global::<AppState>().set_status_text(format!("{ver} — ready").into());
                             }
                         });
-                        model2.lock().unwrap().connection_url = Some(url_owned);
+                        {
+                            let mut m = model2.lock().unwrap();
+                            m.sidebar_items = sidebar_items;
+                            m.connection_url = Some(url_owned);
+                        }
                         conn_flag.store(false, std::sync::atomic::Ordering::SeqCst);
                     }
                     Err(e) => {
@@ -261,6 +268,133 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             a.global::<AppState>().set_results_visible(!v);
         }
     });
+
+    // ---- Sidebar item click (introspection) ----
+    {
+        let model = model.clone();
+        let app_weak = app.as_weak();
+        app.global::<AppState>().on_select_sidebar_item(move |idx: i32| {
+            let idx = idx as usize;
+            let (driver, url, items) = {
+                let m = model.lock().unwrap();
+                (m.driver.clone(), m.connection_url.clone(), m.sidebar_items.clone())
+            };
+            let Some(ref url) = url else { return; };
+            let url = url.clone();
+            if idx >= items.len() { return; }
+            let item = &items[idx];
+
+            if item.kind == "database" && item.depth == 1 && !item.expanded {
+                let db_name = item.label.to_string();
+                let handle = tokio::runtime::Handle::current();
+                let model2 = model.clone();
+                let app_weak2 = app_weak.clone();
+                let driver2 = driver.clone();
+                let url2 = url.clone();
+                let items2 = items.clone();
+
+                handle.spawn(async move {
+                    let tbl_sql = format!("SELECT TABLE_NAME FROM [{db_name}].INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME");
+                    let view_sql = format!("SELECT TABLE_NAME FROM [{db_name}].INFORMATION_SCHEMA.VIEWS ORDER BY TABLE_NAME");
+
+                    let mut new_items = Vec::new();
+                    if let Ok(mut conn) = driver2.connect(&url2).await {
+                        if let Ok(r) = conn.execute(&tbl_sql).await {
+                            for row in &r.rows {
+                                if let Some(name) = row.get(0).map(|v| v.to_string()) {
+                                    new_items.push(TreeItem {
+                                        label: name.into(), kind: "table".into(),
+                                        depth: 2, expanded: false, has_children: true, icon: "".into(),
+                                    });
+                                }
+                            }
+                        }
+                        if let Ok(r) = conn.execute(&view_sql).await {
+                            for row in &r.rows {
+                                if let Some(name) = row.get(0).map(|v| v.to_string()) {
+                                    new_items.push(TreeItem {
+                                        label: name.into(), kind: "view".into(),
+                                        depth: 2, expanded: false, has_children: false, icon: "".into(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    let mut updated_items = items2.clone();
+                    updated_items[idx].expanded = true;
+                    let insert_pos = idx + 1;
+                    for (i, ni) in new_items.iter().enumerate() {
+                        updated_items.insert(insert_pos + i, ni.clone());
+                    }
+
+                    {
+                        let mut m = model2.lock().unwrap();
+                        m.sidebar_items = updated_items.clone();
+                    }
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(a) = app_weak2.upgrade() {
+                            let m = std::rc::Rc::new(slint::VecModel::from(updated_items.clone()));
+                            a.global::<AppState>().set_sidebar_items(m.into());
+                        }
+                    });
+                });
+            }
+
+            if item.kind == "table".to_string() && item.depth == 2 && !item.expanded {
+                let db_name: String = items.iter()
+                    .take(idx)
+                    .rev()
+                    .find(|i| i.kind == "database")
+                    .map(|i| i.label.to_string())
+                    .unwrap_or_default();
+                let table_name = item.label.to_string();
+                let handle = tokio::runtime::Handle::current();
+                let model2 = model.clone();
+                let app_weak2 = app_weak.clone();
+                let driver2 = driver.clone();
+                let url2 = url.clone();
+                let items2 = items.clone();
+
+                handle.spawn(async move {
+                    let col_sql = format!(
+                        "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE FROM [{db_name}].INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{table_name}' ORDER BY ORDINAL_POSITION"
+                    );
+                    let mut new_items = Vec::new();
+                    if let Ok(mut conn) = driver2.connect(&url2).await {
+                        if let Ok(r) = conn.execute(&col_sql).await {
+                            for row in &r.rows {
+                                let name = row.get(0).map(|v| v.to_string()).unwrap_or_default();
+                                let dtype = row.get(1).map(|v| v.to_string()).unwrap_or_default();
+                                new_items.push(TreeItem {
+                                    label: format!("{name}  {dtype}").into(), kind: "column".into(),
+                                    depth: 3, expanded: false, has_children: false, icon: "".into(),
+                                });
+                            }
+                        }
+                    }
+
+                    let mut updated_items = items2.clone();
+                    updated_items[idx].expanded = true;
+                    let insert_pos = idx + 1;
+                    for (i, ni) in new_items.iter().enumerate() {
+                        updated_items.insert(insert_pos + i, ni.clone());
+                    }
+
+                    {
+                        let mut m = model2.lock().unwrap();
+                        m.sidebar_items = updated_items.clone();
+                    }
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(a) = app_weak2.upgrade() {
+                            let m = std::rc::Rc::new(slint::VecModel::from(updated_items.clone()));
+                            a.global::<AppState>().set_sidebar_items(m.into());
+                        }
+                    });
+                });
+            }
+        });
+    }
 
     // ---- Command palette ----
     let app_weak = app.as_weak();

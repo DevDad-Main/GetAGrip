@@ -16,6 +16,7 @@ export global AppState {
     callback toggle-results();
     callback execute-command(string);
     callback execute-query(string);
+    callback select-sidebar-item(int);
     in-out property <string> current-sql: "SELECT @@VERSION";
     in-out property <string> result-text: "";
     in-out property <[TreeItem]> sidebar-items;
@@ -121,6 +122,7 @@ export component MainWindow inherits Window {
         Sidebar {
             width: 260px; height: 100%;
             items: AppState.sidebar-items;
+            item-selected(idx) => { AppState.select-sidebar-item(idx); }
         }
     }
 

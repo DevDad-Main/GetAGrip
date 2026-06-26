@@ -62,6 +62,9 @@ export component Sidebar {
                         if item.kind == "function" : Text {
                             text: "λ"; font-size: 13px; color: #89b4fa; vertical-alignment: center;
                         }
+                        if item.kind == "column" : Text {
+                            text: "·"; font-size: 14px; color: #6c7086; vertical-alignment: center;
+                        }
 
                         Text {
                             text: item.label;
