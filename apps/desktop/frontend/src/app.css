@@ -35,6 +35,15 @@
   --warning: #cc7832;
   --info: #6897bb;
 
+  /* Datasource environment colors */
+  --env-red: #bc3c3c;
+  --env-orange: #cc7832;
+  --env-yellow: #e5c07b;
+  --env-green: #629755;
+  --env-blue: #4a9eff;
+  --env-purple: #c678dd;
+  --env-none: #4a4e51;
+
   /* Typography */
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     Oxygen, Ubuntu, Cantarell, sans-serif;

@@ -1,17 +1,21 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import * as monaco from 'monaco-editor';
-  import { executeQuery, type QueryResultDto } from '$lib/tauri';
-  import { connectionUrl, resultColumns, resultRows, resultElapsedMs, resultRowsAffected, showResults, statusText, schemaCache } from '$lib/stores';
+  import { executeQueryV2, type QueryResultDto } from '$lib/tauri';
+  import {
+    resultSets, activeResultSetId, statusText, schemaCache,
+    nextResultSetId, type ResultSet,
+  } from '$lib/stores';
 
   export let sql = '';
+  export let profileId: string | null = null;
+  export let tabId = '';
   export let onSqlChange: (sql: string) => void = () => {};
   export let onReady: (runQuery: () => void) => void = () => {};
 
   let editor: monaco.editor.IStandaloneCodeEditor | null = null;
   let containerEl: HTMLDivElement | undefined;
 
-  // Define the Darcula theme once
   monaco.editor.defineTheme('darcula', {
     base: 'vs-dark',
     inherit: true,
@@ -69,10 +73,7 @@
       scrollBeyondLastLine: false,
       wordWrap: 'on',
       renderLineHighlight: 'line',
-      renderWhitespace: 'none',
       smoothScrolling: true,
-      cursorBlinking: 'smooth',
-      cursorSmoothCaretAnimation: 'on',
       padding: { top: 8, bottom: 8 },
       scrollbar: {
         verticalScrollbarSize: 10,
@@ -84,42 +85,31 @@
       overviewRulerLanes: 0,
       lineDecorationsWidth: 0,
       lineHeight: 20,
-      letterSpacing: 0,
       quickSuggestions: true,
       suggestOnTriggerCharacters: true,
-      acceptSuggestionOnEnter: 'on',
-      acceptSuggestionOnCommitCharacter: true,
       tabCompletion: 'on',
-      wordBasedSuggestions: 'document',
-      parameterHints: { enabled: true, cycle: true },
     });
 
-    // Listen for content changes
     editor.onDidChangeModelContent(() => {
       const value = editor?.getValue() ?? '';
       sql = value;
       onSqlChange?.(value);
     });
 
-    // Ctrl+Enter / Cmd+Enter → run query
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
       handleRunQuery();
     });
 
-    // Escape — blur
     editor.addCommand(monaco.KeyCode.Escape, () => {
       editor?.trigger('keyboard', 'escape', null);
     });
 
-    // SQL autocomplete provider
     monaco.languages.registerCompletionItemProvider('sql', {
       triggerCharacters: ['.', ' '],
       provideCompletionItems(model, position) {
         const textUntilPosition = model.getValueInRange({
-          startLineNumber: 1,
-          startColumn: 1,
-          endLineNumber: position.lineNumber,
-          endColumn: position.column,
+          startLineNumber: 1, startColumn: 1,
+          endLineNumber: position.lineNumber, endColumn: position.column,
         });
         const word = model.getWordUntilPosition(position);
         const range = {
@@ -132,59 +122,33 @@
         const suggestions: monaco.languages.CompletionItem[] = [];
         const cache = $schemaCache;
 
-        // After a dot → suggest columns of the preceding table
         const dotMatch = textUntilPosition.match(/(\w+)\.\s*$/i);
         if (dotMatch) {
           const tableName = dotMatch[1];
-          // Try all databases for this table name
           for (const [db, tables] of Object.entries(cache.tablesByDb)) {
             if (tables.includes(tableName)) {
-              const key = `${db}.${tableName}`;
-              const columns = cache.columnsByTable[key] ?? [];
+              const columns = cache.columnsByTable[`${db}.${tableName}`] ?? [];
               for (const col of columns) {
                 suggestions.push({
-                  label: col,
-                  kind: monaco.languages.CompletionItemKind.Field,
-                  insertText: col,
-                  range,
-                  detail: 'column',
+                  label: col, kind: monaco.languages.CompletionItemKind.Field,
+                  insertText: col, range, detail: 'column',
                 });
               }
             }
           }
-          // Also try the bare table name as key
-          if (suggestions.length === 0) {
-            const columns = cache.columnsByTable[tableName] ?? [];
-            for (const col of columns) {
-              suggestions.push({
-                label: col,
-                kind: monaco.languages.CompletionItemKind.Field,
-                insertText: col,
-                range,
-                detail: 'column',
-              });
-            }
-          }
         } else {
-          // Otherwise → suggest tables (from all known databases) + SQL keywords
           const allTables = Object.values(cache.tablesByDb).flat();
           for (const table of allTables) {
             suggestions.push({
-              label: table,
-              kind: monaco.languages.CompletionItemKind.Class,
-              insertText: table,
-              range,
-              detail: 'table',
+              label: table, kind: monaco.languages.CompletionItemKind.Class,
+              insertText: table, range, detail: 'table',
             });
           }
-          // Common SQL keywords
           const keywords = ['SELECT', 'FROM', 'WHERE', 'ORDER BY', 'GROUP BY', 'HAVING', 'JOIN', 'LEFT JOIN', 'INNER JOIN', 'ON', 'INSERT INTO', 'UPDATE', 'DELETE FROM', 'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE', 'TOP', 'DISTINCT', 'AS', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'BETWEEN', 'IS NULL', 'IS NOT NULL', 'EXISTS', 'UNION', 'OFFSET', 'FETCH'];
           for (const kw of keywords) {
             suggestions.push({
-              label: kw,
-              kind: monaco.languages.CompletionItemKind.Keyword,
-              insertText: kw,
-              range,
+              label: kw, kind: monaco.languages.CompletionItemKind.Keyword,
+              insertText: kw, range,
             });
           }
         }
@@ -193,35 +157,47 @@
       },
     });
 
-    // Focus
     editor.focus();
-
-    // Notify parent that we're ready, passing the run function
     onReady(handleRunQuery);
   });
 
   async function handleRunQuery() {
     const currentSql = editor?.getValue() ?? sql;
     if (!currentSql.trim()) return;
-    const url = $connectionUrl;
-    if (!url) {
-      statusText.set('Not connected — connect first');
+    if (!profileId) {
+      statusText.set('No data source selected');
       return;
     }
 
     statusText.set('Running query…');
     try {
-      const result: QueryResultDto = await executeQuery(currentSql, url);
-      resultColumns.set(result.columns as unknown as Record<string, unknown>[]);
-      resultRows.set(result.rows);
-      resultElapsedMs.set(result.elapsed_ms);
-      resultRowsAffected.set(result.rows_affected);
-      showResults.set(true);
-      statusText.set(`${result.rows.length} rows — ${result.elapsed_ms}ms`);
+      const results: QueryResultDto[] = await executeQueryV2(profileId, currentSql, tabId);
+
+      resultSets.update((rs) => {
+        const newSets: ResultSet[] = results.map((r) => ({
+          id: nextResultSetId(),
+          tabId,
+          columns: r.columns as unknown as Record<string, unknown>[],
+          rows: r.rows as Record<string, unknown>[],
+          elapsedMs: r.elapsed_ms,
+          rowsAffected: r.rows_affected,
+          pinned: false,
+          sortColumn: null,
+          sortDirection: null,
+          filterText: '',
+        }));
+
+        const updated = [...rs, ...newSets];
+        if (newSets.length > 0) activeResultSetId.set(newSets[0].id);
+        return updated;
+      });
+
+      const totalRows = results.reduce((sum, r) => sum + r.rows.length, 0);
+      const totalMs = results.reduce((sum, r) => sum + r.elapsed_ms, 0);
+      statusText.set(`${totalRows} rows — ${totalMs}ms`);
     } catch (e: unknown) {
       const msg = String(e);
       statusText.set(`Error: ${msg}`);
-      showResults.set(false);
     }
   }
 

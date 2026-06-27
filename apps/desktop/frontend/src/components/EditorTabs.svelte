@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tabs, activeTabId, nextTabId } from '$lib/stores';
+  import { tabs, activeTabId, nextTabId, activeDatasourceId, datasources } from '$lib/stores';
   import type { EditorTab } from '$lib/stores';
   import { Plus, X } from 'lucide-svelte';
 
@@ -22,7 +22,13 @@
 
   function addTab() {
     const id = nextTabId();
-    const newTab: EditorTab = { id, title: `Query ${$tabs.length + 1}`, sql: '' };
+    const newTab: EditorTab = {
+      id,
+      title: `Query ${$tabs.length + 1}`,
+      sql: '',
+      datasourceId: $activeDatasourceId,
+      schema: null,
+    };
     tabs.set([...$tabs, newTab]);
     activeTabId.set(id);
   }
@@ -33,6 +39,13 @@
     {#each $tabs as tab (tab.id)}
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
       <div class="tab" class:active={tab.id === $activeTabId} on:click={() => selectTab(tab.id)}>
+        {#if tab.datasourceId}
+          {@const ds = $datasources.find((d) => d.id === tab.datasourceId)}
+          {#if ds}
+            <span class="tab-dot" style="background: {ds.environment === 'red' ? '#bc3c3c' : ds.environment === 'green' ? '#629755' : ds.environment === 'blue' ? '#4a9eff' : '#4a4e51'};"></span>
+            <span class="tab-ds">{ds.name}</span>
+          {/if}
+        {/if}
         <span class="tab-title">{tab.title}</span>
         <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
         <button class="tab-close" on:click={(e) => closeTab(e, tab.id)} title="Close"><X size="12" /></button>
@@ -57,9 +70,7 @@
     overflow-x: auto;
     flex: 1;
   }
-  .tab-scroll::-webkit-scrollbar {
-    height: 0;
-  }
+  .tab-scroll::-webkit-scrollbar { height: 0; }
   .tab {
     display: flex;
     align-items: center;
@@ -74,9 +85,7 @@
     white-space: nowrap;
     flex-shrink: 0;
   }
-  .tab:hover {
-    background: var(--bg-hover);
-  }
+  .tab:hover { background: var(--bg-hover); }
   .tab.active {
     color: var(--text);
     background: var(--bg-elev);
@@ -84,11 +93,22 @@
   .tab.active::after {
     content: '';
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
+    top: 0; left: 0; right: 0;
     height: 2px;
     background: var(--accent);
+  }
+  .tab-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .tab-ds {
+    font-size: 10px;
+    color: var(--text-faint);
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .tab-title {
     max-width: 120px;
@@ -108,10 +128,7 @@
   }
   .tab-close:hover {
     color: var(--text);
-    background: rgba(255, 255, 255, 0.08);
-  }
-  .tab-close:hover {
-    color: var(--text);
+    background: rgba(255,255,255,0.08);
   }
   .tab-add {
     border: none;
@@ -124,8 +141,5 @@
     align-items: center;
     justify-content: center;
   }
-  .tab-add:hover {
-    color: var(--text);
-    background: var(--bg-hover);
-  }
+  .tab-add:hover { color: var(--text); background: var(--bg-hover); }
 </style>
