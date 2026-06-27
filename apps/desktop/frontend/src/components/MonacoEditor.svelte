@@ -196,9 +196,11 @@
     }, 500);
   }
 
-  // Re-run diagnostics when datasource connects (cache populated)
+  // Re-run diagnostics when datasource connects (cache populated asynchronously)
   $: if (profileId) {
     runDiagnostics();
+    // Retry after metadata cache loads (~1-2s for INFORMATION_SCHEMA queries)
+    setTimeout(() => runDiagnostics(), 2500);
   }
 
   async function triggerCompletion(pos?: monaco.Position) {
