@@ -327,7 +327,7 @@ fn complete_columns_explicit(
                 let doc = format!("{table}.{col}\n{db_type}{nullable}{pk}", col = c.name, db_type = c.db_type);
                 let detail = format!("{table}.{col}  {db_type}{nullable}{pk}", col = c.name, db_type = c.db_type);
                 Some(CompletionItem {
-                    label: c.name.clone(),
+                    label: format!("{col}  {db_type}{nullable}{pk}", col = c.name, db_type = c.db_type),
                     kind: CompletionKind::Column,
                     detail,
                     documentation: Some(doc),
@@ -489,7 +489,7 @@ mod tests {
         let cache = cache_with_users();
         let items = complete_columns_explicit(&cache, "conn1", "users", "ema");
         assert_eq!(items.len(), 1);
-        assert_eq!(items[0].label, "email");
+        assert!(items[0].label.starts_with("email"));
         assert!(items[0].detail.contains("varchar"));
     }
 
