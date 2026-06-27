@@ -113,30 +113,58 @@ async fn list_database_contents(
     database: &str,
 ) -> Result<Vec<ExplorerNode>, String> {
     let profile_id = &profile.id.to_string();
+    let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+
+    // Query table and view counts
+    let count_sql = match profile.driver {
+        getagrip_core::ConnectionDriver::Mssql => {
+            format!(
+                "SELECT TABLE_TYPE, COUNT(*) FROM {database}.INFORMATION_SCHEMA.TABLES GROUP BY TABLE_TYPE"
+            )
+        }
+        _ => format!(
+            "SELECT table_type, COUNT(*) FROM information_schema.tables WHERE table_schema = '{database}' GROUP BY table_type"
+        ),
+    };
+
+    let mut table_count = 0u64;
+    let mut view_count = 0u64;
+
+    if let Ok(result) = conn.connection_mut().execute(&count_sql).await {
+        for row in &result.rows {
+            let kind = row.get(0).map(|v| v.to_string().to_lowercase()).unwrap_or_default();
+            let count = row.get(1).and_then(|v| {
+                if let getagrip_database::Value::Int(i) = v { Some(*i as u64) } else { None }
+            }).unwrap_or(0);
+            if kind.contains("base") { table_count = count; }
+            else if kind.contains("view") { view_count = count; }
+        }
+    }
+
     Ok(vec![
         ExplorerNode {
             id: format!("{profile_id}/{database}/tables"),
-            name: "Tables".into(),
+            name: format!("Tables ({table_count})"),
             kind: ExplorerNodeKind::Folder,
             expanded: false,
             children_loaded: false,
             children: vec![],
             icon: None,
             favorite: false,
-            tooltip: None,
+            tooltip: Some(format!("{table_count} tables")),
             loading: false,
             has_error: false,
         },
         ExplorerNode {
             id: format!("{profile_id}/{database}/views"),
-            name: "Views".into(),
+            name: format!("Views ({view_count})"),
             kind: ExplorerNodeKind::Folder,
             expanded: false,
             children_loaded: false,
             children: vec![],
             icon: None,
             favorite: false,
-            tooltip: None,
+            tooltip: Some(format!("{view_count} views")),
             loading: false,
             has_error: false,
         },

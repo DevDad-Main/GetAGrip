@@ -8,15 +8,18 @@
   import DataSourceForm from './components/DataSourceForm.svelte';
   import CommandPalette from './components/CommandPalette.svelte';
   import HistoryPanel from './components/HistoryPanel.svelte';
+  import ResizeHandle from './components/ResizeHandle.svelte';
   import Toast from './components/Toast.svelte';
 
   import {
     commandPaletteOpen, activeModal, modalPayload, sidebarVisible,
-    loadDatasources, datasources,
+    loadDatasources,
   } from '$lib/stores';
   import type { ConnectionProfile } from '$lib/tauri';
 
   let historyVisible = false;
+  let sidebarW = 260;
+  let resultsH = 220;
 
   onMount(() => {
     loadDatasources();
@@ -64,12 +67,25 @@
 <div class="app-shell">
   <TitleBar title="GetAGrip" />
   <main class="content">
-    <SidePanel />
+    {#if $sidebarVisible}
+      <div class="sidebar-col" style="width: {sidebarW}px">
+        <SidePanel />
+      </div>
+      <ResizeHandle direction="horizontal" size={sidebarW} onResize={(s) => sidebarW = s} />
+    {/if}
     <div class="editor-column">
       <EditorPane />
-      <ResultsPanel />
+      {#if resultsH > 0}
+        <ResizeHandle direction="vertical" size={resultsH} onResize={(s) => resultsH = s} minSize={80} maxSize={800} />
+        <div class="results-col" style="height: {resultsH}px">
+          <ResultsPanel />
+        </div>
+      {/if}
     </div>
-    <HistoryPanel visible={historyVisible} />
+    {#if historyVisible}
+      <ResizeHandle direction="horizontal" size={300} onResize={() => {}} />
+      <HistoryPanel visible={historyVisible} />
+    {/if}
   </main>
   <StatusBar onToggleHistory={() => historyVisible = !historyVisible} historyVisible={historyVisible} />
 </div>
@@ -91,15 +107,24 @@
     background: var(--bg);
   }
   .content {
-    display: grid;
-    grid-template-columns: var(--sidebar-w) 1fr auto;
+    display: flex;
     overflow: hidden;
     min-height: 0;
   }
+  .sidebar-col {
+    flex-shrink: 0;
+    overflow: hidden;
+    display: flex;
+  }
   .editor-column {
+    flex: 1;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    min-height: 0;
+    min-width: 0;
+  }
+  .results-col {
+    flex-shrink: 0;
+    overflow: hidden;
   }
 </style>
