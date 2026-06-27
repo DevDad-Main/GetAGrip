@@ -23,37 +23,74 @@ pub fn request_diagnostics(
         return vec![];
     }
 
-    let dialect = GenericDialect {};
-    let parsed = match sqlparser::parser::Parser::parse_sql(&dialect, sql) {
-        Ok(stmts) => stmts,
-        Err(e) => {
-            // Return syntax error as a diagnostic
-            let msg = e.to_string();
-            let (line, col) = parse_error_location(&msg);
-            return vec![DiagnosticItem {
-                severity: DiagnosticLevel::Error,
-                message: format!("Syntax error: {msg}"),
-                line,
-                column: col,
-                end_line: None,
-                end_column: None,
-                hint: None,
-            }];
-        }
-    };
-
     let mut diagnostics = Vec::new();
-
     let tables = cache.get_tables(connection_id);
-    if tables.is_empty() {
-        return diagnostics; // No metadata, skip semantic checks
-    }
+    let dialect = GenericDialect {};
 
-    for stmt in &parsed {
-        check_statement(stmt, connection_id, cache, &mut diagnostics);
+    // Split by semicolons and parse each statement individually
+    // so a syntax error in one doesn't block diagnostics for others
+    let stmts = split_sql_statements(sql);
+    for (stmt_sql, line_offset) in stmts {
+        match sqlparser::parser::Parser::parse_sql(&dialect, &stmt_sql) {
+            Ok(parsed) => {
+                if !tables.is_empty() {
+                    for stmt in &parsed {
+                        check_statement(stmt, connection_id, cache, &mut diagnostics);
+                    }
+                }
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                let (mut line, col) = parse_error_location(&msg);
+                line += line_offset;
+                diagnostics.push(DiagnosticItem {
+                    severity: DiagnosticLevel::Error,
+                    message: format!("Syntax error: {msg}"),
+                    line,
+                    column: col,
+                    end_line: None,
+                    end_column: None,
+                    hint: None,
+                });
+            }
+        }
     }
 
     diagnostics
+}
+
+/// Split SQL into individual statements, returning (statement_text, line_offset)
+fn split_sql_statements(sql: &str) -> Vec<(String, u32)> {
+    let mut result = Vec::new();
+    let mut current = String::new();
+    let mut line_offset = 0u32;
+    let mut current_line = 0u32;
+
+    for ch in sql.chars() {
+        current.push(ch);
+        if ch == '\n' {
+            current_line += 1;
+        }
+        if ch == ';' {
+            let trimmed = current.trim().to_string();
+            if !trimmed.is_empty() && trimmed != ";" {
+                result.push((trimmed, line_offset));
+            }
+            current.clear();
+            line_offset = current_line;
+        }
+    }
+
+    let trimmed = current.trim().to_string();
+    if !trimmed.is_empty() {
+        result.push((trimmed, line_offset));
+    }
+
+    if result.is_empty() {
+        result.push((sql.trim().to_string(), 0));
+    }
+
+    result
 }
 
 fn check_statement(
@@ -404,10 +441,38 @@ mod tests {
             "conn1",
             &cache,
         );
-        // Should have both: error for unknown table + warning for unknown column
         assert!(diags.len() >= 2, "expected at least 2 diagnostics, got {}: {:?}", diags.len(), diags);
         assert!(diags.iter().any(|d| d.severity == DiagnosticLevel::Error && d.message.contains("nonexistent")));
         assert!(diags.iter().any(|d| d.severity == DiagnosticLevel::Warning && d.message.contains("badcol")));
+    }
+
+    #[test]
+    fn multi_statement_diagnostics() {
+        let cache = MetadataCache::new();
+        let mut schema = getagrip_schema::DatabaseSchema::new("testdb");
+        schema.tables.push(getagrip_schema::TableSchema {
+            name: "users".into(),
+            schema: "dbo".into(),
+            columns: vec![],
+            constraints: vec![],
+            indexes: vec![],
+            comment: None,
+            row_count_estimate: None,
+        });
+        cache.store("conn1", schema);
+
+        // First statement valid but has warning, second has syntax error
+        let diags = request_diagnostics(
+            "SELECT badcol FROM users;\nSELEC * FROM users;",
+            "conn1",
+            &cache,
+        );
+        // Should have both the warning from first statement and error from second
+        assert!(diags.iter().any(|d| d.severity == DiagnosticLevel::Warning && d.message.contains("badcol")),
+            "should have warning from first statement, got: {:?}", diags);
+        assert!(diags.iter().any(|d| d.severity == DiagnosticLevel::Error && d.message.contains("Syntax")),
+            "should have syntax error from second statement, got: {:?}", diags);
+        assert!(diags.len() >= 2, "expected at least 2 diagnostics, got {}", diags.len());
     }
 
     #[test]
