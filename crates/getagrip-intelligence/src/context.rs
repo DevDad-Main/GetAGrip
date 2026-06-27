@@ -161,6 +161,13 @@ fn detect_cursor_scope(prefix: &str, ctx: &mut SqlContext) {
             if let Some(table) = ctx.resolve_table(word_before_dot) {
                 ctx.cursor_table = Some(table.name.clone());
             }
+            // Text-based fallback: scan for "FROM/JOIN table word_before_dot" pattern
+            // Works even when the SQL parser failed on invalid/incomplete SQL
+            if ctx.cursor_table.is_none() {
+                if let Some(alias_table) = find_alias_table(prefix, word_before_dot) {
+                    ctx.cursor_table = Some(alias_table);
+                }
+            }
         }
     } else {
         let upper = trimmed.to_uppercase();
@@ -172,6 +179,27 @@ fn detect_cursor_scope(prefix: &str, ctx: &mut SqlContext) {
             return;
         }
     }
+}
+
+/// Scan SQL text for "FROM/JOIN table alias" patterns to resolve alias→table
+/// when the SQL parser couldn't (e.g., incomplete SQL with hanging dot).
+fn find_alias_table(prefix: &str, alias: &str) -> Option<String> {
+    let upper = prefix.to_uppercase();
+    let join_keywords = ["FROM ", "JOIN ", "INNER JOIN ", "LEFT JOIN ", "RIGHT JOIN ", "FULL JOIN "];
+
+    for kw in &join_keywords {
+        let mut start = 0;
+        while let Some(pos) = upper[start..].find(kw) {
+            let after_kw = &prefix[start + pos + kw.len()..].trim();
+            // Split the after-keyword part: first token is table name, second is optional alias
+            let tokens: Vec<&str> = after_kw.split_whitespace().collect();
+            if tokens.len() >= 2 && tokens[1].eq_ignore_ascii_case(alias) {
+                return Some(tokens[0].to_string());
+            }
+            start += pos + kw.len();
+        }
+    }
+    None
 }
 
 fn table_object_name(tbl: &sqlparser::ast::TableObject) -> String {
@@ -269,5 +297,12 @@ mod tests {
         assert_eq!(ctx.cursor_word, "use");
         let ctx2 = analyse_context("FROM u", 1, 7);
         assert_eq!(ctx2.cursor_word, "u");
+    }
+
+    #[test]
+    fn alias_fallback_on_invalid_sql() {
+        let ctx = analyse_context("SELECT dp.ProductKey FROM DimProduct dp WHERE dp.", 1, 55);
+        assert_eq!(ctx.cursor_prefix.as_deref(), Some("dp"));
+        assert_eq!(ctx.cursor_table.as_deref(), Some("DimProduct"));
     }
 }
