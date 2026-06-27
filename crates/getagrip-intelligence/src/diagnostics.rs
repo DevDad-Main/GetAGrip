@@ -376,6 +376,41 @@ mod tests {
     }
 
     #[test]
+    fn detects_multiple_issues() {
+        let cache = MetadataCache::new();
+        let mut schema = getagrip_schema::DatabaseSchema::new("testdb");
+        schema.tables.push(getagrip_schema::TableSchema {
+            name: "users".into(),
+            schema: "dbo".into(),
+            columns: vec![getagrip_schema::ColumnSchema {
+                name: "id".into(),
+                col_type: getagrip_database::driver::ColumnType::Integer,
+                db_type: "int".into(),
+                nullable: false,
+                default_value: None,
+                is_primary_key: true,
+                ordinal: 0,
+                comment: None,
+            }],
+            constraints: vec![],
+            indexes: vec![],
+            comment: None,
+            row_count_estimate: None,
+        });
+        cache.store("conn1", schema);
+
+        let diags = request_diagnostics(
+            "SELECT badcol FROM nonexistent",
+            "conn1",
+            &cache,
+        );
+        // Should have both: error for unknown table + warning for unknown column
+        assert!(diags.len() >= 2, "expected at least 2 diagnostics, got {}: {:?}", diags.len(), diags);
+        assert!(diags.iter().any(|d| d.severity == DiagnosticLevel::Error && d.message.contains("nonexistent")));
+        assert!(diags.iter().any(|d| d.severity == DiagnosticLevel::Warning && d.message.contains("badcol")));
+    }
+
+    #[test]
     fn levenshtein_distance() {
         assert_eq!(levenshtein("users", "users"), 0);
         assert_eq!(levenshtein("user", "users"), 1);
