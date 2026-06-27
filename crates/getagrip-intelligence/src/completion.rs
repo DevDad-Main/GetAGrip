@@ -51,6 +51,11 @@ pub fn request_completion(
         if table_in_cache(cache, connection_id, prefix) {
             return complete_columns(cache, connection_id, prefix, &ctx.cursor_word);
         }
+        // Unresolved dot: show columns from all tables with high priority
+        let lower = ctx.cursor_word.to_lowercase();
+        let mut items = complete_columns_all_scored(cache, connection_id, &lower, 100);
+        sort_and_truncate(&mut items, 50);
+        return items;
     }
 
     if let Some(ref table_name) = ctx.cursor_table {
@@ -237,6 +242,15 @@ fn complete_columns_all(
     connection_id: &str,
     prefix: &str,
 ) -> Vec<CompletionItem> {
+    complete_columns_all_scored(cache, connection_id, prefix, 30)
+}
+
+fn complete_columns_all_scored(
+    cache: &MetadataCache,
+    connection_id: &str,
+    prefix: &str,
+    base_score: u32,
+) -> Vec<CompletionItem> {
     let tables = cache.get_tables(connection_id);
     let mut items: Vec<CompletionItem> = Vec::new();
     for table in &tables {
@@ -251,7 +265,7 @@ fn complete_columns_all(
                     kind: CompletionKind::Column,
                     detail,
                     insert_text: Some(col.name.clone()),
-                    score: 30 + score as u32 * 2,
+                    score: base_score + score as u32 * 2,
                 });
             }
         }
