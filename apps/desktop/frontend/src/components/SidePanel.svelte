@@ -3,7 +3,11 @@
   import type { ConnectionProfile } from '$lib/tauri';
   import DataSourceList from './DataSourceList.svelte';
   import ExplorerTree from './ExplorerTree.svelte';
-  import { Plus, Database } from 'lucide-svelte';
+  import ResizeHandle from './ResizeHandle.svelte';
+  import { Plus, Database, ChevronDown, ChevronRight } from 'lucide-svelte';
+
+  let dsListHeight = 200;
+  let explorerCollapsed = false;
 
   function openNewDatasource() {
     modalPayload.set(null);
@@ -26,38 +30,57 @@
     </button>
   </div>
 
-  <DataSourceList onEdit={openEditDatasource} />
+  <div class="ds-section" style="height: {dsListHeight}px">
+    <DataSourceList onEdit={openEditDatasource} />
+  </div>
 
-  {#if $activeDatasourceId}
-    <div class="sidebar-explorer-header">
-      <Database size="12" />
-      <span>
-        {#if $datasourceStates[$activeDatasourceId]?.state === 'connected'}
-          {$datasourceStates[$activeDatasourceId].name}
-        {:else}
-          Not connected
+  <ResizeHandle direction="vertical" size={dsListHeight} onResize={(s) => dsListHeight = s} minSize={80} maxSize={500} />
+
+  <div class="explorer-section">
+    <button class="explorer-collapse" on:click={() => explorerCollapsed = !explorerCollapsed}>
+      {#if explorerCollapsed}
+        <ChevronRight size="12" />
+      {:else}
+        <ChevronDown size="12" />
+      {/if}
+      <span>EXPLORER</span>
+    </button>
+
+    {#if !explorerCollapsed}
+      {#if $activeDatasourceId}
+        <div class="sidebar-explorer-header">
+          <Database size="12" />
+          <span>
+            {#if $datasourceStates[$activeDatasourceId]?.state === 'connected'}
+              {$datasourceStates[$activeDatasourceId].name}
+            {:else}
+              Not connected
+            {/if}
+          </span>
+        </div>
+        {#if activeTrees.length > 0}
+          <ExplorerTree nodes={activeTrees} depth={0} profileId={$activeDatasourceId} />
+        {:else if $datasourceStates[$activeDatasourceId]?.state === 'connected'}
+          <div class="sidebar-empty">Loading databases…</div>
         {/if}
-      </span>
-    </div>
-    {#if activeTrees.length > 0}
-      <ExplorerTree nodes={activeTrees} depth={0} profileId={$activeDatasourceId} />
-    {:else if $datasourceStates[$activeDatasourceId]?.state === 'connected'}
-      <div class="sidebar-empty">Loading databases…</div>
+      {:else if $datasources.length > 0}
+        <div class="sidebar-empty">Select a data source to explore.</div>
+      {:else}
+        <div class="sidebar-empty">Add a data source to get started.</div>
+      {/if}
     {/if}
-  {:else if $datasources.length > 0}
-    <div class="sidebar-empty">Select a data source to explore.</div>
-  {:else}
-    <div class="sidebar-empty">Add a data source to get started.</div>
-  {/if}
+  </div>
 </aside>
 
 <style>
   .sidebar {
     background: var(--bg-elev);
-    border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    width: 100%;
+    height: 100%;
+    border-right: 1px solid var(--border);
   }
   .sidebar.hidden { display: none; }
   .sidebar-header {
@@ -69,6 +92,7 @@
     letter-spacing: 1px;
     color: var(--text-muted);
     border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
   }
   .sidebar-connect {
     margin-left: auto;
@@ -80,6 +104,36 @@
     cursor: pointer;
   }
   .sidebar-connect:hover { color: var(--accent); }
+  .ds-section {
+    flex-shrink: 0;
+    overflow: hidden;
+    display: flex;
+  }
+  .explorer-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .explorer-collapse {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    flex-shrink: 0;
+  }
+  .explorer-collapse:hover { color: var(--text); background: var(--bg-hover); }
   .sidebar-explorer-header {
     display: flex;
     align-items: center;
@@ -89,6 +143,7 @@
     color: var(--text);
     background: var(--bg);
     border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
   }
   .sidebar-empty {
     color: var(--text-faint);
