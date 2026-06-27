@@ -3,11 +3,11 @@
   import type { ConnectionProfile } from '$lib/tauri';
   import DataSourceList from './DataSourceList.svelte';
   import ExplorerTree from './ExplorerTree.svelte';
-  import ResizeHandle from './ResizeHandle.svelte';
-  import { Plus, Database, ChevronDown, ChevronRight } from 'lucide-svelte';
+  import { Plus, Database, ChevronDown, ChevronRight, GripHorizontal } from 'lucide-svelte';
 
-  let dsListHeight = 200;
+  let dsCollapsed = false;
   let explorerCollapsed = false;
+  let dsHeight = 200;
 
   function openNewDatasource() {
     modalPayload.set(null);
@@ -19,25 +19,81 @@
     activeModal.set('datasource');
   }
 
+  function handleDsResize(newSize: number, containerHeight: number) {
+    // If dragged near the bottom, collapse datasources
+    if (newSize < 40) {
+      dsCollapsed = true;
+      dsHeight = 28; // just header height
+    } else if (newSize > containerHeight - 40) {
+      explorerCollapsed = true;
+      dsHeight = containerHeight - 28;
+    } else {
+      dsCollapsed = false;
+      explorerCollapsed = false;
+      dsHeight = newSize;
+    }
+  }
+
   $: activeTrees = $datasourceTrees[$activeDatasourceId ?? ''] ?? [];
 </script>
 
-<aside class="sidebar" class:hidden={!$sidebarVisible}>
-  <div class="sidebar-header">
-    <span>DATA SOURCES</span>
+<aside class="sidebar" class:hidden={!$sidebarVisible} bind:clientHeight={_containerH}>
+  <!-- Data Sources Section -->
+  <div class="section-header" class:collapsed={dsCollapsed}>
+    <button class="section-toggle" on:click={() => { dsCollapsed = !dsCollapsed; if (dsCollapsed) dsHeight = 28; else dsHeight = 200; }}>
+      {#if dsCollapsed}
+        <ChevronRight size="12" />
+      {:else}
+        <ChevronDown size="12" />
+      {/if}
+      <span>DATA SOURCES</span>
+    </button>
     <button class="sidebar-connect" on:click={openNewDatasource} title="New data source">
       <Plus size="14" />
     </button>
   </div>
 
-  <div class="ds-section" style="height: {dsListHeight}px">
-    <DataSourceList onEdit={openEditDatasource} />
-  </div>
+  {#if !dsCollapsed}
+    <div class="ds-section" style="height: {dsHeight - 28}px">
+      <DataSourceList onEdit={openEditDatasource} />
+    </div>
+  {/if}
 
-  <ResizeHandle direction="vertical" size={dsListHeight} onResize={(s) => dsListHeight = s} minSize={80} maxSize={500} />
+  <!-- Drag Handle -->
+  {#if !dsCollapsed && !explorerCollapsed}
+    <div class="section-handle">
+      <div class="handle-bar"></div>
+    </div>
+    <!-- Hidden resize overlay -->
+    <div
+      class="section-resize"
+      on:mousedown={(e) => {
+        e.preventDefault();
+        const startY = e.clientY;
+        const startH = dsHeight;
+        const containerH = (_containerH ?? 600);
 
-  <div class="explorer-section">
-    <button class="explorer-collapse" on:click={() => explorerCollapsed = !explorerCollapsed}>
+        function onMove(ev: MouseEvent) {
+          const delta = ev.clientY - startY;
+          handleDsResize(startH + delta, containerH);
+        }
+        function onUp() {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        document.body.style.cursor = 'row-resize';
+        document.body.style.userSelect = 'none';
+      }}
+    ></div>
+  {/if}
+
+  <!-- Explorer Section -->
+  <div class="section-header" class:collapsed={explorerCollapsed}>
+    <button class="section-toggle" on:click={() => explorerCollapsed = !explorerCollapsed}>
       {#if explorerCollapsed}
         <ChevronRight size="12" />
       {:else}
@@ -45,8 +101,10 @@
       {/if}
       <span>EXPLORER</span>
     </button>
+  </div>
 
-    {#if !explorerCollapsed}
+  {#if !explorerCollapsed}
+    <div class="explorer-section">
       {#if $activeDatasourceId}
         <div class="sidebar-explorer-header">
           <Database size="12" />
@@ -68,8 +126,8 @@
       {:else}
         <div class="sidebar-empty">Add a data source to get started.</div>
       {/if}
-    {/if}
-  </div>
+    </div>
+  {/if}
 </aside>
 
 <style>
@@ -81,34 +139,90 @@
     width: 100%;
     height: 100%;
     border-right: 1px solid var(--border);
+    position: relative;
   }
   .sidebar.hidden { display: none; }
-  .sidebar-header {
+
+  .section-header {
     display: flex;
     align-items: center;
-    padding: 8px 12px;
+    padding: 6px 12px;
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 1px;
     color: var(--text-muted);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
+    min-height: 28px;
+    cursor: default;
   }
+  .section-header.collapsed {
+    border-bottom: none;
+  }
+  .section-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    padding: 0;
+    cursor: pointer;
+    flex: 1;
+    text-align: left;
+  }
+  .section-toggle:hover { color: var(--text); }
+
   .sidebar-connect {
-    margin-left: auto;
     border: none;
     background: transparent;
     font-size: 16px;
     color: var(--text-muted);
-    padding: 0 4px;
+    padding: 0 2px;
     cursor: pointer;
+    flex-shrink: 0;
   }
   .sidebar-connect:hover { color: var(--accent); }
+
   .ds-section {
     flex-shrink: 0;
     overflow: hidden;
     display: flex;
+    border-bottom: 1px solid var(--border);
   }
+
+  .section-handle {
+    height: 5px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    cursor: row-resize;
+    position: relative;
+  }
+  .section-handle:hover { background: var(--bg-hover); }
+  .handle-bar {
+    width: 30px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--text-faint);
+    opacity: 0.5;
+  }
+  .section-handle:hover .handle-bar { opacity: 0.8; background: var(--accent); }
+
+  .section-resize {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 8px;
+    cursor: row-resize;
+    z-index: 10;
+  }
+
   .explorer-section {
     flex: 1;
     display: flex;
@@ -116,24 +230,6 @@
     overflow: hidden;
     min-height: 0;
   }
-  .explorer-collapse {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 6px 12px;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 1px;
-    color: var(--text-muted);
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid var(--border);
-    cursor: pointer;
-    width: 100%;
-    text-align: left;
-    flex-shrink: 0;
-  }
-  .explorer-collapse:hover { color: var(--text); background: var(--bg-hover); }
   .sidebar-explorer-header {
     display: flex;
     align-items: center;
