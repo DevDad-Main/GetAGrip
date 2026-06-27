@@ -193,3 +193,25 @@ button.danger {
 .p-sm { padding: 4px; }
 .p-md { padding: 8px; }
 .p-lg { padding: 16px; }
+
+/* Monaco suggest widget — force detail column visible for all rows */
+.monaco-editor .suggest-widget {
+  min-width: 520px !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list-row > .monaco-icon-label {
+  display: flex !important;
+  flex: 1 !important;
+  min-width: 0 !important;
+}
+
+.monaco-editor .suggest-widget .monaco-list-row .monaco-highlighted-label,
+.monaco-editor .suggest-widget .monaco-list-row .suggest-detail,
+.monaco-editor .suggest-widget .monaco-list-row .monaco-icon-label .detail-label {
+  display: inline !important;
+  opacity: 0.75 !important;
+  font-size: 11px !important;
+  margin-left: auto !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+}
