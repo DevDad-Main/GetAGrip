@@ -98,9 +98,9 @@ pub fn request_completion(
         || is_after_clause(sql, cursor_line, cursor_column, "JOIN");
 
     if in_from {
-        let mut tables = complete_tables(cache, connection_id, &word_lower);
-        bucket_truncate(&mut vec![], &mut tables, &mut vec![], &mut vec![]);
-        return tables;
+        let mut cols = complete_tables(cache, connection_id, &word_lower);
+        bucket_truncate(&mut cols, &mut vec![], &mut vec![], &mut vec![]);
+        return cols;
     }
 
     let in_clause = is_after_clause(sql, cursor_line, cursor_column, "SELECT")
@@ -124,10 +124,10 @@ pub fn request_completion(
 
     // Generic
     let mut keywords = complete_keywords(&word_upper);
-    let mut tables = complete_tables(cache, connection_id, &word_lower);
+    let mut cols = complete_tables(cache, connection_id, &word_lower);
     let mut functions = complete_functions(&word_upper);
-    bucket_truncate(&mut vec![], &mut tables, &mut functions, &mut keywords);
-    tables
+    bucket_truncate(&mut cols, &mut vec![], &mut functions, &mut keywords);
+    cols
 }
 
 // ── penalty helper ───────────────────────────────────────────────────────
