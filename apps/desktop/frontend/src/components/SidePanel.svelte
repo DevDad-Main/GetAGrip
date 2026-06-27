@@ -3,7 +3,8 @@
   import type { ConnectionProfile } from '$lib/tauri';
   import DataSourceList from './DataSourceList.svelte';
   import ExplorerTree from './ExplorerTree.svelte';
-  import { Plus, Database, ChevronDown, ChevronRight, GripHorizontal } from 'lucide-svelte';
+  import { Plus, Database, ChevronDown, ChevronRight, RefreshCw } from 'lucide-svelte';
+  import { handleConnect } from '$lib/connection';
 
   let dsCollapsed = false;
   let explorerCollapsed = false;
@@ -111,6 +112,18 @@
               Not connected
             {/if}
           </span>
+          {#if $datasourceStates[$activeDatasourceId]?.state === 'connected'}
+            <button
+              class="explorer-refresh"
+              on:click={() => {
+                const ds = $datasources.find((d) => d.id === $activeDatasourceId);
+                if (ds) handleConnect(ds);
+              }}
+              title="Refresh explorer"
+            >
+              <RefreshCw size="11" />
+            </button>
+          {/if}
         </div>
         {#if activeTrees.length > 0}
           <ExplorerTree nodes={activeTrees} depth={0} profileId={$activeDatasourceId} />
@@ -227,6 +240,17 @@
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
+  .explorer-refresh {
+    margin-left: auto;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    padding: 2px;
+    cursor: pointer;
+    display: flex;
+    border-radius: 3px;
+  }
+  .explorer-refresh:hover { color: var(--text); background: var(--bg-hover); }
   .sidebar-empty {
     color: var(--text-faint);
     font-size: 12px;
