@@ -7,6 +7,7 @@
     nextResultSetId, resultsPanelHeight, activeTheme, type ResultSet,
   } from '$lib/stores';
   import CustomSuggestWidget from './CustomSuggestWidget.svelte';
+  import HoverWidget from './HoverWidget.svelte';
 
   export let sql = '';
   export let profileId: string | null = null;
@@ -28,6 +29,12 @@
   let suggestPos = { top: 0, left: 0 };
   let lastCompletionPos: monaco.Position | null = null;
   let completionWordStartCol = 0;
+
+  // Custom hover state
+  let hoverVisible = false;
+  let hoverContent = '';
+  let hoverX = 0;
+  let hoverY = 0;
 
   function defineMonacoTheme(t: ThemeDef) {
     const d = t.isDark;
@@ -314,62 +321,67 @@
       if (handleSuggestKey(e)) return;
     });
 
-    // ── Hover provider ─────────────────────────────────────────────────
+    // ── Custom hover (replaces Monaco hover provider) ────────────────────
 
     const fnDocs: Record<string, string> = {
-      COUNT: '**COUNT(expr)**\n\nReturns the number of rows or non-null values.\n\nAggregate function.',
-      SUM: '**SUM(expr)**\n\nReturns the sum of all values.\n\nAggregate function.',
-      AVG: '**AVG(expr)**\n\nReturns the average of all values.\n\nAggregate function.',
-      MIN: '**MIN(expr)**\n\nReturns the minimum value.\n\nAggregate function.',
-      MAX: '**MAX(expr)**\n\nReturns the maximum value.\n\nAggregate function.',
-      COALESCE: '**COALESCE(val1, val2, ...)**\n\nReturns the first non-null argument.\n\nScalar function.',
-      NULLIF: '**NULLIF(expr1, expr2)**\n\nReturns NULL if expr1 = expr2, otherwise expr1.\n\nScalar function.',
-      CAST: '**CAST(expr AS type)**\n\nConverts an expression to a specified data type.\n\nConversion function.',
-      CONVERT: '**CONVERT(type, expr)**\n\nConverts an expression to a specified data type (MSSQL).\n\nConversion function.',
-      CONCAT: '**CONCAT(str1, str2, ...)**\n\nConcatenates two or more strings.\n\nString function.',
-      CONCAT_WS: '**CONCAT_WS(separator, str1, str2, ...)**\n\nConcatenates strings with a separator.\n\nString function.',
-      UPPER: '**UPPER(str)**\n\nConverts a string to uppercase.\n\nString function.',
-      LOWER: '**LOWER(str)**\n\nConverts a string to lowercase.\n\nString function.',
-      TRIM: '**TRIM(str)**\n\nRemoves leading and trailing spaces.\n\nString function.',
-      LEN: '**LEN(str)**\n\nReturns the length of a string.\n\nString function.',
-      SUBSTRING: '**SUBSTRING(str, start, length)**\n\nReturns part of a string.\n\nString function.',
-      REPLACE: '**REPLACE(str, old, new)**\n\nReplaces occurrences of a substring.\n\nString function.',
-      CHARINDEX: '**CHARINDEX(substr, str)**\n\nReturns the starting position of a substring.\n\nString function.',
-      GETDATE: '**GETDATE()**\n\nReturns the current date and time.\n\nDate function.',
-      GETUTCDATE: '**GETUTCDATE()**\n\nReturns the current UTC date and time.\n\nDate function.',
-      DATEADD: '**DATEADD(datepart, number, date)**\n\nAdds an interval to a date.\n\nDate function.',
-      DATEDIFF: '**DATEDIFF(datepart, start, end)**\n\nReturns the difference between two dates.\n\nDate function.',
-      DATEPART: '**DATEPART(datepart, date)**\n\nReturns a specific part of a date.\n\nDate function.',
-      YEAR: '**YEAR(date)**\n\nReturns the year from a date.\n\nDate function.',
-      MONTH: '**MONTH(date)**\n\nReturns the month from a date.\n\nDate function.',
-      DAY: '**DAY(date)**\n\nReturns the day from a date.\n\nDate function.',
-      STRING_AGG: '**STRING_AGG(expr, separator)**\n\nConcatenates values from multiple rows.\n\nAggregate function.',
-      FORMAT: '**FORMAT(value, format)**\n\nFormats a value with a .NET format string.\n\nString function.',
-      ROW_NUMBER: '**ROW_NUMBER() OVER (ORDER BY ...)**\n\nNumbers the output of a result set.\n\nWindow function.',
-      RANK: '**RANK() OVER (ORDER BY ...)**\n\nRanks rows with gaps for ties.\n\nWindow function.',
-      DENSE_RANK: '**DENSE_RANK() OVER (ORDER BY ...)**\n\nRanks rows without gaps for ties.\n\nWindow function.',
-      LEAD: '**LEAD(expr, offset, default) OVER (...)**\n\nAccesses a subsequent row\'s value.\n\nWindow function.',
-      LAG: '**LAG(expr, offset, default) OVER (...)**\n\nAccesses a previous row\'s value.\n\nWindow function.',
+      COUNT: '<strong>COUNT(expr)</strong><br><em>Returns the number of rows or non-null values.</em><br>Aggregate function.',
+      SUM: '<strong>SUM(expr)</strong><br><em>Returns the sum of all values.</em><br>Aggregate function.',
+      AVG: '<strong>AVG(expr)</strong><br><em>Returns the average of all values.</em><br>Aggregate function.',
+      MIN: '<strong>MIN(expr)</strong><br><em>Returns the minimum value.</em><br>Aggregate function.',
+      MAX: '<strong>MAX(expr)</strong><br><em>Returns the maximum value.</em><br>Aggregate function.',
+      COALESCE: '<strong>COALESCE(val1, val2, ...)</strong><br><em>Returns the first non-null argument.</em><br>Scalar function.',
+      NULLIF: '<strong>NULLIF(expr1, expr2)</strong><br><em>Returns NULL if expr1 = expr2, otherwise expr1.</em><br>Scalar function.',
+      CAST: '<strong>CAST(expr AS type)</strong><br><em>Converts an expression to a specified data type.</em><br>Conversion function.',
+      CONVERT: '<strong>CONVERT(type, expr)</strong><br><em>Converts an expression to a specified data type (MSSQL).</em><br>Conversion function.',
+      CONCAT: '<strong>CONCAT(str1, str2, ...)</strong><br><em>Concatenates two or more strings.</em><br>String function.',
+      CONCAT_WS: '<strong>CONCAT_WS(sep, str1, str2, ...)</strong><br><em>Concatenates strings with a separator.</em><br>String function.',
+      UPPER: '<strong>UPPER(str)</strong><br><em>Converts a string to uppercase.</em><br>String function.',
+      LOWER: '<strong>LOWER(str)</strong><br><em>Converts a string to lowercase.</em><br>String function.',
+      TRIM: '<strong>TRIM(str)</strong><br><em>Removes leading and trailing spaces.</em><br>String function.',
+      LEN: '<strong>LEN(str)</strong><br><em>Returns the length of a string.</em><br>String function.',
+      SUBSTRING: '<strong>SUBSTRING(str, start, length)</strong><br><em>Returns part of a string.</em><br>String function.',
+      REPLACE: '<strong>REPLACE(str, old, new)</strong><br><em>Replaces occurrences of a substring.</em><br>String function.',
+      CHARINDEX: '<strong>CHARINDEX(substr, str)</strong><br><em>Returns the starting position of a substring.</em><br>String function.',
+      GETDATE: '<strong>GETDATE()</strong><br><em>Returns the current date and time.</em><br>Date function.',
+      GETUTCDATE: '<strong>GETUTCDATE()</strong><br><em>Returns the current UTC date and time.</em><br>Date function.',
+      DATEADD: '<strong>DATEADD(datepart, number, date)</strong><br><em>Adds an interval to a date.</em><br>Date function.',
+      DATEDIFF: '<strong>DATEDIFF(datepart, start, end)</strong><br><em>Returns the difference between two dates.</em><br>Date function.',
+      DATEPART: '<strong>DATEPART(datepart, date)</strong><br><em>Returns a specific part of a date.</em><br>Date function.',
+      YEAR: '<strong>YEAR(date)</strong><br><em>Returns the year from a date.</em><br>Date function.',
+      MONTH: '<strong>MONTH(date)</strong><br><em>Returns the month from a date.</em><br>Date function.',
+      DAY: '<strong>DAY(date)</strong><br><em>Returns the day from a date.</em><br>Date function.',
+      STRING_AGG: '<strong>STRING_AGG(expr, separator)</strong><br><em>Concatenates values from multiple rows.</em><br>Aggregate function.',
+      FORMAT: '<strong>FORMAT(value, format)</strong><br><em>Formats a value with a .NET format string.</em><br>String function.',
+      ROW_NUMBER: '<strong>ROW_NUMBER() OVER (ORDER BY ...)</strong><br><em>Numbers the output of a result set.</em><br>Window function.',
+      RANK: '<strong>RANK() OVER (ORDER BY ...)</strong><br><em>Ranks rows with gaps for ties.</em><br>Window function.',
+      DENSE_RANK: '<strong>DENSE_RANK() OVER (ORDER BY ...)</strong><br><em>Ranks rows without gaps for ties.</em><br>Window function.',
+      LEAD: '<strong>LEAD(expr, offset, default) OVER (...)</strong><br><em>Accesses a subsequent row\'s value.</em><br>Window function.',
+      LAG: '<strong>LAG(expr, offset, default) OVER (...)</strong><br><em>Accesses a previous row\'s value.</em><br>Window function.',
     };
 
-    monaco.languages.registerHoverProvider('sql', {
-      provideHover(model, position) {
-        const word = model.getWordAtPosition(position);
-        if (!word) return null;
+    editor.onMouseMove((e) => {
+      if (!e.target.position) {
+        hoverVisible = false;
+        return;
+      }
+      const model = editor?.getModel();
+      if (!model) return;
+      const word = model.getWordAtPosition(e.target.position);
+      if (word) {
         const upper = word.word.toUpperCase();
         if (fnDocs[upper]) {
-          return {
-            range: {
-              startLineNumber: position.lineNumber,
-              endLineNumber: position.lineNumber,
-              startColumn: word.startColumn,
-              endColumn: word.endColumn,
-            },
-            contents: [{ value: fnDocs[upper] }],
-          };
+          hoverContent = fnDocs[upper];
+          hoverX = e.event.posx + 12;
+          hoverY = e.event.posy - 8;
+          hoverVisible = true;
+          return;
         }
-        return null;
-      },
+      }
+      hoverVisible = false;
+    });
+
+    editor.onMouseLeave(() => {
+      hoverVisible = false;
     });
 
     // ── Signature help provider ─────────────────────────────────────────
@@ -531,6 +543,8 @@
   on:close={hideSuggest}
   on:change={(e) => suggestActive = e.detail}
 />
+
+<HoverWidget visible={hoverVisible} content={hoverContent} x={hoverX} y={hoverY} />
 
 <style>
   .monaco-container {

@@ -80,7 +80,7 @@
           on:click={() => dispatch('select', item)}
           on:mouseenter={() => activeIndex = i}
         >
-          <span class="cs-icon" title={kindLabels[item.kind]}>
+          <span class="cs-icon" class:ik-table={item.kind === 'table'} class:ik-column={item.kind === 'column'} class:ik-function={item.kind === 'function'} class:ik-keyword={item.kind === 'keyword'} class:ik-schema={item.kind === 'schema'} title={kindLabels[item.kind]}>
             <svelte:component this={kindIcons[item.kind] ?? CaseSensitive} size="14" />
           </span>
           <span class="cs-label">{item.label}</span>
@@ -142,12 +142,17 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--text-muted);
     margin-top: 2px;
   }
 
+  .ik-table    { color: #c586c0; }
+  .ik-column   { color: #9cdcfe; }
+  .ik-function { color: #4ec9b0; }
+  .ik-keyword  { color: #569cd6; }
+  .ik-schema   { color: #ce9178; }
+
   .cs-row.active .cs-icon {
-    color: var(--accent);
+    color: inherit;
   }
 
   .cs-label {
@@ -173,16 +178,12 @@
   }
 
   .cs-docs {
-    padding: 6px 10px;
+    padding: 8px 10px;
     border-top: 1px solid var(--border);
-    color: var(--text-muted);
-    font-size: 11px;
-    white-space: pre-wrap;
-    max-height: 200px;
-    overflow-y: auto;
-    scrollbar-width: none;
-  }
-  .cs-docs::-webkit-scrollbar {
-    display: none;
+    color: var(--text-faint);
+    font-size: 10px;
+    line-height: 1.5;
+    white-space: pre-line;
+    flex-shrink: 0;
   }
 </style>
