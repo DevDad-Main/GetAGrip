@@ -64,7 +64,11 @@ pub async fn introspect_node(
         }
         Some(IntrospectKind::Table) => {
             let db = parent_db.ok_or_else(|| "parent_db required for Table".to_string())?;
-            let table = node_id.ok_or_else(|| "node_id required for Table".to_string())?;
+            let table = node_id
+                .as_ref()
+                .and_then(|id| id.split('/').last())
+                .map(|s| s.to_string())
+                .ok_or_else(|| "table name required".to_string())?;
             list_columns(&pool, &managed.profile, &db, &table).await
         }
     }
