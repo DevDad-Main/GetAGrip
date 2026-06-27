@@ -7,10 +7,10 @@ Rust core owns connections, schema intelligence, query execution, and
 background processing. The Svelte frontend owns rendering, layout, and the
 Monaco-based SQL editor.
 
-> **Status:** Phase 2 — SQL Server driver works end-to-end. Full IDE chrome:
-> sidebar explorer, Monaco editor with tabs, results grid with sorting/filtering,
-> copy to clipboard, export (CSV/TSV/JSON/Markdown), connection management,
-> query history, command palette, and toast notifications.
+> **Status:** Phase 2 (advanced) — Database IDE with Rust-powered intelligence
+> engine. Context-aware SQL autocomplete with fuzzy matching, semantic
+> diagnostics, metadata caching, custom suggest widget with Lucide icons,
+> hover documentation, signature help, export, and full connection management.
 
 ---
 
@@ -37,7 +37,8 @@ Monaco-based SQL editor.
 │  │  ┌─────────┬──────────────────┬────────────┐  │  │
 │  │  │ SideBar │  EditorPane       │  Info      │  │  │
 │  │  │ Explorer│  Monaco + Tabs     │  (future)  │  │  │
-│  │  │ Tree    │                   │            │  │  │
+│  │  │ Tree    │  + Custom Suggest  │            │  │  │
+│  │  │         │  + Hover Docs      │            │  │  │
 │  │  ├─────────┴──────────────────┴────────────┤  │  │
 │  │  │  ResultsGrid (virtualized HTML table)    │  │  │
 │  │  ├──────────────────────────────────────────┤  │  │
@@ -48,8 +49,9 @@ Monaco-based SQL editor.
                         │ Tauri IPC (invoke)
 ┌───────────────────────▼─────────────────────────────┐
 │  Rust IDE core engine                                │
-│  getagrip-core | database | driver-sqlserver | sql   │
+│  core | database | driver-sqlserver | sql            │
 │  explorer | results | query-engine | settings        │
+│  intelligence (metadata cache, completion, diag)     │
 └───────────────────────┬─────────────────────────────┘
                         │
                         ▼
@@ -113,16 +115,18 @@ atlasdb/
 │           ├── vite.config.ts
 │           └── src/
 ├── crates/
-│   ├── getagrip-core/      # errors, Id, EventBus, config, secrets, session
-│   ├── getagrip-database/  # DatabaseDriver trait, Value, QueryResult
+│   ├── getagrip-core/       # errors, Id, EventBus, config, secrets, session
+│   ├── getagrip-database/   # DatabaseDriver trait, Value, QueryResult
 │   ├── getagrip-driver-sqlserver/  # SQL Server via tiberius
-│   ├── getagrip-sql/       # parser, formatter, diagnostics
-│   ├── getagrip-explorer/  # ExplorerNode / ExplorerTree
-│   ├── getagrip-results/   # DataGrid model
+│   ├── getagrip-sql/        # parser, formatter, diagnostics
+│   ├── getagrip-explorer/   # ExplorerNode / ExplorerTree
+│   ├── getagrip-schema/     # Schema introspection, comparison, migration
+│   ├── getagrip-intelligence/ # Metadata cache, SQL completion, diagnostics
+│   ├── getagrip-results/    # DataGrid model + export (CSV/TSV/JSON/MD)
 │   ├── getagrip-query-engine/  # QueryExecutor, scheduler, history
-│   ├── getagrip-settings/  # JSON settings store
-│   ├── getagrip-themes/    # Theme engine + CSS/Monaco theme helpers
-│   └── getagrip-telemetry/ # tracing + structured logging
+│   ├── getagrip-settings/   # JSON settings store
+│   ├── getagrip-themes/     # Theme engine + CSS/Monaco theme helpers
+│   └── getagrip-telemetry/  # tracing + structured logging
 ```
 
 ---
@@ -130,12 +134,14 @@ atlasdb/
 ## Roadmap
 
 - **Phase 1 (complete):** Tauri shell, Svelte chrome, Monaco editor, SQL Server
-  connect/explore/execute/results, dark theme.
-- **Phase 2 (current):** Result export (CSV/TSV/JSON/Markdown), copy to
-  clipboard, connection management, query history, command palette, toast
-  notifications. PostgreSQL + MySQL + SQLite drivers planned next.
-- **Phase 3:** Schema-aware autocomplete, diagnostics, formatting.
-- **Phase 4:** Multiple connections, saved projects, preferences.
+  connect/explore/execute/results, dark Darcula theme.
+- **Phase 2 (complete):** Result export (CSV/TSV/JSON/Markdown), copy to clipboard,
+  connection management, query history, command palette, toast notifications.
+- **Phase 3 (current):** Rust intelligence engine — context-aware SQL autocomplete
+  with fuzzy matching, semantic diagnostics, metadata caching. Custom suggest widget
+  with Lucide icons, hover documentation, signature help. PostgreSQL + MySQL +
+  SQLite drivers planned.
+- **Phase 4:** Streaming results, multi-connection projects, preferences.
 - **Phase 5:** Migrations, ER diagrams, plugins, AI query assistant.
 
 ---
