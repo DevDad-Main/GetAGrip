@@ -2,6 +2,7 @@ use tauri::State;
 
 use getagrip_query_engine::HistoryEntry;
 
+use crate::commands::util::persist_history;
 use crate::state::AppState;
 
 #[tauri::command]
@@ -12,5 +13,6 @@ pub async fn list_history(state: State<'_, AppState>) -> Result<Vec<HistoryEntry
 #[tauri::command]
 pub async fn clear_history(state: State<'_, AppState>) -> Result<(), String> {
     state.history.clear();
+    let _ = persist_history(&state.history, &state.history_path);
     Ok(())
 }

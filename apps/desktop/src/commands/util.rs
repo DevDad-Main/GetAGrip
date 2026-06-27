@@ -40,6 +40,17 @@ pub fn persist_profiles(profiles: &ConnectionProfiles, path: &Path) -> Result<()
     Ok(())
 }
 
+/// Persist query history to disk.
+pub fn persist_history(history: &getagrip_query_engine::QueryHistory, path: &Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("create dir: {e}"))?;
+    }
+    let entries = history.all();
+    let json = serde_json::to_string_pretty(&entries).map_err(|e| format!("serialize: {e}"))?;
+    fs::write(path, json).map_err(|e| format!("write: {e}"))?;
+    Ok(())
+}
+
 /// Convert a [`QueryResult`] into a JSON-friendly DTO for the frontend.
 ///
 /// We flatten `ResultRow` into `HashMap<String, Value>` so the JS side

@@ -11,7 +11,7 @@ use getagrip_core::session::ConnectionProfileId;
 use getagrip_query_engine::scheduler::{QueryId, QueryStatus, TabId};
 use getagrip_query_engine::HistoryEntry;
 
-use crate::commands::util::query_result_to_dto;
+use crate::commands::util::{persist_history, query_result_to_dto};
 use crate::state::AppState;
 
 /// JSON-friendly mirror of [`getagrip_database::driver::ColumnInfo`].
@@ -77,12 +77,14 @@ pub async fn execute_query(
     let mut conn = pool.acquire().await.map_err(|e| {
         let elapsed = start.elapsed().as_micros() as u64;
         state.history.update(query_id, QueryStatus::Failed, elapsed, Some(e.to_string()));
+        let _ = persist_history(&state.history, &state.history_path);
         format!("acquire: {e}")
     })?;
 
     let result = conn.connection_mut().execute(&sql).await.map_err(|e| {
         let elapsed = start.elapsed().as_micros() as u64;
         state.history.update(query_id, QueryStatus::Failed, elapsed, Some(format!("{e}")));
+        let _ = persist_history(&state.history, &state.history_path);
         format!("{e}")
     })?;
 
@@ -90,6 +92,7 @@ pub async fn execute_query(
     let elapsed_us = start.elapsed().as_micros() as u64;
 
     state.history.update(query_id, QueryStatus::Completed, elapsed_us, None);
+    let _ = persist_history(&state.history, &state.history_path);
 
     Ok(vec![query_result_to_dto(result, elapsed_ms)])
 }

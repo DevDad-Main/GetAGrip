@@ -42,6 +42,10 @@ fn datasources_path(app_data: &PathBuf) -> PathBuf {
     app_data.join("getagrip").join("datasources.json")
 }
 
+fn history_path(app_data: &PathBuf) -> PathBuf {
+    app_data.join("getagrip").join("query_history.json")
+}
+
 fn main() {
     let _ = getagrip_telemetry::init_default();
     tracing::info!("GetAGrip starting");
@@ -73,13 +77,28 @@ fn main() {
                 SecretsVault::open_default().expect("failed to open secrets vault")
             }));
 
+            let history_path = history_path(&app_data);
+            let history = Arc::new(QueryHistory::new());
+
+            // Load persisted history
+            if history_path.exists() {
+                if let Ok(data) = fs::read_to_string(&history_path) {
+                    if let Ok(entries) = serde_json::from_str::<Vec<getagrip_query_engine::HistoryEntry>>(&data) {
+                        for entry in entries {
+                            history.add(entry);
+                        }
+                    }
+                }
+            }
+
             let state = AppState {
                 profiles: RwLock::new(profiles),
                 vault,
                 manager: Arc::new(ConnectionManager::new()),
-                history: Arc::new(QueryHistory::new()),
+                history,
                 event_bus: Arc::new(EventBus::new()),
                 profiles_path,
+                history_path,
             };
 
             app.manage(state);

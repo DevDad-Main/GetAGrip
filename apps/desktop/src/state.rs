@@ -14,4 +14,5 @@ pub struct AppState {
     pub history: Arc<QueryHistory>,
     pub event_bus: Arc<EventBus>,
     pub profiles_path: PathBuf,
+    pub history_path: PathBuf,
 }
