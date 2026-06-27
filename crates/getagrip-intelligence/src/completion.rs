@@ -325,7 +325,7 @@ fn complete_columns_explicit(
                 let nullable = if c.nullable { "" } else { " NOT NULL" };
                 let pk = if c.is_primary_key { " PK" } else { "" };
                 let doc = format!("{table}.{col}\n{db_type}{nullable}{pk}", col = c.name, db_type = c.db_type);
-                let detail = format!("{db_type}{nullable}{pk}", db_type = c.db_type);
+                let detail = format!("{table}.{col}  {db_type}{nullable}{pk}", col = c.name, db_type = c.db_type);
                 Some(CompletionItem {
                     label: c.name.clone(),
                     kind: CompletionKind::Column,
