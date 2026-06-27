@@ -13,13 +13,18 @@
 
   import {
     commandPaletteOpen, activeModal, modalPayload, sidebarVisible,
-    loadDatasources,
+    loadDatasources, resultsPanelHeight, resultSets, activeResultSetId,
   } from '$lib/stores';
   import type { ConnectionProfile } from '$lib/tauri';
 
   let historyVisible = false;
   let sidebarW = 260;
-  let resultsH = 220;
+
+  function clearResults() {
+    resultSets.set([]);
+    activeResultSetId.set(null);
+    resultsPanelHeight.set(0);
+  }
 
   function startSidebarReveal(e: MouseEvent) {
     e.preventDefault();
@@ -102,9 +107,9 @@
     {/if}
     <div class="editor-column">
       <EditorPane />
-      {#if resultsH > 0}
-        <ResizeHandle direction="vertical" size={resultsH} onResize={(s) => resultsH = s} minSize={80} maxSize={800} onCollapse={() => resultsH = 0} collapseThreshold={40} />
-        <div class="results-col" style="height: {resultsH}px">
+      {#if $resultsPanelHeight > 0}
+        <ResizeHandle direction="vertical" size={$resultsPanelHeight} onResize={(s) => resultsPanelHeight.set(s)} minSize={80} maxSize={800} onCollapse={() => resultsPanelHeight.set(0)} collapseThreshold={40} />
+        <div class="results-col" style="height: {$resultsPanelHeight}px">
           <ResultsPanel />
         </div>
       {/if}

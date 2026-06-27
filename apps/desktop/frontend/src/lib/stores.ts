@@ -80,6 +80,7 @@ export const history = writable<HistoryEntry[]>([]);
 export const statusText = writable<string>('Ready');
 export const sidebarVisible = writable<boolean>(true);
 export const commandPaletteOpen = writable<boolean>(false);
+export const resultsPanelHeight = writable<number>(0);
 
 export type ModalKind = 'connect' | 'datasource' | 'none';
 export const activeModal = writable<ModalKind>('none');

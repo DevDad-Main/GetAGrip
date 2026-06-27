@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { commandPaletteOpen, sidebarVisible, activeModal, resultSets, activeResultSetId, activeDatasourceId, datasourceStates } from '$lib/stores';
+  import { commandPaletteOpen, sidebarVisible, activeModal, resultSets, activeResultSetId, resultsPanelHeight, activeDatasourceId, datasourceStates } from '$lib/stores';
   import { disconnectDatasource } from '$lib/tauri';
 
   export let open = false;
@@ -39,7 +39,7 @@
     cmds.push(
       { id: 'run', label: 'Run Query', shortcut: 'Ctrl+Enter', action: () => onClose() },
       { id: 'toggle-sidebar', label: $sidebarVisible ? 'Hide Sidebar' : 'Show Sidebar', shortcut: 'Ctrl+B', action: () => { sidebarVisible.update((v) => !v); onClose(); } },
-      { id: 'clear-results', label: 'Clear Results', action: () => { resultSets.set([]); activeResultSetId.set(null); onClose(); } },
+      { id: 'clear-results', label: 'Clear Results', action: () => { resultSets.set([]); activeResultSetId.set(null); resultsPanelHeight.set(0); onClose(); } },
     );
 
     return cmds;

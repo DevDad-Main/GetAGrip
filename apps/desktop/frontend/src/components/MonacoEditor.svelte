@@ -4,7 +4,7 @@
   import { executeQueryV2, type QueryResultDto } from '$lib/tauri';
   import {
     resultSets, activeResultSetId, statusText, schemaCache,
-    nextResultSetId, type ResultSet,
+    nextResultSetId, resultsPanelHeight, type ResultSet,
   } from '$lib/stores';
 
   export let sql = '';
@@ -199,7 +199,10 @@
         }));
 
         const updated = [...rs, ...newSets];
-        if (newSets.length > 0) activeResultSetId.set(newSets[0].id);
+        if (newSets.length > 0) {
+          activeResultSetId.set(newSets[0].id);
+          resultsPanelHeight.set(220);
+        }
         return updated;
       });
 
