@@ -43,8 +43,16 @@ pub async fn introspect_node(
         .ok_or_else(|| format!("no pool for profile: {profile_id}"))?;
 
     match kind {
-        Some(IntrospectKind::Database) | None => {
+        None => {
+            // Initial load — list all databases
             list_databases(&pool, &managed.profile).await
+        }
+        Some(IntrospectKind::Database) => {
+            // Expanding a database — show Tables and Views folders
+            let db = parent_db.or_else(|| {
+                node_id.as_ref().and_then(|id| id.split('/').last().map(|s| s.to_string()))
+            }).ok_or_else(|| "database name required".to_string())?;
+            list_database_contents(&pool, &managed.profile, &db).await
         }
         Some(IntrospectKind::TablesFolder) => {
             let db = parent_db.ok_or_else(|| "parent_db required for TablesFolder".to_string())?;
@@ -97,6 +105,42 @@ async fn list_databases(
         .collect();
 
     Ok(nodes)
+}
+
+async fn list_database_contents(
+    pool: &Arc<getagrip_database::ConnectionPool>,
+    profile: &ConnectionProfile,
+    database: &str,
+) -> Result<Vec<ExplorerNode>, String> {
+    let profile_id = &profile.id.to_string();
+    Ok(vec![
+        ExplorerNode {
+            id: format!("{profile_id}/{database}/tables"),
+            name: "Tables".into(),
+            kind: ExplorerNodeKind::Folder,
+            expanded: false,
+            children_loaded: false,
+            children: vec![],
+            icon: None,
+            favorite: false,
+            tooltip: None,
+            loading: false,
+            has_error: false,
+        },
+        ExplorerNode {
+            id: format!("{profile_id}/{database}/views"),
+            name: "Views".into(),
+            kind: ExplorerNodeKind::Folder,
+            expanded: false,
+            children_loaded: false,
+            children: vec![],
+            icon: None,
+            favorite: false,
+            tooltip: None,
+            loading: false,
+            has_error: false,
+        },
+    ])
 }
 
 async fn list_tables(
