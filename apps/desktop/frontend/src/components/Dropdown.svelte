@@ -10,7 +10,6 @@
   let open = false;
 
   function select(id: string | null) {
-    value = id;
     open = false;
     dispatch('change', id);
   }
