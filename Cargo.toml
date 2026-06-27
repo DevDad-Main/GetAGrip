@@ -9,13 +9,17 @@ rust-version = "1.86"
 license = "MIT OR Apache-2.0"
 authors = ["GetAGrip Contributors"]
 repository = "https://github.com/DevDad-Main/GetAGrip"
-description = "GetAGrip — a modern, cross-platform database IDE built with Rust + Slint"
-keywords = ["database", "sql", "ide", "gui", "rust", "slint", "getagrip"]
+description = "GetAGrip — a modern, cross-platform database IDE built with Rust + Tauri + Svelte + Monaco"
+keywords = ["database", "sql", "ide", "gui", "rust", "tauri", "svelte", "monaco", "getagrip"]
 categories = ["database", "development-tools", "gui"]
 
 [workspace.dependencies]
-# UI
-slint = { version = "1.9", features = ["backend-winit", "renderer-skia"] }
+# Tauri
+tauri = { version = "2", features = ["devtools"] }
+tauri-build = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-log = "2"
 
 # Async runtime
 tokio = { version = "1.43", features = ["full"] }

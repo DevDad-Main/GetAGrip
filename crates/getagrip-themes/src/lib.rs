@@ -267,6 +267,117 @@ impl ThemeManager {
     }
 }
 
+/// Build a CSS custom-properties map from the active theme.
+///
+/// The frontend's `app.css` mirrors these variables so the whole UI is
+/// driven by the Rust theme engine. Keys are the CSS variable names
+/// (without the leading `--`); values are the hex strings to assign.
+///
+/// This is the single source of truth for the Darcula/JetBrains-style
+/// palette used across Tauri chrome, Monaco, and Svelte components.
+pub fn css_variables(theme: &Theme) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    for (key, color) in &theme.colors {
+        out.insert(key.clone(), color.to_hex());
+    }
+    out
+}
+
+/// Build a Monaco editor theme definition from the active theme.
+///
+/// The frontend calls `monaco.editor.defineTheme('getagrip-active', ...)` with
+/// the returned value so the editor's colours match the rest of the IDE.
+pub fn monaco_theme(theme: &Theme) -> MonacoTheme {
+    let base = match theme.kind {
+        ThemeKind::Dark => "vs-dark",
+        ThemeKind::Light | ThemeKind::HighContrast => "vs",
+    };
+
+    let get = |key: &str| -> Option<String> {
+        theme.colors.get(key).map(|c| {
+            // Monaco wants `#RRGGBB` (no alpha).
+            let r = (c.r * 255.0) as u8;
+            let g = (c.g * 255.0) as u8;
+            let b = (c.b * 255.0) as u8;
+            format!("#{r:02X}{g:02X}{b:02X}")
+        })
+    };
+
+    MonacoTheme {
+        base: base.into(),
+        inherit: true,
+        rules: vec![
+            MonacoToken {
+                token: "keyword".into(),
+                foreground: get(keys::KEYWORD),
+            },
+            MonacoToken {
+                token: "string".into(),
+                foreground: get(keys::STRING),
+            },
+            MonacoToken {
+                token: "number".into(),
+                foreground: get(keys::NUMBER),
+            },
+            MonacoToken {
+                token: "comment".into(),
+                foreground: get(keys::COMMENT),
+            },
+            MonacoToken {
+                token: "type".into(),
+                foreground: get(keys::TYPE),
+            },
+            MonacoToken {
+                token: "operator".into(),
+                foreground: get(keys::OPERATOR),
+            },
+            MonacoToken {
+                token: "identifier".into(),
+                foreground: get(keys::FG),
+            },
+        ],
+        colors: MonacoColors {
+            editor_background: get(keys::BG),
+            editor_foreground: get(keys::FG),
+            editor_line_highlight_background: get(keys::SELECTION),
+            editor_line_number_foreground: get(keys::LINE_NUMBER),
+            editor_line_number_active_foreground: get(keys::LINE_NUMBER_ACTIVE),
+            editor_selection_background: get(keys::SELECTION),
+        },
+    }
+}
+
+/// JSON shape expected by `monaco.editor.defineTheme`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MonacoTheme {
+    pub base: String,
+    pub inherit: bool,
+    pub rules: Vec<MonacoToken>,
+    pub colors: MonacoColors,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MonacoToken {
+    pub token: String,
+    pub foreground: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MonacoColors {
+    #[serde(rename = "editor.background")]
+    pub editor_background: Option<String>,
+    #[serde(rename = "editor.foreground")]
+    pub editor_foreground: Option<String>,
+    #[serde(rename = "editor.lineHighlightBackground")]
+    pub editor_line_highlight_background: Option<String>,
+    #[serde(rename = "editorLineNumber.foreground")]
+    pub editor_line_number_foreground: Option<String>,
+    #[serde(rename = "editorLineNumber.activeForeground")]
+    pub editor_line_number_active_foreground: Option<String>,
+    #[serde(rename = "editor.selectionBackground")]
+    pub editor_selection_background: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

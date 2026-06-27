@@ -194,7 +194,7 @@ fn build_filter(config: &TelemetryConfig) -> EnvFilter {
             Level::WARN => "warn",
             Level::ERROR => "error",
         };
-        EnvFilter::new(format!("{level},slint=warn,winit=warn,tokio=warn,hyper=warn"))
+        EnvFilter::new(format!("{level},tokio=warn,hyper=warn"))
     })
 }
 

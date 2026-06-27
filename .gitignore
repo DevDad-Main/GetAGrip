@@ -27,3 +27,8 @@ secrets/
 *.pem
 *.crt
 credentials.json
+
+# Frontend
+apps/desktop/frontend/node_modules/
+apps/desktop/frontend/dist/
+apps/desktop/frontend/.vite/
