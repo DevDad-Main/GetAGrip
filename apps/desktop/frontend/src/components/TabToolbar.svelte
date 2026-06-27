@@ -21,7 +21,7 @@
     <Database size="12" />
   </span>
   <Dropdown
-    value={datasourceId}
+    bind:value={datasourceId}
     options={dsOptions}
     placeholder="— no datasource —"
     on:change={handleDsChange}
