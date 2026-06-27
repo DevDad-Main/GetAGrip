@@ -1,46 +1,38 @@
 <script lang="ts">
   import type { ResultSet } from '$lib/stores';
+  import { resultSets } from '$lib/stores';
   import { exportResult, type ExportInput, type ExportColumn } from '$lib/tauri';
-  import { Copy, Download, ChevronDown } from 'lucide-svelte';
+  import { Copy, Download, ChevronDown, ArrowUp, ArrowDown } from 'lucide-svelte';
 
   export let result: ResultSet;
 
   const MAX_ROWS = 5000;
-
   let exportMenuOpen = false;
 
   $: filtered = computeFiltered(result.rows, result.columns, result.filterText);
   $: sorted = computeSorted(filtered, result.columns, result.sortColumn, result.sortDirection);
 
-  function computeFiltered(
-    rows: Record<string, unknown>[],
-    cols: Record<string, unknown>[],
-    filter: string,
-  ): Record<string, unknown>[] {
+  function computeFiltered(rows: Record<string, unknown>[], cols: Record<string, unknown>[], filter: string): Record<string, unknown>[] {
     if (!filter?.trim()) return rows;
     const q = filter.toLowerCase();
-    return rows.filter((row) =>
-      cols.some((col) => {
-        const val = row[String(col.name)];
-        return val != null && String(val).toLowerCase().includes(q);
-      }),
-    );
+    return rows.filter((row) => cols.some((col) => {
+      const val = row[String(col.name)];
+      return val != null && String(val).toLowerCase().includes(q);
+    }));
   }
 
-  function computeSorted(
-    rows: Record<string, unknown>[],
-    cols: Record<string, unknown>[],
-    sortCol: string | null,
-    sortDir: 'asc' | 'desc' | null,
-  ): Record<string, unknown>[] {
+  function computeSorted(rows: Record<string, unknown>[], cols: Record<string, unknown>[], sortCol: string | null, sortDir: 'asc' | 'desc' | null): Record<string, unknown>[] {
     if (!sortCol || !sortDir) return rows;
     return [...rows].sort((a, b) => {
       const av = a[sortCol];
       const bv = b[sortCol];
       if (av == null && bv == null) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      const cmp = String(av).localeCompare(String(bv), undefined, { numeric: true });
+      if (av == null) return sortDir === 'asc' ? 1 : -1;
+      if (bv == null) return sortDir === 'asc' ? -1 : 1;
+      const sa = String(av);
+      const sb = String(bv);
+      const n = !isNaN(Number(sa)) && !isNaN(Number(sb));
+      const cmp = n ? Number(sa) - Number(sb) : sa.localeCompare(sb);
       return sortDir === 'asc' ? cmp : -cmp;
     });
   }
@@ -56,12 +48,13 @@
   }
 
   function handleSort(colName: string) {
-    if (result.sortColumn === colName) {
-      result.sortDirection = result.sortDirection === 'asc' ? 'desc' : 'asc';
-    } else {
-      result.sortColumn = colName;
-      result.sortDirection = 'asc';
-    }
+    resultSets.update((rs) =>
+      rs.map((r) => {
+        if (r.id !== result.id) return r;
+        const newDir = r.sortColumn === colName && r.sortDirection === 'asc' ? 'desc' : 'asc';
+        return { ...r, sortColumn: colName, sortDirection: newDir };
+      }),
+    );
   }
 
   function handleCopy() {
@@ -76,27 +69,23 @@
   async function handleExport(format: string, download: boolean) {
     try {
       const columns: ExportColumn[] = result.columns.map((c: Record<string, unknown>, i: number) => ({
-        name: String(c.name),
-        col_type: String(c.col_type ?? 'string'),
-        db_type: String(c.db_type ?? ''),
-        nullable: Boolean(c.nullable ?? true),
-        ordinal: i,
+        name: String(c.name), col_type: String(c.col_type ?? 'string'),
+        db_type: String(c.db_type ?? ''), nullable: Boolean(c.nullable ?? true), ordinal: i,
       }));
       const rows: unknown[][] = sorted.slice(0, MAX_ROWS).map((row: Record<string, unknown>) =>
-        columns.map((c) => row[c.name])
+        columns.map((c) => row[c.name]),
       );
-      const input: ExportInput = { format, columns, rows, include_header: true };
+      const outFmt = format === 'tsv' ? 'tsv' : format;
+      const input: ExportInput = { format: outFmt, columns, rows, include_header: true };
       const output = await exportResult(input);
 
       if (download) {
         const ext = format === 'tsv' ? 'tsv' : format === 'markdown' ? 'md' : format;
-        const mime = format === 'json' ? 'application/json' : format === 'markdown' ? 'text/markdown' : 'text/plain';
+        const mime = format === 'json' ? 'application/json' : 'text/plain';
         const blob = new Blob([output], { type: mime });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = `query_result.${ext}`;
-        a.click();
+        a.href = url; a.download = `query_result.${ext}`; a.click();
         URL.revokeObjectURL(url);
       } else {
         navigator.clipboard.writeText(output).catch(console.error);
@@ -105,17 +94,11 @@
       console.error('export failed:', e);
     }
   }
-
-  function toggleExportMenu() {
-    exportMenuOpen = !exportMenuOpen;
-  }
 </script>
 
 <div class="rg">
   <div class="rg-toolbar">
-    <span class="rg-meta">
-      {sorted.length} of {result.rows.length} rows — {result.elapsedMs}ms
-    </span>
+    <span class="rg-meta">{sorted.length} of {result.rows.length} rows — {result.elapsedMs}ms</span>
     <div class="rg-actions">
       <button class="rg-btn" on:click={handleCopy} title="Copy as TSV"><Copy size="12" /></button>
 
@@ -123,11 +106,11 @@
         <button class="rg-btn" on:click={() => handleExport('csv', true)} title="Download CSV">
           <Download size="12" /> CSV
         </button>
-        <button class="rg-btn rg-btn-arrow" on:click={toggleExportMenu} title="More options">
+        <button class="rg-btn rg-btn-arrow" on:click|stopPropagation={() => exportMenuOpen = !exportMenuOpen} title="More export options">
           <ChevronDown size="10" />
         </button>
         {#if exportMenuOpen}
-          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div class="rg-menu" on:click|stopPropagation>
             <button class="rg-menu-item" on:click={() => { handleExport('csv', false); exportMenuOpen = false; }}>Copy CSV to clipboard</button>
             <button class="rg-menu-item" on:click={() => { handleExport('tsv', false); exportMenuOpen = false; }}>Copy TSV to clipboard</button>
@@ -137,12 +120,7 @@
         {/if}
       </div>
 
-      <input
-        class="rg-filter"
-        type="text"
-        bind:value={result.filterText}
-        placeholder="Filter…"
-      />
+      <input class="rg-filter" type="text" bind:value={result.filterText} placeholder="Filter…" />
     </div>
   </div>
 
@@ -156,9 +134,13 @@
             <tr>
               {#each result.columns as col (col.name)}
                 <th title={col.db_type} on:click={() => handleSort(String(col.name))}>
-                  {col.name}
+                  <span class="th-label">{col.name}</span>
                   {#if result.sortColumn === String(col.name)}
-                    <span class="sort-dir">{result.sortDirection === 'asc' ? ' ▲' : ' ▼'}</span>
+                    {#if result.sortDirection === 'asc'}
+                      <ArrowUp size="10" class="sort-icon" />
+                    {:else}
+                      <ArrowDown size="10" class="sort-icon" />
+                    {/if}
                   {/if}
                 </th>
               {/each}
@@ -177,9 +159,7 @@
           </tbody>
         </table>
         {#if sorted.length > MAX_ROWS}
-          <div class="rg-truncated">
-            Showing first {MAX_ROWS} of {sorted.length} rows.
-          </div>
+          <div class="rg-truncated">Showing first {MAX_ROWS} of {sorted.length} rows.</div>
         {/if}
       </div>
     {/if}
@@ -190,141 +170,66 @@
 <svelte:window on:click={() => { exportMenuOpen = false; }} />
 
 <style>
-  .rg {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    overflow: hidden;
-  }
+  .rg { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
   .rg-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 8px;
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
+    display: flex; align-items: center; gap: 8px; padding: 4px 8px;
+    background: var(--bg); border-bottom: 1px solid var(--border); flex-shrink: 0;
   }
   .rg-meta { font-size: 11px; color: var(--text-muted); }
-  .rg-actions {
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
+  .rg-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
   .rg-btn {
-    font-size: 10px;
-    padding: 2px 6px;
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    background: var(--bg-elev);
-    border-color: var(--border);
+    font-size: 10px; padding: 2px 6px; display: flex; align-items: center; gap: 2px;
+    background: var(--bg-elev); border-color: var(--border);
   }
   .rg-btn:hover { background: var(--bg-input); }
   .rg-btn-arrow {
-    padding: 2px 3px;
-    border-left: none;
-    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-    margin-left: -1px;
+    padding: 2px 3px; border-left: none;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0; margin-left: -1px;
   }
-  .rg-export-wrap {
-    position: relative;
-    display: flex;
-  }
-  .rg-export-wrap > .rg-btn:first-child {
-    border-radius: var(--radius-sm) 0 0 var(--radius-sm);
-  }
+  .rg-export-wrap { position: relative; display: flex; }
+  .rg-export-wrap > .rg-btn:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
   .rg-menu {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    margin-top: 2px;
-    background: var(--bg-elev);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-md);
-    z-index: 100;
-    min-width: 180px;
-    padding: 4px 0;
+    position: absolute; top: 100%; right: 0; margin-top: 2px;
+    background: var(--bg-elev); border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm); box-shadow: var(--shadow-md);
+    z-index: 100; min-width: 180px; padding: 4px 0;
   }
   .rg-menu-item {
-    display: block;
-    width: 100%;
-    text-align: left;
-    padding: 6px 12px;
-    font-size: 11px;
-    color: var(--text);
-    background: transparent;
-    border: none;
-    cursor: pointer;
+    display: block; width: 100%; text-align: left; padding: 6px 12px;
+    font-size: 11px; color: var(--text); background: transparent; border: none; cursor: pointer;
   }
   .rg-menu-item:hover { background: var(--accent-soft); }
-  .rg-filter {
-    width: 120px;
-    font-size: 11px;
-    padding: 2px 6px;
-  }
-  .rg-body {
-    flex: 1;
-    overflow: hidden;
-    min-height: 0;
-  }
-  .rg-scroll {
-    overflow: auto;
-    height: 100%;
-  }
+  .rg-filter { width: 120px; font-size: 11px; padding: 2px 6px; }
+  .rg-body { flex: 1; overflow: hidden; min-height: 0; }
+  .rg-scroll { overflow: auto; height: 100%; }
   .rg-table {
-    border-collapse: collapse;
-    font-size: 12px;
-    font-family: var(--font-mono);
-    width: max-content;
-    min-width: 100%;
+    border-collapse: collapse; font-size: 12px; font-family: var(--font-mono);
+    width: max-content; min-width: 100%;
   }
   .rg-table th {
-    position: sticky;
-    top: 0;
-    background: var(--bg-elev);
-    color: var(--text-muted);
-    font-weight: 600;
-    text-align: left;
-    padding: 4px 10px;
-    border-bottom: 1px solid var(--border);
-    border-right: 1px solid var(--border);
-    white-space: nowrap;
-    z-index: 1;
-    cursor: pointer;
-    user-select: none;
+    position: sticky; top: 0; background: var(--bg-elev); color: var(--text-muted);
+    font-weight: 600; text-align: left; padding: 4px 10px;
+    border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
+    white-space: nowrap; z-index: 1; cursor: pointer; user-select: none;
   }
   .rg-table th:hover { background: var(--bg-input); }
-  .sort-dir { font-size: 9px; }
+  .th-label { margin-right: 4px; }
+  .sort-icon { opacity: 0.5; flex-shrink: 0; vertical-align: middle; }
   .rg-table td {
-    padding: 3px 10px;
-    border-bottom: 1px solid var(--border);
-    border-right: 1px solid var(--border);
-    color: var(--text);
-    white-space: nowrap;
-    max-width: 300px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    padding: 3px 10px; border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border); color: var(--text);
+    white-space: nowrap; max-width: 300px; overflow: hidden; text-overflow: ellipsis;
   }
   .rg-table tr.stripe td { background: var(--bg-stripe); }
   .rg-table tr:hover td { background: var(--bg-hover); }
   .rg-table td.null { color: var(--text-faint); font-style: italic; }
   .rg-table td.number { text-align: right; color: var(--info); }
   .rg-empty {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    color: var(--text-faint);
-    font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; color: var(--text-faint); font-size: 12px;
   }
   .rg-truncated {
-    padding: 6px 12px;
-    font-size: 11px;
-    color: var(--warning);
-    background: var(--bg-elev);
-    border-top: 1px solid var(--border);
+    padding: 6px 12px; font-size: 11px; color: var(--warning);
+    background: var(--bg-elev); border-top: 1px solid var(--border);
   }
 </style>
