@@ -153,8 +153,9 @@
   .app-shell {
     display: grid;
     grid-template-rows: var(--titlebar-h) 1fr var(--statusbar-h);
-    min-height: 0;
     flex: 1;
+    min-height: 0;
+    height: 100%;
     background: var(--bg);
   }
   .content {
