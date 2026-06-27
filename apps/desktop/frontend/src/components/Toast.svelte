@@ -12,12 +12,12 @@
   export const toasts = writable<Toast[]>([]);
   let _id = 0;
 
-  export function notify(message: string, type: ToastType = 'info') {
+  export function notify(message: string, type: ToastType = 'info', durationMs = 5000) {
     const id = ++_id;
     toasts.update((t) => [...t, { id, message, type }]);
     setTimeout(() => {
       toasts.update((t) => t.filter((x) => x.id !== id));
-    }, 4000);
+    }, durationMs);
   }
 </script>
 

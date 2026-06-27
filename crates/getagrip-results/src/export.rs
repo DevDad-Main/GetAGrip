@@ -12,6 +12,35 @@ pub enum ExportFormat {
     Ndjson,
 }
 
+const MAX_CELL_TEXT: usize = 200;
+
+fn truncate_cell(s: &str) -> String {
+    if s.chars().count() > MAX_CELL_TEXT {
+        let mut truncated: String = s.chars().take(MAX_CELL_TEXT).collect();
+        truncated.push('\u{2026}');
+        truncated
+    } else {
+        s.to_owned()
+    }
+}
+
+/// Produce a clean string representation of a cell value for CSV / TSV / Markdown.
+fn cell_text(val: &getagrip_database::driver::Value) -> String {
+    match val {
+        getagrip_database::driver::Value::Null => String::new(),
+        getagrip_database::driver::Value::Bytes(b) => {
+            if b.len() > 64 {
+                format!("[binary {} B]", b.len())
+            } else {
+                use base64::Engine;
+                base64::engine::general_purpose::STANDARD.encode(b)
+            }
+        }
+        getagrip_database::driver::Value::Json(s) => truncate_cell(s),
+        other => truncate_cell(&other.to_string()),
+    }
+}
+
 /// Export rows as CSV.
 pub fn export_csv(rows: &[ResultRow], include_header: bool) -> String {
     let mut out = String::new();
@@ -29,7 +58,11 @@ pub fn export_csv(rows: &[ResultRow], include_header: bool) -> String {
 
         for row in rows {
             let values: Vec<String> = (0..row.len())
-                .map(|i| row.get(i).map(|v| csv_escape(&v.to_string())).unwrap_or_default())
+                .map(|i| {
+                    row.get(i)
+                        .map(|v| csv_escape(&cell_text(v)))
+                        .unwrap_or_default()
+                })
                 .collect();
             out.push_str(&values.join(","));
             out.push('\n');
@@ -47,32 +80,48 @@ fn csv_escape(s: &str) -> String {
     }
 }
 
-/// Export rows as JSON array.
+/// Export rows as JSON array using serde_json for correct, clean encoding.
 pub fn export_json(rows: &[ResultRow]) -> String {
-    let entries: Vec<String> = rows
+    let entries: Vec<serde_json::Value> = rows
         .iter()
         .map(|row| {
-            let fields: Vec<String> = row
-                .iter()
-                .map(|(col, val)| {
-                    format!("\"{}\": {}", col.name, json_value(val))
-                })
-                .collect();
-            format!("{{ {} }}", fields.join(", "))
+            let mut map = serde_json::Map::new();
+            for (col, val) in row.iter() {
+                map.insert(col.name.clone(), db_value_to_json(val));
+            }
+            serde_json::Value::Object(map)
         })
         .collect();
-    format!("[{}]", entries.join(",\n  "))
+
+    serde_json::to_string_pretty(&entries).unwrap_or_else(|_| "[]".into())
 }
 
-fn json_value(val: &getagrip_database::driver::Value) -> String {
+fn db_value_to_json(val: &getagrip_database::driver::Value) -> serde_json::Value {
+    use getagrip_database::driver::Value;
     match val {
-        getagrip_database::driver::Value::Null => "null".into(),
-        getagrip_database::driver::Value::Bool(b) => b.to_string(),
-        getagrip_database::driver::Value::Int(i) => i.to_string(),
-        getagrip_database::driver::Value::Float(f) => f.to_string(),
-        getagrip_database::driver::Value::String(s) => format!("\"{}\"", s.escape_default()),
-        getagrip_database::driver::Value::DateTime(dt) => format!("\"{dt}\""),
-        _ => "\"\"".into(),
+        Value::Null => serde_json::Value::Null,
+        Value::Bool(b) => serde_json::Value::Bool(*b),
+        Value::Int(i) => serde_json::Value::Number((*i).into()),
+        Value::Float(f) => {
+            serde_json::Number::from_f64(*f)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null)
+        }
+        Value::String(s) => serde_json::Value::String(s.clone()),
+        Value::DateTime(dt) => serde_json::Value::String(dt.to_rfc3339()),
+        Value::Uuid(u) => serde_json::Value::String(u.to_string()),
+        Value::Bytes(b) => {
+            use base64::Engine;
+            let encoded = base64::engine::general_purpose::STANDARD.encode(b);
+            // Wrap in an object so the consumer knows it's binary
+            let mut map = serde_json::Map::new();
+            map.insert("_binary".into(), serde_json::Value::String(encoded));
+            map.insert("_size".into(), serde_json::Value::Number((b.len() as i64).into()));
+            serde_json::Value::Object(map)
+        }
+        Value::Json(s) => {
+            serde_json::from_str(s).unwrap_or_else(|_| serde_json::Value::String(s.clone()))
+        }
     }
 }
 
@@ -93,7 +142,11 @@ pub fn export_tsv(rows: &[ResultRow], include_header: bool) -> String {
 
         for row in rows {
             let values: Vec<String> = (0..row.len())
-                .map(|i| row.get(i).map(|v| tsv_escape(&v.to_string())).unwrap_or_default())
+                .map(|i| {
+                    row.get(i)
+                        .map(|v| tsv_escape(&cell_text(v)))
+                        .unwrap_or_default()
+                })
                 .collect();
             out.push_str(&values.join("\t"));
             out.push('\n');
@@ -136,7 +189,7 @@ pub fn export_markdown(rows: &[ResultRow]) -> String {
         out.push('|');
         let cells: Vec<String> = (0..row.len())
             .map(|i| {
-                let v = row.get(i).map(|v| v.to_string()).unwrap_or_default();
+                let v = row.get(i).map(|v| cell_text(v)).unwrap_or_default();
                 format!(" {v} ")
             })
             .collect();
@@ -202,5 +255,104 @@ mod tests {
         assert!(md.starts_with('|'));
         assert!(md.contains("---"));
         assert!(md.contains("Alice"));
+    }
+
+    #[test]
+    fn json_handles_unicode() {
+        let cols = vec![ColumnInfo {
+            name: "greeting".into(),
+            col_type: ColumnType::String,
+            db_type: "TEXT".into(),
+            nullable: false,
+            ordinal: 0,
+            size_hint: None,
+        }];
+        let rows = vec![ResultRow::new(cols, vec![Value::String("café — résumé".into())])];
+        let json = export_json(&rows);
+        // Should contain the actual unicode characters, not escape sequences
+        assert!(json.contains("café"));
+        assert!(json.contains("résumé"));
+    }
+
+    #[test]
+    fn csv_handles_comma_in_value() {
+        let cols = vec![ColumnInfo {
+            name: "val".into(),
+            col_type: ColumnType::String,
+            db_type: "TEXT".into(),
+            nullable: false,
+            ordinal: 0,
+            size_hint: None,
+        }];
+        let rows = vec![ResultRow::new(cols, vec![Value::String("hello, world".into())])];
+        let csv = export_csv(&rows, false);
+        assert!(csv.contains("\"hello, world\""));
+    }
+
+    #[test]
+    fn tsv_handles_tab_in_value() {
+        let cols = vec![ColumnInfo {
+            name: "val".into(),
+            col_type: ColumnType::String,
+            db_type: "TEXT".into(),
+            nullable: false,
+            ordinal: 0,
+            size_hint: None,
+        }];
+        let rows = vec![ResultRow::new(cols, vec![Value::String("hello\tworld".into())])];
+        let tsv = export_tsv(&rows, false);
+        assert!(!tsv.contains('\t'));
+        assert!(tsv.contains("hello world"));
+    }
+
+    #[test]
+    fn truncates_long_strings() {
+        let long = "A".repeat(500);
+        let cols = vec![ColumnInfo {
+            name: "val".into(),
+            col_type: ColumnType::String,
+            db_type: "TEXT".into(),
+            nullable: false,
+            ordinal: 0,
+            size_hint: None,
+        }];
+        let rows = vec![ResultRow::new(cols, vec![Value::String(long)])];
+        let csv = export_csv(&rows, false);
+        // Should not contain the full 500 A's
+        assert!(csv.len() < 210);
+        assert!(csv.contains('\u{2026}'));
+    }
+
+    #[test]
+    fn truncates_large_bytes() {
+        let data = vec![0u8; 500];
+        let cols = vec![ColumnInfo {
+            name: "photo".into(),
+            col_type: ColumnType::Binary,
+            db_type: "VARBINARY".into(),
+            nullable: true,
+            ordinal: 0,
+            size_hint: None,
+        }];
+        let rows = vec![ResultRow::new(cols, vec![Value::Bytes(data)])];
+        let csv = export_csv(&rows, false);
+        assert!(csv.contains("[binary 500 B]"));
+    }
+
+    #[test]
+    fn truncate_respects_char_boundaries() {
+        let s = "é".repeat(250);
+        let cols = vec![ColumnInfo {
+            name: "val".into(),
+            col_type: ColumnType::String,
+            db_type: "TEXT".into(),
+            nullable: false,
+            ordinal: 0,
+            size_hint: None,
+        }];
+        let rows = vec![ResultRow::new(cols, vec![Value::String(s)])];
+        let csv = export_csv(&rows, false);
+        assert!(csv.contains('\u{2026}'));
+        assert!(csv.len() < 450);
     }
 }

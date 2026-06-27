@@ -7,9 +7,10 @@ Rust core owns connections, schema intelligence, query execution, and
 background processing. The Svelte frontend owns rendering, layout, and the
 Monaco-based SQL editor.
 
-> **Status:** early Phase 1 — the Tauri + Svelte shell is in place, the SQL
-> Server driver works end-to-end, and the IDE chrome (sidebar, editor, results
-> grid, status bar) is being wired up step-by-step.
+> **Status:** Phase 2 — SQL Server driver works end-to-end. Full IDE chrome:
+> sidebar explorer, Monaco editor with tabs, results grid with sorting/filtering,
+> copy to clipboard, export (CSV/TSV/JSON/Markdown), connection management,
+> query history, command palette, and toast notifications.
 
 ---
 
@@ -128,12 +129,13 @@ atlasdb/
 
 ## Roadmap
 
-- **Phase 1 (current):** Tauri shell, Svelte chrome, Monaco editor, SQL Server
-  connect/explore/execute/results, dark Darcula theme.
-- **Phase 2:** PostgreSQL + MySQL + SQLite drivers, connection manager.
+- **Phase 1 (complete):** Tauri shell, Svelte chrome, Monaco editor, SQL Server
+  connect/explore/execute/results, dark theme.
+- **Phase 2 (current):** Result export (CSV/TSV/JSON/Markdown), copy to
+  clipboard, connection management, query history, command palette, toast
+  notifications. PostgreSQL + MySQL + SQLite drivers planned next.
 - **Phase 3:** Schema-aware autocomplete, diagnostics, formatting.
-- **Phase 4:** Multiple connections, saved projects, query history, command
-  palette, preferences.
+- **Phase 4:** Multiple connections, saved projects, preferences.
 - **Phase 5:** Migrations, ER diagrams, plugins, AI query assistant.
 
 ---

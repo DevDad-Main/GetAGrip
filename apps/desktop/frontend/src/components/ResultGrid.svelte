@@ -42,11 +42,36 @@
   function isNull(val: unknown): boolean { return val === null || val === undefined; }
   function isNumber(val: unknown): boolean { return typeof val === 'number'; }
 
+  const MAX_CELL_DISPLAY = 120;
+  const MAX_CELL_COPY = 200;
+
+  function truncate(s: string, max: number): string {
+    if (s.length > max) return s.slice(0, max) + '\u2026';
+    return s;
+  }
+
   function formatValue(val: unknown): string {
     if (isNull(val)) return 'NULL';
     if (typeof val === 'boolean') return val ? 'true' : 'false';
-    if (typeof val === 'object') return JSON.stringify(val);
-    return String(val);
+    if (typeof val === 'object') return truncate(JSON.stringify(val), MAX_CELL_DISPLAY);
+    return truncate(String(val), MAX_CELL_DISPLAY);
+  }
+
+  function copyValue(val: unknown): string {
+    if (isNull(val)) return '';
+    if (typeof val === 'boolean') return val ? 'true' : 'false';
+    if (typeof val === 'object') {
+      const s = JSON.stringify(val);
+      if (s.includes('\t') || s.includes('\n') || s.includes('\r')) {
+        return truncate(s.replace(/\t/g, ' ').replace(/\r?\n/g, ' '), MAX_CELL_COPY);
+      }
+      return truncate(s, MAX_CELL_COPY);
+    }
+    let s = String(val);
+    if (s.includes('\t') || s.includes('\n') || s.includes('\r')) {
+      s = s.replace(/\t/g, ' ').replace(/\r?\n/g, ' ');
+    }
+    return truncate(s, MAX_CELL_COPY);
   }
 
   function handleSort(colName: string) {
@@ -60,14 +85,19 @@
   }
 
   function handleCopy() {
-    const cols = result.columns.map((c: Record<string, unknown>) => String(c.name));
-    const lines = [cols.join('\t')];
-    for (const row of sorted.slice(0, MAX_ROWS)) {
-      lines.push(cols.map((c) => formatValue(row[c])).join('\t'));
+    try {
+      const cols = result.columns.map((c: Record<string, unknown>) => String(c.name));
+      const lines = [cols.join('\t')];
+      for (const row of sorted.slice(0, MAX_ROWS)) {
+        lines.push(cols.map((c) => copyValue(row[c])).join('\t'));
+      }
+      navigator.clipboard.writeText(lines.join('\n'))
+        .then(() => notify('Copied to clipboard', 'success'))
+        .catch(() => notify('Copy failed', 'error'));
+    } catch (e) {
+      console.error('copy failed:', e);
+      notify('Copy failed', 'error');
     }
-    navigator.clipboard.writeText(lines.join('\n'))
-      .then(() => notify('Copied to clipboard', 'success'))
-      .catch(() => notify('Copy failed', 'error'));
   }
 
   async function handleExport(format: string, download: boolean) {
@@ -100,6 +130,8 @@
       }
     } catch (e) {
       console.error('export failed:', e);
+      const msg = e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
+      notify(`Export failed: ${msg}`, 'error');
     }
   }
 </script>
@@ -120,9 +152,12 @@
         {#if exportMenuOpen}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div class="rg-menu" on:click|stopPropagation>
+            <button class="rg-menu-item" on:click={() => { handleExport('csv', true); exportMenuOpen = false; }}>Download CSV</button>
+            <button class="rg-menu-item" on:click={() => { handleExport('tsv', true); exportMenuOpen = false; }}>Download TSV</button>
+            <button class="rg-menu-item" on:click={() => { handleExport('json', true); exportMenuOpen = false; }}>Download JSON</button>
+            <div class="rg-menu-sep"></div>
             <button class="rg-menu-item" on:click={() => { handleExport('csv', false); exportMenuOpen = false; }}>Copy CSV to clipboard</button>
             <button class="rg-menu-item" on:click={() => { handleExport('tsv', false); exportMenuOpen = false; }}>Copy TSV to clipboard</button>
-            <button class="rg-menu-item" on:click={() => { handleExport('json', true); exportMenuOpen = false; }}>Download JSON</button>
             <button class="rg-menu-item" on:click={() => { handleExport('json', false); exportMenuOpen = false; }}>Copy JSON to clipboard</button>
           </div>
         {/if}
@@ -207,6 +242,7 @@
     font-size: 11px; color: var(--text); background: transparent; border: none; cursor: pointer;
   }
   .rg-menu-item:hover { background: var(--accent-soft); }
+  .rg-menu-sep { height: 1px; background: var(--border); margin: 4px 0; }
   .rg-filter { width: 120px; font-size: 11px; padding: 2px 6px; }
   .rg-body { flex: 1; overflow: hidden; min-height: 0; }
   .rg-scroll { overflow: auto; height: 100%; }
