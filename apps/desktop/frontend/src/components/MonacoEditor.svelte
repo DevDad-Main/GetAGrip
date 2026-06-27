@@ -206,17 +206,21 @@
               const sev = d.severity;
               const cssClass = sev === 'error' ? 'inline-diag-err'
                 : sev === 'warning' ? 'inline-diag-warn' : 'inline-diag-hint';
-              const short = d.message.length > 60 ? d.message.slice(0, 57) + '...' : d.message;
+              const short = d.message.length > 80 ? d.message.slice(0, 77) + '...' : d.message;
               inlineDecos.push({
                 range: { startLineNumber: d.line, startColumn: 1, endLineNumber: d.line, endColumn: 1 },
                 options: {
-                  isWholeLine: false,
-                  after: { content: `  ${short}`, inlineClassName: cssClass },
+                  isWholeLine: true,
+                  after: { content: short, inlineClassName: cssClass },
                 },
               });
             }
           }
-          inlineDecoIds = editor.deltaDecorations(inlineDecoIds, inlineDecos);
+          if (inlineDecos.length > 0) {
+            inlineDecoIds = editor.deltaDecorations(inlineDecoIds, inlineDecos);
+          } else {
+            inlineDecoIds = editor.deltaDecorations(inlineDecoIds, []);
+          }
         } else if (editor) {
           inlineDecoIds = editor.deltaDecorations(inlineDecoIds, []);
         }
