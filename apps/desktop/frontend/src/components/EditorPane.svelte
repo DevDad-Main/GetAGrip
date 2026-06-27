@@ -57,6 +57,8 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    flex: 1;
+    min-height: 0;
   }
   .toolbar {
     display: flex;

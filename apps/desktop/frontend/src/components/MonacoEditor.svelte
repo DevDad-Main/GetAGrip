@@ -163,7 +163,10 @@
       },
     });
 
+    editor.layout();
     editor.focus();
+    // Sometimes the webview hasn't finished layout yet — retry
+    setTimeout(() => { editor?.layout(); editor?.focus(); }, 100);
     onReady(handleRunQuery);
   });
 
@@ -219,6 +222,7 @@
   .monaco-container {
     width: 100%;
     height: 100%;
+    min-height: 100px;
     overflow: hidden;
   }
 </style>
