@@ -9,23 +9,25 @@
   export let depth = 0;
   export let profileId: string | null = null;
 
-  function updateTree(newNodes: ExplorerNode[]) {
+  function updateTree() {
+    // Trigger Svelte reactivity — nodes are mutated in-place
+    if (!profileId) return;
     datasourceTrees.update((trees) => {
-      if (!profileId) return trees;
-      return { ...trees, [profileId]: newNodes };
+      trees[profileId] = trees[profileId];
+      return trees;
     });
   }
 
   async function handleToggle(node: ExplorerNode) {
     if (node.children_loaded) {
       node.expanded = !node.expanded;
-      updateTree(nodes);
+      updateTree();
       return;
     }
     if (node.loading) return;
 
     node.loading = true;
-    updateTree(nodes);
+    updateTree();
 
     if (!profileId) {
       node.loading = false;
@@ -59,7 +61,7 @@
 
     if (!kind) {
       node.loading = false;
-      updateTree(nodes);
+      updateTree();
       return;
     }
 
@@ -75,7 +77,7 @@
       console.error('introspect_node failed:', e);
     }
 
-    updateTree(nodes);
+    updateTree();
   }
 
   function isExpandable(kind: string): boolean {
