@@ -162,10 +162,10 @@ fn bucket_truncate(
     functions.truncate(10);
     keywords.truncate(30);
 
-    // Combine: tables → keywords → functions → columns
+    // Combine: keywords → tables → functions → columns (keywords on top)
     let mut combined = Vec::new();
-    combined.append(tables);
     combined.append(keywords);
+    combined.append(tables);
     combined.append(functions);
     combined.append(columns);
 
@@ -201,14 +201,20 @@ fn match_score(label: &str, query: &str) -> i32 {
     let query_chars: Vec<char> = q.chars().collect();
     let mut qi = 0;
     let mut matches = 0;
+    let mut consecutive = 0;
+    let mut best_consecutive = 0;
     for &lc in &label_chars {
         if qi < query_chars.len() && lc == query_chars[qi] {
             qi += 1;
             matches += 1;
+            consecutive += 1;
+            best_consecutive = best_consecutive.max(consecutive);
+        } else {
+            consecutive = 0;
         }
     }
-    let min_needed = query_chars.len().min(2);
-    if matches >= min_needed && matches > 0 {
+    // Require at least 2 consecutive matching chars to avoid false positives
+    if best_consecutive >= 2 && matches >= query_chars.len().min(3) {
         return (matches as i32).min(4);
     }
     0
@@ -216,34 +222,37 @@ fn match_score(label: &str, query: &str) -> i32 {
 
 // ── completion helpers ───────────────────────────────────────────────────
 
-const KW_BASE: u32 = 100;
-const TABLE_BASE: u32 = 200;
+const KW_BASE: u32 = 200;
+const TABLE_BASE: u32 = 190;
 const COL_EXPLICIT_BASE: u32 = 500;
-const COL_STANDARD_BASE: u32 = 150;
+const COL_STANDARD_BASE: u32 = 140;
 const FN_BASE: u32 = 130;
 
 fn complete_keywords(prefix: &str) -> Vec<CompletionItem> {
     SQL_KEYWORDS
         .iter()
-        .filter_map(|k| {
+        .map(|k| {
             let score = match_score(k, prefix);
-            if score > 0 || prefix.is_empty() {
-                Some(CompletionItem {
-                    label: k.to_string(),
-                    kind: CompletionKind::Keyword,
-                    detail: String::new(),
-                    documentation: Some("keyword".into()),
-                    source_table: None,
-                    source_schema: None,
-                    data_type: None,
-                    insert_text: Some(format!("{k} ")),
-                    score: KW_BASE + score as u32 * 3,
-                })
-            } else {
-                None
+            // Exact match gets big boost, prefix gets normal, empty gets all
+            let boost = if k.eq_ignore_ascii_case(prefix) { 100 } else { 0 };
+            CompletionItem {
+                label: k.to_string(),
+                kind: CompletionKind::Keyword,
+                detail: String::new(),
+                documentation: Some("keyword".into()),
+                source_table: None,
+                source_schema: None,
+                data_type: None,
+                insert_text: Some(format!("{k} ")),
+                score: KW_BASE + boost + score as u32 * 3,
             }
         })
+        .filter(|item| item.score > KW_BASE || prefix.is_empty() || score_for_filter(&item.label, prefix))
         .collect()
+}
+
+fn score_for_filter(label: &str, prefix: &str) -> bool {
+    match_score(label, prefix) > 0 || prefix.is_empty() || label.to_lowercase().starts_with(&prefix.to_lowercase())
 }
 
 fn complete_functions(prefix: &str) -> Vec<CompletionItem> {
