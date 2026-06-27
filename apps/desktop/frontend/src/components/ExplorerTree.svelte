@@ -101,6 +101,10 @@
     updateTree();
   }
 
+  function isSystemDb(name: string): boolean {
+    return ['master', 'tempdb', 'model', 'msdb'].includes(name);
+  }
+
   function isExpandable(kind: string): boolean {
     return kind === 'Folder' || kind === 'Database' || kind === 'Schema' || kind === 'Table' || kind === 'Server';
   }
@@ -114,6 +118,7 @@
         class="tree-row"
         class:loading={node.loading}
         class:error={node.has_error}
+        class:sys-db={node.kind === 'Database' && isSystemDb(node.name)}
         role="treeitem"
         aria-expanded={node.expanded}
         tabindex="0"
@@ -176,6 +181,7 @@
   .tree-row:hover { background: var(--bg-hover); }
   .tree-row.loading { opacity: 0.6; }
   .tree-row.error { color: var(--error); }
+  .tree-row.sys-db { opacity: 0.45; }
   .tree-glyph {
     flex-shrink: 0;
     width: 16px;

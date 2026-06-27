@@ -95,27 +95,30 @@ async fn list_databases(
     let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
     let sql = match profile.driver {
         getagrip_core::ConnectionDriver::Mssql => {
-            "SELECT name FROM sys.databases WHERE name NOT IN ('master','tempdb','model','msdb') ORDER BY name"
+            "SELECT name FROM sys.databases ORDER BY name"
         }
         _ => "SELECT schema_name FROM information_schema.schemata ORDER BY schema_name",
     };
     let result = conn.connection_mut().execute(sql).await.map_err(|e| format!("{e}"))?;
+
+    let system_dbs: Vec<&str> = vec!["master", "tempdb", "model", "msdb"];
 
     let nodes: Vec<ExplorerNode> = result
         .rows
         .iter()
         .map(|row| {
             let name = row.get(0).map(|v| v.to_string()).unwrap_or_default();
+            let is_system = system_dbs.contains(&name.as_str());
             ExplorerNode {
                 id: format!("{}/{}", profile.id, name),
                 name,
-                kind: ExplorerNodeKind::Database,
+                kind: if is_system { ExplorerNodeKind::Database } else { ExplorerNodeKind::Database },
                 expanded: false,
                 children_loaded: false,
                 children: vec![],
                 icon: None,
                 favorite: false,
-                tooltip: None,
+                tooltip: if is_system { Some("System database".into()) } else { None },
                 loading: false,
                 has_error: false,
             }
@@ -135,7 +138,7 @@ async fn list_schemas(
 
     let sql = match profile.driver {
         getagrip_core::ConnectionDriver::Mssql => {
-            format!("SELECT SCHEMA_NAME FROM {database}.sys.schemas WHERE SCHEMA_NAME NOT IN ('sys','INFORMATION_SCHEMA','guest','db_owner','db_accessadmin','db_securityadmin','db_ddladmin','db_backupoperator','db_datareader','db_datawriter','db_denydatareader','db_denydatawriter') ORDER BY SCHEMA_NAME")
+            format!("SELECT SCHEMA_NAME FROM [{database}].sys.schemas WHERE SCHEMA_NAME NOT IN ('sys','INFORMATION_SCHEMA','guest','db_owner','db_accessadmin','db_securityadmin','db_ddladmin','db_backupoperator','db_datareader','db_datawriter','db_denydatareader','db_denydatawriter') ORDER BY SCHEMA_NAME")
         }
         _ => {
             "SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ('information_schema','pg_catalog') ORDER BY schema_name".to_string()
@@ -177,7 +180,7 @@ async fn list_schema_contents(
     let count_sql = match profile.driver {
         getagrip_core::ConnectionDriver::Mssql => {
             format!(
-                "SELECT TABLE_TYPE, COUNT(*) FROM {database}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema}' GROUP BY TABLE_TYPE"
+                "SELECT TABLE_TYPE, COUNT(*) FROM [{database}].INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema}' GROUP BY TABLE_TYPE"
             )
         }
         _ => format!(
@@ -252,7 +255,7 @@ async fn list_tables(
 
     let sql = match profile.driver {
         getagrip_core::ConnectionDriver::Mssql => format!(
-            "SELECT TABLE_NAME FROM {database}.INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema}' AND TABLE_TYPE = '{table_type}' ORDER BY TABLE_NAME"
+            "SELECT TABLE_NAME FROM [{database}].INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '{schema}' AND TABLE_TYPE = '{table_type}' ORDER BY TABLE_NAME"
         ),
         _ => format!(
             "SELECT table_name FROM information_schema.tables WHERE table_schema = '{schema}' AND table_type = '{table_type}' ORDER BY table_name"
@@ -302,7 +305,7 @@ async fn list_columns(
 
     let sql = match profile.driver {
         getagrip_core::ConnectionDriver::Mssql => format!(
-            "SELECT COLUMN_NAME, DATA_TYPE FROM {database}.INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table}' ORDER BY ORDINAL_POSITION"
+            "SELECT COLUMN_NAME, DATA_TYPE FROM [{database}].INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table}' ORDER BY ORDINAL_POSITION"
         ),
         _ => format!(
             "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '{schema}' AND table_name = '{table}' ORDER BY ordinal_position"
