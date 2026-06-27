@@ -71,8 +71,8 @@ export async function handleConnect(profile: ConnectionProfile) {
       try {
         const nodes = await introspectNode(profile.id, null, null, null);
         datasourceTrees.update((t) => ({ ...t, [profile.id]: nodes }));
-        // Auto-load table names for autocomplete
-        await loadAllTableNames(profile.id);
+        // Background: load table names for autocomplete
+        loadAllTableNames(profile.id);
       } catch {}
     } else {
       notify(`Connection failed: ${result.last_error ?? 'unknown error'}`, 'error');
