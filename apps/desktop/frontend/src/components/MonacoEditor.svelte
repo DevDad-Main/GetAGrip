@@ -162,6 +162,8 @@
 
   let cacheChecked = false;
   let diagTimer: ReturnType<typeof setTimeout> | null = null;
+  let inlineDecoIds: string[] = [];
+  let inlineDiags = true; // toggleable via settings
 
   function runDiagnostics() {
     if (!editor) return;
@@ -193,6 +195,31 @@
             : Math.min(d.column + 20, 9999),
         }));
         monaco.editor.setModelMarkers(model, 'sql-diagnostics', markers);
+
+        // Inline diagnostics — show issue text on the right of each line
+        if (editor && inlineDiags) {
+          const inlineDecos: monaco.editor.IModelDeltaDecoration[] = [];
+          const seenLines = new Set<number>();
+          for (const d of resp.diagnostics) {
+            if (!seenLines.has(d.line)) {
+              seenLines.add(d.line);
+              const sev = d.severity;
+              const cssClass = sev === 'error' ? 'inline-diag-err'
+                : sev === 'warning' ? 'inline-diag-warn' : 'inline-diag-hint';
+              const short = d.message.length > 60 ? d.message.slice(0, 57) + '...' : d.message;
+              inlineDecos.push({
+                range: { startLineNumber: d.line, startColumn: 1, endLineNumber: d.line, endColumn: 1 },
+                options: {
+                  isWholeLine: false,
+                  after: { content: `  ${short}`, inlineClassName: cssClass },
+                },
+              });
+            }
+          }
+          inlineDecoIds = editor.deltaDecorations(inlineDecoIds, inlineDecos);
+        } else if (editor) {
+          inlineDecoIds = editor.deltaDecorations(inlineDecoIds, []);
+        }
       } catch { /* silent */ }
     }, 500);
   }

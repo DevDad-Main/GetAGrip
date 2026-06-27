@@ -198,6 +198,29 @@ button.danger {
   overflow-y: auto !important;
 }
 
+/* Inline diagnostics — issue text shown on the right of each line */
+.inline-diag-err {
+  color: var(--error, #f44747) !important;
+  font-size: 11px !important;
+  font-style: italic !important;
+  opacity: 0.85 !important;
+  margin-left: 8px !important;
+}
+.inline-diag-warn {
+  color: var(--warning, #cca700) !important;
+  font-size: 11px !important;
+  font-style: italic !important;
+  opacity: 0.85 !important;
+  margin-left: 8px !important;
+}
+.inline-diag-hint {
+  color: var(--text-faint) !important;
+  font-size: 11px !important;
+  font-style: italic !important;
+  opacity: 0.7 !important;
+  margin-left: 8px !important;
+}
+
 .gap-sm { gap: 4px; }
 .gap-md { gap: 8px; }
 .gap-lg { gap: 16px; }
