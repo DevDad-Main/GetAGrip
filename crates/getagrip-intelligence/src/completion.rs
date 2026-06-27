@@ -64,8 +64,8 @@ pub fn request_completion(
         || is_after_clause(sql, cursor_line, cursor_column, "JOIN");
 
     if in_from {
-        let mut items = complete_tables(cache, connection_id, &word_lower, 80);
-        items.extend(complete_keywords(&word));
+        let mut items = complete_tables(cache, connection_id, &word_lower, 90);
+        items.extend(complete_keywords(&word, 70));
         sort_and_truncate(&mut items, 50);
         return items;
     }
@@ -80,38 +80,39 @@ pub fn request_completion(
         || is_after_clause(sql, cursor_line, cursor_column, "GROUP BY")
         || is_after_clause(sql, cursor_line, cursor_column, "HAVING")
     {
-        let mut items = complete_tables(cache, connection_id, &word_lower, 70);
+        let mut items = complete_keywords(&word, 95);
+        items.extend(complete_tables(cache, connection_id, &word_lower, 60));
         items.extend(complete_columns_all(cache, connection_id, &word_lower));
-        items.extend(complete_functions(&word));
+        items.extend(complete_functions(&word, 55));
         sort_and_truncate(&mut items, 50);
         return items;
     }
 
-    // Generic: keywords + tables + functions
-    let mut items = complete_keywords(&word);
+    // Generic: keywords first, then tables, then functions
+    // Keywords get higher base score so FROM beats FirstName
+    let mut items = complete_keywords(&word, 100);
     items.extend(complete_tables(cache, connection_id, &word_lower, 60));
-    items.extend(complete_functions(&word));
+    items.extend(complete_functions(&word, 50));
     sort_and_truncate(&mut items, 50);
     items
 }
 
 /// Score a string against a query — higher score = better match.
-/// Prefix match: 10, exact match: 10, substring: 5, each char position penalty: -1
 fn match_score(label: &str, query: &str) -> i32 {
-    if query.is_empty() {
-        return 1;
-    }
     let lower = label.to_lowercase();
     let q = query.to_lowercase();
 
+    if q.is_empty() {
+        return 1;
+    }
     if lower == q {
-        return 10;
+        return 20;
     }
     if lower.starts_with(&q) {
-        return 8;
+        return 12;
     }
     if let Some(pos) = lower.find(&q) {
-        return (5 - (pos as i32).min(3)).max(1);
+        return (7 - (pos as i32).min(3)).max(2);
     }
 
     // Character-by-character subsequence match (fuzzy)
@@ -125,7 +126,8 @@ fn match_score(label: &str, query: &str) -> i32 {
             matches += 1;
         }
     }
-    if matches >= query_chars.len().min(2) {
+    let min_needed = query_chars.len().min(2);
+    if matches >= min_needed && matches > 0 {
         return (matches as i32).min(4);
     }
 
@@ -137,19 +139,18 @@ fn sort_and_truncate(items: &mut Vec<CompletionItem>, max: usize) {
     items.truncate(max);
 }
 
-fn complete_keywords(prefix: &str) -> Vec<CompletionItem> {
+fn complete_keywords(prefix: &str, base_score: u32) -> Vec<CompletionItem> {
     SQL_KEYWORDS
         .iter()
         .filter_map(|k| {
             let score = match_score(k, prefix);
-            if score > 0 {
-                let base = if prefix.is_empty() { 50 } else { 50 + score as u32 * 5 };
+            if score > 0 || prefix.is_empty() {
                 Some(CompletionItem {
                     label: k.to_string(),
                     kind: CompletionKind::Keyword,
                     detail: String::new(),
                     insert_text: Some(format!("{k} ")),
-                    score: base,
+                    score: base_score + score as u32 * 3,
                 })
             } else {
                 None
@@ -158,19 +159,18 @@ fn complete_keywords(prefix: &str) -> Vec<CompletionItem> {
         .collect()
 }
 
-fn complete_functions(prefix: &str) -> Vec<CompletionItem> {
+fn complete_functions(prefix: &str, base_score: u32) -> Vec<CompletionItem> {
     FUNCTION_NAMES
         .iter()
         .filter_map(|f| {
             let score = match_score(f, prefix);
-            if score > 0 {
-                let base = if prefix.is_empty() { 60 } else { 60 + score as u32 * 5 };
+            if score > 0 || prefix.is_empty() {
                 Some(CompletionItem {
                     label: f.to_string(),
                     kind: CompletionKind::Function,
                     detail: format!("{f}()"),
                     insert_text: Some(format!("{f}()")),
-                    score: base,
+                    score: base_score + score as u32 * 3,
                 })
             } else {
                 None
@@ -243,7 +243,7 @@ fn complete_columns_all(
         let cols = cache.get_columns(connection_id, &table.name);
         for col in &cols {
             let score = match_score(&col.name, prefix);
-            if score > 0 {
+            if score > 0 || prefix.is_empty() {
                 let label = format!("{}.{}", table.name, col.name);
                 let detail = format!("{}.{} {db_type}", table.name, col.name, db_type = col.db_type);
                 items.push(CompletionItem {
@@ -251,7 +251,7 @@ fn complete_columns_all(
                     kind: CompletionKind::Column,
                     detail,
                     insert_text: Some(col.name.clone()),
-                    score: 70 + score as u32 * 2,
+                    score: 30 + score as u32 * 2,
                 });
             }
         }
@@ -289,13 +289,13 @@ mod tests {
 
     #[test]
     fn keyword_completion() {
-        let items = complete_keywords("SEL");
+        let items = complete_keywords("SEL", 100);
         assert!(items.iter().any(|i| i.label == "SELECT"));
     }
 
     #[test]
     fn function_completion() {
-        let items = complete_functions("COU");
+        let items = complete_functions("COU", 50);
         assert!(items.iter().any(|i| i.label == "COUNT"));
     }
 
