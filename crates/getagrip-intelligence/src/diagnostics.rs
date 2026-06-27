@@ -6,7 +6,7 @@
 //! - Tables referenced without being in scope
 
 use sqlparser::ast::{
-    Select, SetExpr, Statement, TableFactor, TableWithJoins,
+    Expr, Ident, Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins,
 };
 use sqlparser::dialect::GenericDialect;
 
@@ -108,6 +108,96 @@ fn check_select(
     for twj in &select.from {
         check_table_with_joins(twj, connection_id, cache, diagnostics);
     }
+
+    for item in &select.projection {
+        if let SelectItem::UnnamedExpr(Expr::Identifier(ident)) = item {
+            check_single_column(ident, connection_id, cache, diagnostics);
+        }
+        if let SelectItem::UnnamedExpr(Expr::CompoundIdentifier(parts)) = item {
+            if parts.len() == 2 {
+                check_qualified_column(&parts[0], &parts[1], connection_id, cache, diagnostics);
+            }
+        }
+    }
+}
+
+fn check_single_column(
+    ident: &Ident,
+    connection_id: &str,
+    cache: &MetadataCache,
+    diagnostics: &mut Vec<DiagnosticItem>,
+) {
+    let col_name = &ident.value;
+    let tables = cache.get_tables(connection_id);
+    if tables.is_empty() { return; }
+
+    if !tables.iter().any(|t| {
+        cache.get_columns(connection_id, &t.name).iter().any(|c| &c.name == col_name)
+    }) {
+        diagnostics.push(DiagnosticItem {
+            severity: DiagnosticLevel::Warning,
+            message: format!("Unknown column: {col_name}"),
+            line: 1, column: 1,
+            end_line: None, end_column: None,
+            hint: find_similar_column(cache, connection_id, col_name),
+        });
+    }
+}
+
+fn check_qualified_column(
+    table_or_alias: &Ident,
+    col: &Ident,
+    connection_id: &str,
+    cache: &MetadataCache,
+    diagnostics: &mut Vec<DiagnosticItem>,
+) {
+    let tbl = table_or_alias.value.to_lowercase();
+    let col_name = &col.value;
+
+    // Check if table_or_alias is a known table
+    let table = cache.get_tables(connection_id).into_iter().find(|t| t.name.to_lowercase() == tbl);
+    if let Some(t) = table {
+        let cols = cache.get_columns(connection_id, &t.name);
+        if !cols.iter().any(|c| &c.name == col_name) {
+            let hint = find_similar_col_in_table(cache, connection_id, &t.name, col_name);
+            diagnostics.push(DiagnosticItem {
+                severity: DiagnosticLevel::Warning,
+                message: format!("Unknown column: {tbl}.{col_name}"),
+                line: 1, column: 1,
+                end_line: None, end_column: None,
+                hint,
+            });
+        }
+    }
+}
+
+fn find_similar_column(cache: &MetadataCache, connection_id: &str, name: &str) -> Option<String> {
+    let name_lower = name.to_lowercase();
+    let mut best: Option<(String, usize)> = None;
+    for table in &cache.get_tables(connection_id) {
+        for col in &cache.get_columns(connection_id, &table.name) {
+            let dist = levenshtein(&col.name.to_lowercase(), &name_lower);
+            if dist <= 3 && best.as_ref().map_or(true, |(_, d)| dist < *d) {
+                best = Some((format!("{}.{}", table.name, col.name), dist));
+            }
+        }
+    }
+    best.map(|(n, _)| format!("Did you mean '{n}'?"))
+}
+
+fn find_similar_col_in_table(
+    cache: &MetadataCache, connection_id: &str, table: &str, name: &str,
+) -> Option<String> {
+    let name_lower = name.to_lowercase();
+    let cols = cache.get_columns(connection_id, table);
+    let mut best: Option<(String, usize)> = None;
+    for col in &cols {
+        let dist = levenshtein(&col.name.to_lowercase(), &name_lower);
+        if dist <= 3 && best.as_ref().map_or(true, |(_, d)| dist < *d) {
+            best = Some((col.name.clone(), dist));
+        }
+    }
+    best.map(|(n, _)| format!("Did you mean '{table}.{n}'?"))
 }
 
 fn check_table_with_joins(

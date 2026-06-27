@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import * as monaco from 'monaco-editor';
-  import { executeQueryV2, requestCompletion, type QueryResultDto, type CompletionItem } from '$lib/tauri';
+  import { executeQueryV2, requestCompletion, requestDiagnostics, type QueryResultDto, type CompletionItem } from '$lib/tauri';
   import {
     resultSets, activeResultSetId, statusText,
     nextResultSetId, resultsPanelHeight, activeTheme, type ResultSet,
@@ -160,6 +160,36 @@
   }
 
   let cacheChecked = false;
+  let diagTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function runDiagnostics() {
+    if (!editor || !profileId) return;
+    const model = editor.getModel();
+    if (!model) return;
+
+    clearTimeout(diagTimer ?? undefined);
+    diagTimer = setTimeout(async () => {
+      try {
+        const sql = model.getValue();
+        if (!sql.trim()) {
+          monaco.editor.setModelMarkers(model, 'sql-diagnostics', []);
+          return;
+        }
+        const resp = await requestDiagnostics({ connection_id: profileId, sql });
+        const markers: monaco.editor.IMarkerData[] = resp.diagnostics.map((d) => ({
+          severity: d.severity === 'error' ? monaco.MarkerSeverity.Error
+            : d.severity === 'warning' ? monaco.MarkerSeverity.Warning
+            : monaco.MarkerSeverity.Hint,
+          message: d.message + (d.hint ? `\n${d.hint}` : ''),
+          startLineNumber: d.line,
+          startColumn: d.column,
+          endLineNumber: d.end_line ?? d.line,
+          endColumn: d.end_column ?? 999,
+        }));
+        monaco.editor.setModelMarkers(model, 'sql-diagnostics', markers);
+      } catch { /* silent */ }
+    }, 600);
+  }
 
   async function triggerCompletion(pos?: monaco.Position) {
     if (!editor) return;
@@ -316,6 +346,7 @@
       const value = editor?.getValue() ?? '';
       sql = value;
       onSqlChange?.(value);
+      runDiagnostics();
     });
 
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
