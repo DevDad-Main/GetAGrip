@@ -162,7 +162,6 @@
 
   let cacheChecked = false;
   let diagTimer: ReturnType<typeof setTimeout> | null = null;
-  let inlineDecoIds: string[] = [];
   let inlineDiags = true; // toggleable via settings
 
   function runDiagnostics() {
@@ -176,6 +175,7 @@
         const sql = model.getValue();
         if (!sql.trim()) {
           monaco.editor.setModelMarkers(model, 'sql-diagnostics', []);
+          inlineCollection?.clear();
           diagStore.set([]);
           return;
         }
@@ -197,7 +197,7 @@
         monaco.editor.setModelMarkers(model, 'sql-diagnostics', markers);
 
         // Inline diagnostics — show issue text on the right of each line
-        if (editor && inlineDiags) {
+        if (inlineCollection && inlineDiags) {
           const inlineDecos: monaco.editor.IModelDeltaDecoration[] = [];
           const seenLines = new Set<number>();
           for (const d of resp.diagnostics) {
@@ -216,13 +216,9 @@
               });
             }
           }
-          if (inlineDecos.length > 0) {
-            inlineDecoIds = editor.deltaDecorations(inlineDecoIds, inlineDecos);
-          } else {
-            inlineDecoIds = editor.deltaDecorations(inlineDecoIds, []);
-          }
-        } else if (editor) {
-          inlineDecoIds = editor.deltaDecorations(inlineDecoIds, []);
+          inlineCollection.set(inlineDecos);
+        } else if (inlineCollection) {
+          inlineCollection.clear();
         }
       } catch { /* silent */ }
     }, 500);
@@ -352,6 +348,8 @@
   onMount(() => {
     if (!containerEl) return;
 
+    let inlineCollection: monaco.editor.IEditorDecorationsCollection | null = null;
+
     editor = monaco.editor.create(containerEl, {
       value: sql,
       language: 'sql',
@@ -388,6 +386,8 @@
       tabCompletion: 'off',
       automaticLayout: true,
     });
+
+    inlineCollection = editor.createDecorationsCollection();
 
     editor.onDidChangeModelContent(() => {
       const value = editor?.getValue() ?? '';
