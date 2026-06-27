@@ -4,7 +4,7 @@
   import { executeQueryV2, type QueryResultDto } from '$lib/tauri';
   import {
     resultSets, activeResultSetId, statusText, schemaCache,
-    nextResultSetId, resultsPanelHeight, type ResultSet,
+    nextResultSetId, resultsPanelHeight, activeTheme, type ResultSet,
   } from '$lib/stores';
 
   export let sql = '';
@@ -13,51 +13,88 @@
   export let onSqlChange: (sql: string) => void = () => {};
   export let onReady: (runQuery: () => void) => void = () => {};
 
+  import { THEMES, type ThemeDef } from '$lib/themes';
+
   let editor: monaco.editor.IStandaloneCodeEditor | null = null;
   let containerEl: HTMLDivElement | undefined;
 
-  monaco.editor.defineTheme('darcula', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [
-      { token: 'keyword', foreground: 'cc7832', fontStyle: 'bold' },
-      { token: 'type', foreground: 'a9b7c6' },
-      { token: 'string', foreground: '6a8759' },
-      { token: 'number', foreground: '6897bb' },
-      { token: 'comment', foreground: '808080', fontStyle: 'italic' },
-      { token: 'operator', foreground: 'ffc66d' },
-      { token: 'identifier', foreground: 'a9b7c6' },
-    ],
-    colors: {
-      'editor.background': '#2b2b2b',
-      'editor.foreground': '#bbbbbb',
-      'editor.lineHighlightBackground': '#2a2d2e',
-      'editor.selectionBackground': '#2f4050',
-      'editorCursor.foreground': '#aaaaaa',
-      'editorLineNumber.foreground': '#606366',
-      'editorLineNumber.activeForeground': '#a9b7c6',
-      'editorIndentGuide.background': '#3a3a3a',
-      'editorIndentGuide.activeBackground': '#555555',
-      'editorWidget.background': '#313335',
-      'editorWidget.border': '#4a4e51',
-      'editorSuggestWidget.background': '#313335',
-      'editorSuggestWidget.border': '#4a4e51',
-      'editorSuggestWidget.foreground': '#bbbbbb',
-      'editorSuggestWidget.selectedBackground': '#2f4050',
-      'editorSuggestWidget.highlightForeground': '#4a9eff',
-      'minimap.background': '#2b2b2b',
-      'minimapSlider.background': '#4a4e5180',
-      'minimapSlider.hoverBackground': '#5a5e6180',
-      'scrollbar.shadow': '#00000000',
-      'scrollbarSlider.background': '#4a4e5180',
-      'scrollbarSlider.hoverBackground': '#5a5e6180',
-      'scrollbarSlider.activeBackground': '#6a6e7180',
-    },
-  });
+  function defineMonacoTheme(t: ThemeDef) {
+    const d = t.isDark;
+    const ebg = t.bg;
+    const efg = t.fg;
+    const elh = adj(ebg, d ? 4 : -4);
+    const esel = adj(ebg, d ? 16 : -10);
+    const ecur = d ? '#aaaaaa' : '#333333';
+    const eln = adj(efg, d ? -90 : 90);
+    const elna = adj(efg, d ? -10 : 10);
+    const eig = adj(ebg, d ? 20 : -15);
+    const eiga = adj(ebg, d ? 40 : -25);
+    const ewbg = adj(ebg, d ? 12 : -8);
+    const ewb = adj(ebg, d ? 30 : -20);
+    const eswfg = d ? '#bbbbbb' : '#333333';
+    const eswsel = adj(ebg, d ? 16 : -10);
+    const eswhl = t.accent;
+
+    monaco.editor.defineTheme(t.value, {
+      base: d ? 'vs-dark' : 'vs',
+      inherit: true,
+      rules: [
+        { token: 'keyword', foreground: d ? 'cc7832' : '0000ff', fontStyle: 'bold' },
+        { token: 'type', foreground: efg },
+        { token: 'string', foreground: d ? '6a8759' : '008000' },
+        { token: 'number', foreground: d ? '6897bb' : '098658' },
+        { token: 'comment', foreground: d ? '808080' : '808080', fontStyle: 'italic' },
+        { token: 'operator', foreground: d ? 'ffc66d' : '000000' },
+        { token: 'identifier', foreground: efg },
+      ],
+      colors: {
+        'editor.background': ebg,
+        'editor.foreground': efg,
+        'editor.lineHighlightBackground': elh,
+        'editor.selectionBackground': esel,
+        'editorCursor.foreground': ecur,
+        'editorLineNumber.foreground': eln,
+        'editorLineNumber.activeForeground': elna,
+        'editorIndentGuide.background': eig,
+        'editorIndentGuide.activeBackground': eiga,
+        'editorWidget.background': ewbg,
+        'editorWidget.border': ewb,
+        'editorSuggestWidget.background': ewbg,
+        'editorSuggestWidget.border': ewb,
+        'editorSuggestWidget.foreground': eswfg,
+        'editorSuggestWidget.selectedBackground': eswsel,
+        'editorSuggestWidget.highlightForeground': eswhl,
+        'minimap.background': ebg,
+        'minimapSlider.background': ewb + '80',
+        'minimapSlider.hoverBackground': ewb,
+        'minimapSlider.activeBackground': ewb,
+        'scrollbar.shadow': '#00000000',
+        'scrollbarSlider.background': ewb + '80',
+        'scrollbarSlider.hoverBackground': ewb,
+        'scrollbarSlider.activeBackground': ewb,
+      },
+    });
+  }
+
+  function adj(hex: string, amount: number): string {
+    const num = parseInt(hex.slice(1), 16);
+    const r = Math.min(255, Math.max(0, ((num >> 16) & 0xff) + amount));
+    const g = Math.min(255, Math.max(0, ((num >> 8) & 0xff) + amount));
+    const b = Math.min(255, Math.max(0, (num & 0xff) + amount));
+    return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+  }
+
+  // Pre-define all themes
+  THEMES.forEach((t) => defineMonacoTheme(t));
 
   // Sync external sql prop changes into the editor (e.g. tab switching)
   $: if (editor && sql !== editor.getValue()) {
     editor.setValue(sql);
+  }
+
+  // Switch Monaco theme when activeTheme store changes
+  $: if (editor && $activeTheme) {
+    monaco.editor.setTheme($activeTheme);
   }
 
   onMount(() => {

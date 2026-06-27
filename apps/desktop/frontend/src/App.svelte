@@ -15,8 +15,10 @@
   import {
     commandPaletteOpen, activeModal, modalPayload, sidebarVisible,
     loadDatasources, resultsPanelHeight, resultSets, activeResultSetId,
-    datasourceStates,
+    activeTheme,
   } from '$lib/stores';
+  import { findTheme, applyAppTheme } from '$lib/themes';
+  import { getSettings } from '$lib/tauri';
   import type { ConnectionProfile } from '$lib/tauri';
 
   let historyVisible = false;
@@ -56,8 +58,14 @@
     document.body.style.userSelect = 'none';
   }
 
-  onMount(() => {
+  onMount(async () => {
     loadDatasources();
+    try {
+      const settings = await getSettings();
+      const themeVal = (settings.theme as string) ?? 'darcula';
+      activeTheme.set(themeVal);
+      applyAppTheme(findTheme(themeVal));
+    } catch { /* defaults */ }
   });
 
   function handleKeydown(e: KeyboardEvent) {

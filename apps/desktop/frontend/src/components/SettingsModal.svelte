@@ -1,20 +1,13 @@
 <script lang="ts">
   import { getSettings, setSetting } from '$lib/tauri';
+  import { activeTheme } from '$lib/stores';
+  import { THEMES, findTheme, applyAppTheme, type ThemeDef } from '$lib/themes';
   import { onMount } from 'svelte';
   import { X } from 'lucide-svelte';
   import { notify } from './Toast.svelte';
 
   export let open = false;
   export let onClose: () => void;
-
-  const THEMES = [
-    { value: 'darcula', label: 'Darcula', bg: '#2b2b2b', fg: '#bbbbbb', accent: '#4a9eff' },
-    { value: 'catppuccin-mocha', label: 'Catppuccin Mocha', bg: '#1e1e2e', fg: '#cdd6f4', accent: '#cba6f7' },
-    { value: 'nord', label: 'Nord', bg: '#2e3440', fg: '#d8dee9', accent: '#88c0d0' },
-    { value: 'one-dark', label: 'One Dark', bg: '#282c34', fg: '#abb2bf', accent: '#61afef' },
-    { value: 'solarized-dark', label: 'Solarized Dark', bg: '#002b36', fg: '#839496', accent: '#268bd2' },
-    { value: 'solarized-light', label: 'Solarized Light', bg: '#fdf6e3', fg: '#586e75', accent: '#268bd2' },
-  ];
 
   let activeTab = 'editor';
   let loaded = false;
@@ -49,31 +42,16 @@
   }
 
   // Live preview: apply theme CSS vars immediately
-  function previewTheme(t: typeof THEMES[0] | null) {
-    const root = document.documentElement;
-    if (t) {
-      root.style.setProperty('--bg', t.bg);
-      root.style.setProperty('--bg-elev', adjustBrightness(t.bg, 8));
-      root.style.setProperty('--text', t.fg);
-      root.style.setProperty('--accent', t.accent);
-    }
+  function previewTheme(t: ThemeDef) {
+    applyAppTheme(t);
   }
 
   function applyTheme(value: string) {
     theme = value;
-    const t = THEMES.find((x) => x.value === value);
-    if (t) {
-      previewTheme(t);
-      save('theme', value);
-    }
-  }
-
-  function adjustBrightness(hex: string, amount: number): string {
-    const num = parseInt(hex.slice(1), 16);
-    const r = Math.min(255, Math.max(0, ((num >> 16) & 0xff) + amount));
-    const g = Math.min(255, Math.max(0, ((num >> 8) & 0xff) + amount));
-    const b = Math.min(255, Math.max(0, (num & 0xff) + amount));
-    return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+    const t = findTheme(value);
+    applyAppTheme(t);
+    activeTheme.set(value);
+    save('theme', value);
   }
 </script>
 
