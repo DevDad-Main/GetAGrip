@@ -111,9 +111,15 @@
     if (!editor || !containerEl) return;
     const coords = editor.getScrolledVisiblePosition(pos);
     const containerRect = containerEl.getBoundingClientRect();
+    const widgetHeight = 340; // approximate max height
+    const below = containerRect.top + coords.top + 20;
+    // If would overflow viewport, flip above cursor
+    const top = (below + widgetHeight > window.innerHeight)
+      ? containerRect.top + coords.top - widgetHeight - 8
+      : below;
     suggestPos = {
-      top: containerRect.top + coords.top + 20,
-      left: containerRect.left + coords.left,
+      top: Math.max(4, top),
+      left: Math.min(containerRect.left + coords.left, window.innerWidth - 500),
     };
   }
 
@@ -274,8 +280,8 @@
       overviewRulerLanes: 0,
       lineDecorationsWidth: 0,
       lineHeight: 20,
-      quickSuggestions: false,
-      suggestOnTriggerCharacters: false,
+      quickSuggestions: true,
+      suggestOnTriggerCharacters: true,
       tabCompletion: 'off',
       automaticLayout: true,
     });
