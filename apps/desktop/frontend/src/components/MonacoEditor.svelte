@@ -27,6 +27,7 @@
   let suggestItems: CompletionItem[] = [];
   let suggestActive = 0;
   let suggestPos = { top: 0, left: 0 };
+  let suggestMatchWord = '';
   let lastCompletionPos: monaco.Position | null = null;
   let completionWordStartCol = 0;
 
@@ -140,6 +141,7 @@
     const model = editor?.getModel();
     const word = model?.getWordUntilPosition(pos);
     completionWordStartCol = word?.startColumn ?? pos.column;
+    suggestMatchWord = word?.word ?? '';
 
     suggestItems = items;
     suggestActive = 0;
@@ -152,6 +154,7 @@
     suggestVisible = false;
     suggestItems = [];
     suggestActive = 0;
+    suggestMatchWord = '';
     lastCompletionPos = null;
     completionWordStartCol = 0;
   }
@@ -539,6 +542,7 @@
   visible={suggestVisible}
   position={suggestPos}
   activeIndex={suggestActive}
+  matchWord={suggestMatchWord}
   on:select={(e) => handleSuggestSelect(e.detail)}
   on:close={hideSuggest}
   on:change={(e) => suggestActive = e.detail}

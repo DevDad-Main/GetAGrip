@@ -7,6 +7,7 @@
   export let position: { top: number; left: number } | null = null;
   export let visible = false;
   export let activeIndex = 0;
+  export let matchWord = '';
 
   const dispatch = createEventDispatcher<{
     select: CompletionItem;
@@ -35,6 +36,26 @@
   };
 
   $: capped = Math.min(activeIndex, items.length - 1);
+
+  function highlightMatch(text: string, query: string): string {
+    if (!query) return text;
+    const lower = text.toLowerCase();
+    const q = query.toLowerCase();
+    let result = '';
+    let i = 0;
+    let qi = 0;
+    while (i < text.length && qi < q.length) {
+      if (lower[i] === q[qi]) {
+        result += '<mark>' + text[i] + '</mark>';
+        qi++;
+      } else {
+        result += text[i];
+      }
+      i++;
+    }
+    result += text.slice(i);
+    return result;
+  }
 
   export function moveUp() {
     activeIndex = Math.max(0, activeIndex - 1);
@@ -83,7 +104,7 @@
           <span class="cs-icon" class:ik-table={item.kind === 'table'} class:ik-column={item.kind === 'column'} class:ik-function={item.kind === 'function'} class:ik-keyword={item.kind === 'keyword'} class:ik-schema={item.kind === 'schema'} title={kindLabels[item.kind]}>
             <svelte:component this={kindIcons[item.kind] ?? CaseSensitive} size="14" />
           </span>
-          <span class="cs-label">{item.label}</span>
+          <span class="cs-label">{@html highlightMatch(item.label, matchWord)}</span>
           {#if item.detail}
             <span class="cs-detail">{item.detail}</span>
           {/if}
@@ -160,6 +181,11 @@
     min-width: 0;
     white-space: nowrap;
     font-weight: 500;
+  }
+  .cs-label :global(mark) {
+    background: transparent;
+    color: var(--accent);
+    font-weight: 700;
   }
 
   .cs-detail {
