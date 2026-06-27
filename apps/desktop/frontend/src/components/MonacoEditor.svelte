@@ -190,6 +190,7 @@
             kind: kindMap[item.kind] ?? monaco.languages.CompletionItemKind.Text,
             insertText: item.insert_text ?? item.label,
             detail: item.detail,
+            documentation: item.documentation,
             range,
             sortText: String(1000 - item.score).padStart(4, '0'),
             filterText: item.label,

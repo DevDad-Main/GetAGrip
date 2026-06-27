@@ -56,8 +56,8 @@ pub fn request_completion(
     // DOT CONTEXT — columns at high priority, keywords penalized to bottom
     // =================================================================
     if let Some(ref prefix) = ctx.cursor_prefix {
-        let mut keywords = penalize_bucket(&mut complete_keywords(&word_upper), 4);
-        let mut functions = penalize_bucket(&mut complete_functions(&word_upper), 4);
+        let mut keywords = penalize_bucket(&mut complete_keywords(&word_upper), 2);
+        let mut functions = penalize_bucket(&mut complete_functions(&word_upper), 2);
 
         // Explicit alias/table resolution
         if let Some(table) = ctx.resolve_table(prefix) {
@@ -220,6 +220,7 @@ fn complete_keywords(prefix: &str) -> Vec<CompletionItem> {
                     label: k.to_string(),
                     kind: CompletionKind::Keyword,
                     detail: String::new(),
+                    documentation: Some("keyword".into()),
                     insert_text: Some(format!("{k} ")),
                     score: KW_BASE + score as u32 * 3,
                 })
@@ -236,10 +237,20 @@ fn complete_functions(prefix: &str) -> Vec<CompletionItem> {
         .filter_map(|f| {
             let score = match_score(f, prefix);
             if score > 0 || prefix.is_empty() {
+                let doc = if matches!(f, &"COUNT" | &"SUM" | &"AVG" | &"MIN" | &"MAX") {
+                    "aggregate function"
+                } else if matches!(f, &"UPPER" | &"LOWER" | &"TRIM" | &"LEN" | &"SUBSTRING" | &"REPLACE") {
+                    "string function"
+                } else if matches!(f, &"GETDATE" | &"GETUTCDATE" | &"DATEADD" | &"DATEDIFF" | &"DATEPART") {
+                    "date function"
+                } else {
+                    "scalar function"
+                };
                 Some(CompletionItem {
                     label: f.to_string(),
                     kind: CompletionKind::Function,
                     detail: format!("{f}()"),
+                    documentation: Some(doc.into()),
                     insert_text: Some(format!("{f}()")),
                     score: FN_BASE + score as u32 * 3,
                 })
@@ -261,10 +272,12 @@ fn complete_tables(
         .filter_map(|t| {
             let score = match_score(&t.name, prefix);
             if score > 0 || prefix.is_empty() {
+                let doc = format!("schema: {}  |  columns: {}", t.schema_name, t.columns.len());
                 Some(CompletionItem {
                     label: t.name.clone(),
                     kind: CompletionKind::Table,
                     detail: format!("{}.{}", t.schema_name, t.name),
+                    documentation: Some(doc),
                     insert_text: Some(t.name.clone()),
                     score: TABLE_BASE + score as u32 * 2,
                 })
@@ -289,11 +302,15 @@ fn complete_columns_explicit(
         .filter_map(|c| {
             let score = match_score(&c.name, prefix);
             if score > 0 || prefix.is_empty() {
-                let detail = format!("{table}.{col} {db_type}", col = c.name, db_type = c.db_type);
+                let nullable = if c.nullable { "" } else { " NOT NULL" };
+                let pk = if c.is_primary_key { " PK" } else { "" };
+                let doc = format!("{table}.{col}\n{db_type}{nullable}{pk}", col = c.name, db_type = c.db_type);
+                let detail = format!("{db_type}{nullable}{pk}", db_type = c.db_type);
                 Some(CompletionItem {
                     label: c.name.clone(),
                     kind: CompletionKind::Column,
                     detail,
+                    documentation: Some(doc),
                     insert_text: Some(c.name.clone()),
                     score: COL_EXPLICIT_BASE + score as u32 * 3,
                 })
@@ -317,11 +334,14 @@ fn complete_columns_all(
         for col in &cols {
             let score = match_score(&col.name, prefix);
             if score > 0 || prefix.is_empty() {
-                let detail = format!("{}.{} {db_type}", table.name, col.name, db_type = col.db_type);
+                let nullable = if col.nullable { "" } else { " NOT NULL" };
+                let doc = format!("{tbl}.{col}\n{db_type}{nullable}", tbl = table.name, col = col.name, db_type = col.db_type);
+                let detail = format!("{tbl}.{col}  {db_type}", tbl = table.name, col = col.name, db_type = col.db_type);
                 items.push(CompletionItem {
                     label: col.name.clone(),
                     kind: CompletionKind::Column,
                     detail,
+                    documentation: Some(doc),
                     insert_text: Some(col.name.clone()),
                     score: COL_STANDARD_BASE + score as u32 * 2,
                 });
@@ -342,17 +362,18 @@ fn is_after_clause(sql: &str, cursor_line: u32, cursor_column: u32, clause: &str
     let clause_upper = clause.to_uppercase();
 
     if let Some(pos) = prefix.rfind(&clause_upper) {
-        let after = &prefix[pos + clause.len()..].trim();
-        return !after.contains(' ') || after_is_identifier(after);
+        let after_raw = &prefix[pos + clause.len()..];
+        let after = after_raw.trim();
+        // Single token after clause (e.g., "FROM DimP") — still in FROM context
+        if !after.contains(' ') {
+            return true;
+        }
+        // Multiple tokens but the cursor is on the first one (e.g., "FROM DimProduct J")
+        // Count tokens — if cursor is on token 1 or 2, still in FROM for joins
+        let tokens: Vec<&str> = after.split_whitespace().collect();
+        return tokens.len() <= 2;
     }
     false
-}
-
-fn after_is_identifier(s: &str) -> bool {
-    let without_dot = s.trim_end_matches('.');
-    without_dot
-        .chars()
-        .all(|c| c.is_alphanumeric() || c == '_' || c == '.')
 }
 
 // ── tests ────────────────────────────────────────────────────────────────
@@ -496,6 +517,7 @@ mod tests {
                 label: format!("col{i}"),
                 kind: CompletionKind::Column,
                 detail: String::new(),
+                documentation: None,
                 insert_text: None,
                 score: 100 - i as u32,
             })
@@ -505,6 +527,7 @@ mod tests {
                 label: format!("tbl{i}"),
                 kind: CompletionKind::Table,
                 detail: String::new(),
+                documentation: None,
                 insert_text: None,
                 score: 90 - i as u32,
             })

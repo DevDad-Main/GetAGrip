@@ -256,6 +256,7 @@ export interface CompletionItem {
   label: string;
   kind: CompletionKind;
   detail: string;
+  documentation?: string;
   insert_text?: string;
   score: number;
 }
