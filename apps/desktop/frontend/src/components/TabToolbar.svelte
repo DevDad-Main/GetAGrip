@@ -1,14 +1,16 @@
 <script lang="ts">
   import { datasources, activeDatasourceId } from '$lib/stores';
   import { Database } from 'lucide-svelte';
+  import Dropdown from './Dropdown.svelte';
 
   export let datasourceId: string | null;
   export let schema: string | null;
   export let onChange: (datasourceId: string | null, schema: string | null) => void = () => {};
 
-  function handleDsChange(e: Event) {
-    const select = e.target as HTMLSelectElement;
-    const newId = select.value || null;
+  $: dsOptions = $datasources.map((ds) => ({ id: ds.id, name: ds.name }));
+
+  function handleDsChange(e: CustomEvent<string | null>) {
+    const newId = e.detail;
     activeDatasourceId.set(newId);
     onChange(newId, schema);
   }
@@ -18,17 +20,12 @@
   <span class="tt-label">
     <Database size="12" />
   </span>
-  <select
-    class="tt-select"
-    value={datasourceId ?? ''}
+  <Dropdown
+    value={datasourceId}
+    options={dsOptions}
+    placeholder="— no datasource —"
     on:change={handleDsChange}
-    title="Select data source"
-  >
-    <option value="">— no datasource —</option>
-    {#each $datasources as ds (ds.id)}
-      <option value={ds.id}>{ds.name}</option>
-    {/each}
-  </select>
+  />
 
   {#if datasourceId}
     <input
@@ -52,15 +49,6 @@
     color: var(--text-muted);
     display: flex;
     align-items: center;
-  }
-  .tt-select {
-    font-size: 11px;
-    padding: 2px 4px;
-    background: var(--bg-input);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    min-width: 120px;
   }
   .tt-schema {
     font-size: 11px;
