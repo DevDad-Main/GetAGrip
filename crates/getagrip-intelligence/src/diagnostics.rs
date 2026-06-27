@@ -63,29 +63,33 @@ pub fn request_diagnostics(
 fn split_sql_statements(sql: &str) -> Vec<(String, u32)> {
     let mut result = Vec::new();
     let mut current = String::new();
-    let mut line_offset = 0u32;
-    let mut current_line = 0u32;
+    let mut line = 0u32;
+    let mut stmt_line = 0u32;
+    let mut started = false;
 
     for ch in sql.chars() {
-        if ch == '\n' {
-            current_line += 1;
-        }
         if ch == ';' {
             let trimmed = current.trim().to_string();
             if !trimmed.is_empty() && trimmed != ";" {
-                result.push((trimmed, line_offset));
+                result.push((trimmed, stmt_line));
             }
             current.clear();
-            // offset points to the line of the NEXT statement
-            line_offset = current_line;
+            started = false;
         } else {
+            if !started && ch != '\n' && ch != ' ' {
+                stmt_line = line;
+                started = true;
+            }
+            if ch == '\n' {
+                line += 1;
+            }
             current.push(ch);
         }
     }
 
     let trimmed = current.trim().to_string();
     if !trimmed.is_empty() {
-        result.push((trimmed, line_offset));
+        result.push((trimmed, stmt_line));
     }
 
     if result.is_empty() {
