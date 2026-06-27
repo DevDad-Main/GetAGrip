@@ -3,7 +3,7 @@
   import * as monaco from 'monaco-editor';
   import { executeQueryV2, requestCompletion, requestDiagnostics, type QueryResultDto, type CompletionItem } from '$lib/tauri';
   import {
-    resultSets, activeResultSetId, statusText,
+    resultSets, activeResultSetId, statusText, diagnostics as diagStore,
     nextResultSetId, resultsPanelHeight, activeTheme, type ResultSet,
   } from '$lib/stores';
   import CustomSuggestWidget from './CustomSuggestWidget.svelte';
@@ -178,6 +178,7 @@
         const resp = profileId
           ? await requestDiagnostics({ connection_id: profileId, sql })
           : { diagnostics: [] };
+        diagStore.set(resp.diagnostics);
         const markers: monaco.editor.IMarkerData[] = resp.diagnostics.map((d) => ({
           severity: d.severity === 'error' ? monaco.MarkerSeverity.Error
             : d.severity === 'warning' ? monaco.MarkerSeverity.Warning
