@@ -72,6 +72,35 @@
         <SidePanel />
       </div>
       <ResizeHandle direction="horizontal" size={sidebarW} onResize={(s) => sidebarW = s} onCollapse={() => sidebarVisible.set(false)} collapseThreshold={60} />
+    {:else}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="sidebar-reveal"
+        on:mousedown={(e) => {
+          e.preventDefault();
+          sidebarVisible.set(true);
+          const startX = e.clientX;
+          let pushed = false;
+          function onMove(ev: MouseEvent) {
+            const w = ev.clientX - startX + 160;
+            if (w > 80 || (ev.clientX - startX) > 20) pushed = true;
+            if (pushed) sidebarW = Math.max(160, Math.min(600, w));
+          }
+          function onUp() {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+          }
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+          document.body.style.cursor = 'col-resize';
+          document.body.style.userSelect = 'none';
+        }}
+        title="Drag to reveal sidebar"
+      >
+        <div class="reveal-grip"></div>
+      </div>
     {/if}
     <div class="editor-column">
       <EditorPane />
@@ -126,5 +155,30 @@
   .results-col {
     flex-shrink: 0;
     overflow: hidden;
+  }
+  .sidebar-reveal {
+    flex-shrink: 0;
+    width: 5px;
+    align-self: stretch;
+    cursor: col-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    transition: background 0.15s;
+  }
+  .sidebar-reveal:hover {
+    background: var(--bg-hover);
+  }
+  .reveal-grip {
+    width: 3px;
+    height: 30px;
+    border-radius: 2px;
+    background: var(--text-faint);
+    opacity: 0.3;
+  }
+  .sidebar-reveal:hover .reveal-grip {
+    opacity: 0.7;
+    background: var(--accent);
   }
 </style>
