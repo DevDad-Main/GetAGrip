@@ -96,6 +96,13 @@ pub async fn save_datasource(
     input: DatasourceInput,
     state: State<'_, AppState>,
 ) -> Result<ConnectionProfile, String> {
+    tracing::info!(
+        "save_datasource: name={}, driver={}, has_username={}, has_password={}",
+        input.name,
+        input.driver,
+        input.username.is_some(),
+        input.password.is_some(),
+    );
     let id = Id::<ConnectionProfileId>::new_v7();
     let password = input.password.clone();
     let username = input.username.clone();
@@ -126,6 +133,14 @@ pub async fn update_datasource(
 ) -> Result<ConnectionProfile, String> {
     let pid = Id::<ConnectionProfileId>::parse(&profile_id)
         .ok_or_else(|| format!("invalid profile id: {profile_id}"))?;
+
+    tracing::info!(
+        "update_datasource: id={}, name={}, has_username={}, has_password={}",
+        profile_id,
+        input.name,
+        input.username.is_some(),
+        input.password.is_some(),
+    );
 
     let mut profiles = state.profiles.write();
     let existing = profiles.get_mut(pid).ok_or_else(|| format!("profile not found: {profile_id}"))?;

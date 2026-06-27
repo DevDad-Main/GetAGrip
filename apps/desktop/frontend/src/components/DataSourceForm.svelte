@@ -16,13 +16,13 @@
   ];
 
   const ENVIRONMENTS = [
-    { value: 'red', label: '🔴 Production', color: '#bc3c3c' },
-    { value: 'orange', label: '🟠 Staging', color: '#cc7832' },
-    { value: 'yellow', label: '🟡 QA', color: '#e5c07b' },
-    { value: 'green', label: '🟢 Development', color: '#629755' },
-    { value: 'blue', label: '🔵 Testing', color: '#4a9eff' },
-    { value: 'purple', label: '🟣 Sandbox', color: '#c678dd' },
-    { value: 'none', label: '⚪ None', color: '#7d7d7d' },
+    { value: 'red', label: 'Production', color: '#bc3c3c' },
+    { value: 'orange', label: 'Staging', color: '#cc7832' },
+    { value: 'yellow', label: 'QA', color: '#e5c07b' },
+    { value: 'green', label: 'Development', color: '#629755' },
+    { value: 'blue', label: 'Testing', color: '#4a9eff' },
+    { value: 'purple', label: 'Sandbox', color: '#c678dd' },
+    { value: 'none', label: 'None', color: '#7d7d7d' },
   ];
 
   let name = '';
@@ -38,28 +38,30 @@
   let submitting = false;
   let error = '';
 
-  $: if (editProfile && open) {
-    name = editProfile.name;
-    driver = editProfile.driver;
-    host = editProfile.host;
-    port = editProfile.port;
-    database = editProfile.database ?? '';
+  function populateFromProfile(p: ConnectionProfile) {
+    name = p.name;
+    driver = p.driver;
+    host = p.host;
+    port = p.port;
+    database = p.database ?? '';
     username = '';
     password = '';
-    useTls = editProfile.use_tls ?? false;
-    environment = editProfile.environment ?? 'none';
-    notes = editProfile.notes ?? '';
+    useTls = p.use_tls ?? false;
+    environment = p.environment ?? 'none';
+    notes = p.notes ?? '';
   }
 
-  function resetForm() {
+  // When opening for edit, populate fields once
+  let lastEditId: string | null = null;
+  $: if (open && editProfile && editProfile.id !== lastEditId) {
+    lastEditId = editProfile.id;
+    populateFromProfile(editProfile);
+  }
+  $: if (open && !editProfile && lastEditId !== null) {
+    lastEditId = null;
     name = ''; driver = 'mssql'; host = 'localhost'; port = 1433;
     database = ''; username = ''; password = ''; useTls = false;
-    environment = 'none'; notes = ''; submitting = false; error = '';
-  }
-
-  function handleClose() {
-    resetForm();
-    onClose();
+    environment = 'none'; notes = ''; error = '';
   }
 
   async function handleSubmit() {
@@ -93,8 +95,7 @@
         profile = await saveDatasource(input);
       }
       await loadDatasources();
-      handleClose();
-      // Auto-connect for new datasources
+      onClose();
       if (!editProfile) {
         handleConnect(profile);
       }
@@ -104,23 +105,20 @@
       submitting = false;
     }
   }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') handleClose();
-  }
 </script>
 
 {#if open}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="modal-backdrop" on:click={handleClose} on:keydown={handleKeydown}>
+  <div class="modal-backdrop" on:click={onClose}>
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="modal" on:click={(e) => e.stopPropagation()} role="dialog" aria-label="Data Source">
+    <div class="modal" on:click|stopPropagation role="dialog" aria-label="Data Source">
       <div class="modal-header">
         <span>{editProfile ? 'Edit Data Source' : 'New Data Source'}</span>
-        <button class="modal-close" on:click={handleClose}><X size="14" /></button>
+        <button class="modal-close" on:click={onClose}><X size="14" /></button>
       </div>
 
       <div class="modal-body">
+        <!-- svelte-ignore a11y_label_has_associated_control -->
         <div class="form-grid">
           <label class="field">
             <span>Name *</span>
@@ -183,13 +181,16 @@
       </div>
 
       <div class="modal-footer">
-        <button on:click={handleClose}>Cancel</button>
+        <button on:click={onClose}>Cancel</button>
         <button class="primary" on:click={handleSubmit} disabled={submitting}>
           {submitting ? 'Saving…' : editProfile ? 'Update' : 'Save'}
         </button>
       </div>
     </div>
   </div>
+
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <svelte:window on:keydown={(e) => { if (e.key === 'Escape') onClose(); }} />
 {/if}
 
 <style>
