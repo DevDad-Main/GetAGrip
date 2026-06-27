@@ -74,7 +74,9 @@ export async function handleConnect(profile: ConnectionProfile) {
         // Background: load table names for autocomplete
         loadAllTableNames(profile.id);
         // Populate Rust metadata cache for intelligence engine
-        refreshMetadata({ connection_id: profile.id }).catch(() => {});
+        refreshMetadata({ connection_id: profile.id })
+          .then(() => notify('Metadata loaded for autocomplete', 'info'))
+          .catch((e) => notify(`Metadata load failed: ${e}`, 'warning'));
       } catch {}
     } else {
       notify(`Connection failed: ${result.last_error ?? 'unknown error'}`, 'error');

@@ -6,7 +6,7 @@
 //! - Tables referenced without being in scope
 
 use sqlparser::ast::{
-    Expr, Ident, Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins,
+    Select, SetExpr, Statement, TableFactor, TableWithJoins,
 };
 use sqlparser::dialect::GenericDialect;
 
@@ -17,7 +17,6 @@ use crate::types::{DiagnosticItem, DiagnosticLevel};
 pub fn request_diagnostics(
     sql: &str,
     connection_id: &str,
-    database: &str,
     cache: &MetadataCache,
 ) -> Vec<DiagnosticItem> {
     if sql.trim().is_empty() {
@@ -33,7 +32,7 @@ pub fn request_diagnostics(
     let mut diagnostics = Vec::new();
 
     for stmt in &parsed {
-        check_statement(stmt, connection_id, database, cache, &mut diagnostics);
+        check_statement(stmt, connection_id, cache, &mut diagnostics);
     }
 
     diagnostics
@@ -42,19 +41,18 @@ pub fn request_diagnostics(
 fn check_statement(
     stmt: &Statement,
     connection_id: &str,
-    database: &str,
     cache: &MetadataCache,
     diagnostics: &mut Vec<DiagnosticItem>,
 ) {
     match stmt {
         Statement::Query(query) => {
             if let SetExpr::Select(select) = &*query.body {
-                check_select(select, connection_id, database, cache, diagnostics);
+                check_select(select, connection_id, cache, diagnostics);
             }
         }
         Statement::Insert(insert) => {
             let name = table_object_name(&insert.table);
-            if !table_exists(cache, connection_id, database, &name) {
+            if !table_exists(cache, connection_id, &name) {
                 diagnostics.push(DiagnosticItem {
                     severity: DiagnosticLevel::Error,
                     message: format!("Unknown table: {name}"),
@@ -62,13 +60,13 @@ fn check_statement(
                     column: 1,
                     end_line: None,
                     end_column: None,
-                    hint: find_similar_table(cache, connection_id, database, &name),
+                    hint: find_similar_table(cache, connection_id, &name),
                 });
             }
         }
         Statement::Update { table, .. } => {
             if let Some(name) = table_factor_name(&table.relation) {
-                if !table_exists(cache, connection_id, database, &name) {
+                if !table_exists(cache, connection_id, &name) {
                     diagnostics.push(DiagnosticItem {
                         severity: DiagnosticLevel::Warning,
                         message: format!("Unknown table: {name}"),
@@ -76,7 +74,7 @@ fn check_statement(
                         column: 1,
                         end_line: None,
                         end_column: None,
-                        hint: find_similar_table(cache, connection_id, database, &name),
+                        hint: find_similar_table(cache, connection_id, &name),
                     });
                 }
             }
@@ -84,7 +82,7 @@ fn check_statement(
         Statement::Delete(delete) => {
             for tbl in &delete.tables {
                 let name = object_name_str(tbl);
-                if !table_exists(cache, connection_id, database, &name) {
+                if !table_exists(cache, connection_id, &name) {
                     diagnostics.push(DiagnosticItem {
                         severity: DiagnosticLevel::Warning,
                         message: format!("Unknown table: {name}"),
@@ -92,7 +90,7 @@ fn check_statement(
                         column: 1,
                         end_line: None,
                         end_column: None,
-                        hint: find_similar_table(cache, connection_id, database, &name),
+                        hint: find_similar_table(cache, connection_id, &name),
                     });
                 }
             }
@@ -104,44 +102,35 @@ fn check_statement(
 fn check_select(
     select: &Select,
     connection_id: &str,
-    database: &str,
     cache: &MetadataCache,
     diagnostics: &mut Vec<DiagnosticItem>,
 ) {
     for twj in &select.from {
-        check_table_with_joins(twj, connection_id, database, cache, diagnostics);
-    }
-
-    for item in &select.projection {
-        if let SelectItem::UnnamedExpr(Expr::Identifier(ident)) = item {
-            check_column_ref(ident, connection_id, database, cache, diagnostics);
-        }
+        check_table_with_joins(twj, connection_id, cache, diagnostics);
     }
 }
 
 fn check_table_with_joins(
     twj: &TableWithJoins,
     connection_id: &str,
-    database: &str,
     cache: &MetadataCache,
     diagnostics: &mut Vec<DiagnosticItem>,
 ) {
-    check_table_factor(&twj.relation, connection_id, database, cache, diagnostics);
+    check_table_factor(&twj.relation, connection_id, cache, diagnostics);
     for join in &twj.joins {
-        check_table_factor(&join.relation, connection_id, database, cache, diagnostics);
+        check_table_factor(&join.relation, connection_id, cache, diagnostics);
     }
 }
 
 fn check_table_factor(
     tf: &TableFactor,
     connection_id: &str,
-    database: &str,
     cache: &MetadataCache,
     diagnostics: &mut Vec<DiagnosticItem>,
 ) {
     if let TableFactor::Table { name, .. } = tf {
         let table_name = object_name_str(name);
-        if !table_exists(cache, connection_id, database, &table_name) {
+        if !table_exists(cache, connection_id, &table_name) {
             diagnostics.push(DiagnosticItem {
                 severity: DiagnosticLevel::Error,
                 message: format!("Unknown table: {table_name}"),
@@ -149,24 +138,14 @@ fn check_table_factor(
                 column: 1,
                 end_line: None,
                 end_column: None,
-                hint: find_similar_table(cache, connection_id, database, &table_name),
+                hint: find_similar_table(cache, connection_id, &table_name),
             });
         }
     }
 }
 
-fn check_column_ref(
-    ident: &Ident,
-    _connection_id: &str,
-    _database: &str,
-    _cache: &MetadataCache,
-    _diagnostics: &mut Vec<DiagnosticItem>,
-) {
-    _ = ident;
-}
-
-fn table_exists(cache: &MetadataCache, connection_id: &str, database: &str, name: &str) -> bool {
-    let tables = cache.get_tables(connection_id, database);
+fn table_exists(cache: &MetadataCache, connection_id: &str, name: &str) -> bool {
+    let tables = cache.get_tables(connection_id);
     if tables.iter().any(|t| t.name == name) {
         return true;
     }
@@ -181,10 +160,9 @@ fn table_exists(cache: &MetadataCache, connection_id: &str, database: &str, name
 fn find_similar_table(
     cache: &MetadataCache,
     connection_id: &str,
-    database: &str,
     name: &str,
 ) -> Option<String> {
-    let tables = cache.get_tables(connection_id, database);
+    let tables = cache.get_tables(connection_id);
     let name_lower = name.to_lowercase();
 
     let best = tables
@@ -248,7 +226,6 @@ mod tests {
         let diags = request_diagnostics(
             "SELECT * FROM nonexistent",
             "conn1",
-            "testdb",
             &cache,
         );
         assert_eq!(diags.len(), 1);
@@ -259,7 +236,7 @@ mod tests {
     #[test]
     fn empty_sql_no_diagnostics() {
         let cache = MetadataCache::new();
-        let diags = request_diagnostics("", "conn1", "testdb", &cache);
+        let diags = request_diagnostics("", "conn1", &cache);
         assert!(diags.is_empty());
     }
 

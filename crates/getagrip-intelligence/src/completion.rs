@@ -37,7 +37,6 @@ pub fn request_completion(
     cursor_line: u32,
     cursor_column: u32,
     connection_id: &str,
-    database: &str,
     cache: &MetadataCache,
 ) -> Vec<CompletionItem> {
     let ctx = analyse_context(sql, cursor_line, cursor_column);
@@ -46,16 +45,16 @@ pub fn request_completion(
     if let Some(ref prefix) = ctx.cursor_prefix {
         // Try SQL-context alias/table resolution first
         if let Some(table) = ctx.resolve_table(prefix) {
-            return complete_columns(cache, connection_id, database, &table.name, &ctx.cursor_word);
+            return complete_columns(cache, connection_id, &table.name, &ctx.cursor_word);
         }
         // Fallback: check if the word before dot matches a cached table
-        if table_in_cache(cache, connection_id, database, prefix) {
-            return complete_columns(cache, connection_id, database, prefix, &ctx.cursor_word);
+        if table_in_cache(cache, connection_id, prefix) {
+            return complete_columns(cache, connection_id, prefix, &ctx.cursor_word);
         }
     }
 
     if let Some(ref table_name) = ctx.cursor_table {
-        return complete_columns(cache, connection_id, database, table_name, &ctx.cursor_word);
+        return complete_columns(cache, connection_id, table_name, &ctx.cursor_word);
     }
 
     let word = ctx.cursor_word.to_uppercase();
@@ -65,7 +64,7 @@ pub fn request_completion(
         || is_after_clause(sql, cursor_line, cursor_column, "JOIN");
 
     if in_from {
-        let mut items = complete_tables(cache, connection_id, database, &word_lower, 80);
+        let mut items = complete_tables(cache, connection_id, &word_lower, 80);
         items.extend(complete_keywords(&word));
         sort_and_truncate(&mut items, 50);
         return items;
@@ -81,8 +80,8 @@ pub fn request_completion(
         || is_after_clause(sql, cursor_line, cursor_column, "GROUP BY")
         || is_after_clause(sql, cursor_line, cursor_column, "HAVING")
     {
-        let mut items = complete_tables(cache, connection_id, database, &word_lower, 70);
-        items.extend(complete_columns_all(cache, connection_id, database, &word_lower));
+        let mut items = complete_tables(cache, connection_id, &word_lower, 70);
+        items.extend(complete_columns_all(cache, connection_id, &word_lower));
         items.extend(complete_functions(&word));
         sort_and_truncate(&mut items, 50);
         return items;
@@ -90,7 +89,7 @@ pub fn request_completion(
 
     // Generic: keywords + tables + functions
     let mut items = complete_keywords(&word);
-    items.extend(complete_tables(cache, connection_id, database, &word_lower, 60));
+    items.extend(complete_tables(cache, connection_id, &word_lower, 60));
     items.extend(complete_functions(&word));
     sort_and_truncate(&mut items, 50);
     items
@@ -183,11 +182,10 @@ fn complete_functions(prefix: &str) -> Vec<CompletionItem> {
 fn complete_tables(
     cache: &MetadataCache,
     connection_id: &str,
-    database: &str,
     prefix: &str,
     base_score: u32,
 ) -> Vec<CompletionItem> {
-    let tables = cache.get_tables(connection_id, database);
+    let tables = cache.get_tables(connection_id);
     tables
         .iter()
         .filter_map(|t| {
@@ -210,11 +208,10 @@ fn complete_tables(
 fn complete_columns(
     cache: &MetadataCache,
     connection_id: &str,
-    database: &str,
     table: &str,
     prefix: &str,
 ) -> Vec<CompletionItem> {
-    let columns = cache.get_columns(connection_id, database, table);
+    let columns = cache.get_columns(connection_id, table);
     columns
         .iter()
         .filter_map(|c| {
@@ -238,13 +235,12 @@ fn complete_columns(
 fn complete_columns_all(
     cache: &MetadataCache,
     connection_id: &str,
-    database: &str,
     prefix: &str,
 ) -> Vec<CompletionItem> {
-    let tables = cache.get_tables(connection_id, database);
+    let tables = cache.get_tables(connection_id);
     let mut items: Vec<CompletionItem> = Vec::new();
     for table in &tables {
-        let cols = cache.get_columns_exact(connection_id, database, &table.schema_name, &table.name);
+        let cols = cache.get_columns(connection_id, &table.name);
         for col in &cols {
             let score = match_score(&col.name, prefix);
             if score > 0 {
@@ -263,8 +259,8 @@ fn complete_columns_all(
     items
 }
 
-fn table_in_cache(cache: &MetadataCache, connection_id: &str, database: &str, name: &str) -> bool {
-    let tables = cache.get_tables(connection_id, database);
+fn table_in_cache(cache: &MetadataCache, connection_id: &str, name: &str) -> bool {
+    let tables = cache.get_tables(connection_id);
     tables.iter().any(|t| t.name == name)
 }
 
@@ -327,7 +323,7 @@ mod tests {
         });
         cache.store("conn1", schema);
 
-        let items = complete_columns(&cache, "conn1", "testdb", "users", "ema");
+        let items = complete_columns(&cache, "conn1", "users", "ema");
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].label, "email");
         assert!(items[0].detail.contains("varchar"));
@@ -378,7 +374,7 @@ mod tests {
         cache.store("conn1", schema);
 
         // Verify table is in cache
-        assert!(table_in_cache(&cache, "conn1", "testdb", "DimProduct"));
+        assert!(table_in_cache(&cache, "conn1", "DimProduct"));
 
         // Simulate typing "SELECT x." — cursor after dot, word = "x"
         let ctx = crate::context::analyse_context("SELECT x.", 1, 10);
@@ -390,7 +386,6 @@ mod tests {
             1,
             19,
             "conn1",
-            "testdb",
             &cache,
         );
         assert!(!items.is_empty(), "should find columns via cache fallback");

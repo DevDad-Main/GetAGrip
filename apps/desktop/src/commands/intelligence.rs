@@ -16,14 +16,21 @@ pub async fn request_completion_cmd(
     state: State<'_, AppState>,
     request: CompletionRequest,
 ) -> Result<CompletionResponse, String> {
-    let db = get_database_name(&state, &request.connection_id);
+    let table_count = state.metadata_cache.get_tables(&request.connection_id).len();
+
+    tracing::debug!(
+        "completion: sql={:?} line={} col={} cache_tables={}",
+        &request.sql[..request.sql.len().min(50)],
+        request.cursor_line,
+        request.cursor_column,
+        table_count,
+    );
 
     let suggestions = request_completion(
         &request.sql,
         request.cursor_line,
         request.cursor_column,
         &request.connection_id,
-        &db,
         &state.metadata_cache,
     );
 
@@ -38,12 +45,9 @@ pub async fn request_diagnostics_cmd(
     state: State<'_, AppState>,
     request: DiagnosticsRequest,
 ) -> Result<DiagnosticsResponse, String> {
-    let db = get_database_name(&state, &request.connection_id);
-
     let diagnostics = request_diagnostics(
         &request.sql,
         &request.connection_id,
-        &db,
         &state.metadata_cache,
     );
 
@@ -68,9 +72,16 @@ pub async fn refresh_metadata_cmd(
         .ok_or_else(|| format!("no pool for profile: {}", request.connection_id))?;
 
     let mut conn = pool.acquire().await.map_err(|e| format!("acquire: {e}"))?;
-    let db = managed.profile.database.as_deref().unwrap_or("master");
 
-    let mut schema = getagrip_schema::DatabaseSchema::new(db);
+    // Use the actual connected database, not the profile field (may be empty)
+    let db = conn
+        .connection()
+        .info()
+        .await
+        .map(|info| info.database)
+        .unwrap_or_else(|_| managed.profile.database.clone().unwrap_or_else(|| "master".to_string()));
+
+    let mut schema = getagrip_schema::DatabaseSchema::new(&db);
 
     let tables_sql = format!(
         "SELECT TABLE_SCHEMA, TABLE_NAME FROM {db}.INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_SCHEMA, TABLE_NAME"
@@ -134,18 +145,16 @@ pub async fn refresh_metadata_cmd(
         }
     }
 
+    let table_count = schema.tables.len();
     state.metadata_cache.store(&request.connection_id, schema);
-    tracing::info!("Metadata refreshed for connection {}", request.connection_id);
+    tracing::info!(
+        "Metadata refreshed for {}: {} tables (db={})",
+        request.connection_id,
+        table_count,
+        db
+    );
 
     Ok(())
 }
 
-fn get_database_name(state: &AppState, connection_id: &str) -> String {
-    let profiles = state.profiles.read();
-    profiles
-        .profiles
-        .values()
-        .find(|p| p.id.to_string() == connection_id || p.name == connection_id)
-        .and_then(|p| p.database.clone())
-        .unwrap_or_else(|| "master".to_string())
-}
+
