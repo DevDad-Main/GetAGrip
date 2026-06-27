@@ -79,6 +79,8 @@
       wordWrap: 'on',
       renderLineHighlight: 'line',
       smoothScrolling: true,
+      cursorBlinking: 'smooth',
+      cursorSmoothCaretAnimation: 'on',
       padding: { top: 8, bottom: 8 },
       scrollbar: {
         verticalScrollbarSize: 10,
