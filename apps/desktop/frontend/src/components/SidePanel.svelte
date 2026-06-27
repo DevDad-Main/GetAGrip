@@ -20,10 +20,10 @@
   }
 
   let _containerH = 600;
+  let _dragStartH = 0;
 
-  function handleDsResize(delta: number) {
-    const maxH = _containerH - 56; // minus both headers
-    const newH = dsHeight + delta;
+  function applyDsHeight(newH: number) {
+    const maxH = _containerH - 56;
     if (newH < 40) {
       dsCollapsed = true;
       dsHeight = 28;
@@ -40,7 +40,8 @@
   function startDsDrag(e: MouseEvent) {
     e.preventDefault();
     const startY = e.clientY;
-    function onMove(ev: MouseEvent) { handleDsResize(ev.clientY - startY); }
+    _dragStartH = dsHeight;
+    function onMove(ev: MouseEvent) { applyDsHeight(_dragStartH + ev.clientY - startY); }
     function onUp() {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
@@ -80,12 +81,10 @@
 
   <!-- Drag Handle -->
   {#if !dsCollapsed && !explorerCollapsed}
-    <div class="section-handle">
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="section-handle" on:mousedown={startDsDrag}>
       <div class="handle-bar"></div>
     </div>
-    <!-- Hidden resize overlay -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="section-resize" on:mousedown={startDsDrag}></div>
   {/if}
 
   <!-- Explorer Section -->
@@ -136,7 +135,6 @@
     width: 100%;
     height: 100%;
     border-right: 1px solid var(--border);
-    position: relative;
   }
   .sidebar.hidden { display: none; }
 
@@ -210,15 +208,6 @@
     opacity: 0.5;
   }
   .section-handle:hover .handle-bar { opacity: 0.8; background: var(--accent); }
-
-  .section-resize {
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: 8px;
-    cursor: row-resize;
-    z-index: 10;
-  }
 
   .explorer-section {
     flex: 1;
