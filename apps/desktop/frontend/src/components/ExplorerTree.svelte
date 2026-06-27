@@ -94,21 +94,19 @@
   {#each nodes as node (node.id)}
     <li class="tree-node" class:expanded={node.expanded}>
       <div class="tree-row" class:loading={node.loading} class:error={node.has_error} role="treeitem" aria-expanded={node.expanded} tabindex="0" style="padding-left: {8 + depth * 16}px" on:click={() => handleToggle(node)} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggle(node); } }}>
-        <span class="tree-glyph" class:expandable={isExpandable(node.kind)}>
-          {#if node.loading}
-            <Loader2 size="11" class="spin" />
-          {:else if isExpandable(node.kind)}
+        {#if node.loading}
+          <span class="tree-glyph"><Loader2 size="11" class="spin" /></span>
+        {:else if isExpandable(node.kind)}
+          <span class="tree-glyph tree-chevron">
             {#if node.expanded}
               <ChevronDown size="13" />
             {:else}
               <ChevronRight size="13" />
             {/if}
-          {:else}
-            <NodeIcon kind={node.kind} expanded={node.expanded} />
-          {/if}
-        </span>
-        {#if !isExpandable(node.kind) && !node.loading}
+          </span>
           <NodeIcon kind={node.kind} expanded={node.expanded} />
+        {:else}
+          <span class="tree-glyph"><NodeIcon kind={node.kind} expanded={node.expanded} /></span>
         {/if}
         <span class="tree-label" title={node.name}>{node.name}</span>
       </div>
@@ -137,7 +135,7 @@
   .tree-row {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 1px;
     padding: 3px 8px 3px 8px;
     cursor: pointer;
     font-size: 12px;
@@ -161,16 +159,13 @@
     flex-shrink: 0;
     width: 16px;
     height: 16px;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     color: var(--text-muted);
   }
-  .tree-glyph.expandable {
-    cursor: pointer;
-  }
-  .tree-glyph.expandable:hover {
-    color: var(--text);
+  .tree-chevron {
+    color: var(--text-faint);
   }
   .tree-label {
     overflow: hidden;

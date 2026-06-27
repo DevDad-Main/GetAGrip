@@ -6,8 +6,8 @@
     FolderOpen,
     Table,
     Eye,
-    ChevronRight,
-    ChevronDown,
+    Columns3,
+    KeyRound,
   } from 'lucide-svelte';
 
   export let kind: string;
@@ -30,7 +30,7 @@
   {:else if kind === 'View'}
     <Eye size="14" />
   {:else if kind === 'Column'}
-    <ChevronRight size="12" />
+    <Columns3 size="13" />
   {/if}
 </span>
 

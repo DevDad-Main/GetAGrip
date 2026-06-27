@@ -18,6 +18,7 @@
     font-weight: 600;
     color: var(--text-muted);
     height: var(--titlebar-h);
+    flex-shrink: 0;
     -webkit-user-select: none;
     user-select: none;
   }

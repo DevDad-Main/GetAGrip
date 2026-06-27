@@ -48,8 +48,8 @@
   .app-shell {
     display: grid;
     grid-template-rows: var(--titlebar-h) 1fr auto var(--statusbar-h);
-    height: 100vh;
-    width: 100vw;
+    min-height: 0;
+    flex: 1;
     background: var(--bg);
   }
   .content {

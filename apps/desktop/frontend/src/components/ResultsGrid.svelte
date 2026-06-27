@@ -73,6 +73,7 @@
     height: 220px;
     min-height: 100px;
     max-height: 60vh;
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
