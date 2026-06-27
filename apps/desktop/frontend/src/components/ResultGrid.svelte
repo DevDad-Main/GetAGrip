@@ -2,6 +2,7 @@
   import type { ResultSet } from '$lib/stores';
   import { resultSets } from '$lib/stores';
   import { exportResult, type ExportInput, type ExportColumn } from '$lib/tauri';
+  import { notify } from './Toast.svelte';
   import { Copy, Download, ChevronDown, ArrowUp, ArrowDown } from 'lucide-svelte';
 
   export let result: ResultSet;
@@ -63,7 +64,9 @@
     for (const row of sorted.slice(0, MAX_ROWS)) {
       lines.push(cols.map((c) => formatValue(row[c])).join('\t'));
     }
-    navigator.clipboard.writeText(lines.join('\n')).catch(console.error);
+    navigator.clipboard.writeText(lines.join('\n'))
+      .then(() => notify('Copied to clipboard', 'success'))
+      .catch(() => notify('Copy failed', 'error'));
   }
 
   async function handleExport(format: string, download: boolean) {
@@ -87,8 +90,11 @@
         const a = document.createElement('a');
         a.href = url; a.download = `query_result.${ext}`; a.click();
         URL.revokeObjectURL(url);
+        notify(`Downloaded query_result.${ext}`, 'success');
       } else {
-        navigator.clipboard.writeText(output).catch(console.error);
+        navigator.clipboard.writeText(output)
+          .then(() => notify(`Copied ${format.toUpperCase()} to clipboard`, 'success'))
+          .catch(() => notify('Copy failed', 'error'));
       }
     } catch (e) {
       console.error('export failed:', e);

@@ -129,7 +129,7 @@
       {:else if $resultSets.length > 0}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="results-reveal" on:mousedown={(e) => { e.preventDefault(); resultsPanelHeight.set(280); }} title="Click to show results (Ctrl+J)">
-          <div class="reveal-grip"></div>
+          <div class="reveal-grip-h"></div>
         </div>
       {/if}
     </div>
@@ -194,7 +194,14 @@
   .results-reveal:hover {
     background: var(--bg-hover);
   }
-  .results-reveal:hover .reveal-grip {
+  .reveal-grip-h {
+    width: 30px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--text-faint);
+    opacity: 0.3;
+  }
+  .results-reveal:hover .reveal-grip-h {
     opacity: 0.7;
     background: var(--accent);
   }
