@@ -55,6 +55,11 @@
     },
   });
 
+  // Sync external sql prop changes into the editor (e.g. tab switching)
+  $: if (editor && sql !== editor.getValue()) {
+    editor.setValue(sql);
+  }
+
   onMount(() => {
     if (!containerEl) return;
 
@@ -88,6 +93,7 @@
       quickSuggestions: true,
       suggestOnTriggerCharacters: true,
       tabCompletion: 'on',
+      automaticLayout: true,
     });
 
     editor.onDidChangeModelContent(() => {
@@ -206,7 +212,8 @@
   });
 </script>
 
-<div class="monaco-container" bind:this={containerEl}></div>
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="monaco-container" bind:this={containerEl} on:click={() => editor?.focus()}></div>
 
 <style>
   .monaco-container {
