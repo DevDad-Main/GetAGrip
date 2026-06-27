@@ -17,6 +17,14 @@
   function handleRun() {
     runFn?.();
   }
+
+  function handleDatasourceChange(datasourceId: string | null, schema: string | null) {
+    tabs.update((ts) =>
+      ts.map((t) =>
+        t.id === $activeTab?.id ? { ...t, datasourceId, schema } : t,
+      ),
+    );
+  }
 </script>
 
 <section class="editor-pane">
@@ -26,6 +34,7 @@
       <TabToolbar
         datasourceId={$activeTab.datasourceId}
         schema={$activeTab.schema}
+        onChange={handleDatasourceChange}
       />
     {:else}
       <span class="toolbar-info">No active tab</span>

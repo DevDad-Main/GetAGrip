@@ -4,10 +4,13 @@
 
   export let datasourceId: string | null;
   export let schema: string | null;
+  export let onChange: (datasourceId: string | null, schema: string | null) => void = () => {};
 
-  function handleDatasourceChange(e: Event) {
+  function handleDsChange(e: Event) {
     const select = e.target as HTMLSelectElement;
-    activeDatasourceId.set(select.value || null);
+    const newId = select.value || null;
+    activeDatasourceId.set(newId);
+    onChange(newId, schema);
   }
 </script>
 
@@ -18,7 +21,7 @@
   <select
     class="tt-select"
     value={datasourceId ?? ''}
-    on:change={handleDatasourceChange}
+    on:change={handleDsChange}
     title="Select data source"
   >
     <option value="">— no datasource —</option>
