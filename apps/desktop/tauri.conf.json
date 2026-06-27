@@ -36,14 +36,7 @@
   },
   "plugins": {
     "shell": {
-      "scope": [],
       "open": true
-    },
-    "log": {
-      "active": true
-    },
-    "dialog": {
-      "messages": true
     }
   }
 }
