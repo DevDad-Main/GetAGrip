@@ -146,9 +146,6 @@
     </div>
   </div>
 
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <svelte:window on:click={() => { exportMenuOpen = false; }} />
-
   <div class="rg-body">
     {#if result.columns.length === 0}
       <div class="rg-empty">No columns returned.</div>
@@ -188,6 +185,9 @@
     {/if}
   </div>
 </div>
+
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<svelte:window on:click={() => { exportMenuOpen = false; }} />
 
 <style>
   .rg {
