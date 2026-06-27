@@ -187,6 +187,11 @@ button.danger {
 .spacer {
   flex: 1;
 }
+/* Force-hide Monaco's built-in suggest widget — we use our own */
+.monaco-editor .suggest-widget {
+  display: none !important;
+}
+
 .gap-sm { gap: 4px; }
 .gap-md { gap: 8px; }
 .gap-lg { gap: 16px; }
