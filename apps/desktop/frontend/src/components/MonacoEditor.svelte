@@ -5,6 +5,7 @@
   import {
     resultSets, activeResultSetId, statusText, diagnostics as diagStore,
     nextResultSetId, resultsPanelHeight, activeTheme, type ResultSet,
+    metadataRefreshed,
   } from '$lib/stores';
   import CustomSuggestWidget from './CustomSuggestWidget.svelte';
   import HoverWidget from './HoverWidget.svelte';
@@ -196,11 +197,12 @@
     }, 500);
   }
 
-  // Re-run diagnostics when datasource connects (cache populated asynchronously)
+  // Re-run diagnostics when datasource connects or metadata refreshes
   $: if (profileId) {
     runDiagnostics();
-    // Retry after metadata cache loads (~1-2s for INFORMATION_SCHEMA queries)
-    setTimeout(() => runDiagnostics(), 2500);
+  }
+  $: if ($metadataRefreshed > 0) {
+    runDiagnostics();
   }
 
   async function triggerCompletion(pos?: monaco.Position) {
@@ -227,6 +229,7 @@
       try {
         const { refreshMetadata } = await import('$lib/tauri');
         await refreshMetadata({ connection_id: profileId });
+        metadataRefreshed.set(Date.now());
       } catch { /* silent */ }
     }
 

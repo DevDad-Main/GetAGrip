@@ -79,6 +79,7 @@ export const history = writable<HistoryEntry[]>([]);
 
 export const statusText = writable<string>('Ready');
 export const diagnostics = writable<import('$lib/tauri').DiagnosticItem[]>([]);
+export const metadataRefreshed = writable<number>(0);
 export const sidebarVisible = writable<boolean>(true);
 export const commandPaletteOpen = writable<boolean>(false);
 export const resultsPanelHeight = writable<number>(0);

@@ -1,4 +1,4 @@
-import { datasources, activeDatasourceId, datasourceStates, datasourceTrees, schemaCache } from './stores';
+import { datasources, activeDatasourceId, datasourceStates, datasourceTrees, schemaCache, metadataRefreshed } from './stores';
 import { connectDatasource, disconnectDatasource, deleteDatasource, introspectNode, refreshMetadata, type ConnectionProfile, type ManagedConnectionDto } from './tauri';
 import { notify } from '../components/Toast.svelte';
 
@@ -75,7 +75,10 @@ export async function handleConnect(profile: ConnectionProfile) {
         loadAllTableNames(profile.id);
         // Populate Rust metadata cache for intelligence engine
         refreshMetadata({ connection_id: profile.id })
-          .then(() => notify('Metadata loaded for autocomplete', 'info'))
+          .then(() => {
+            notify('Metadata loaded for autocomplete', 'info');
+            metadataRefreshed.set(Date.now());
+          })
           .catch((e) => notify(`Metadata load failed: ${e}`, 'warning'));
       } catch {}
     } else {
