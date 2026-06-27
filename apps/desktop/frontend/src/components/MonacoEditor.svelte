@@ -149,6 +149,8 @@
     completionWordStartCol = 0;
   }
 
+  let cacheChecked = false;
+
   async function triggerCompletion(pos?: monaco.Position) {
     if (!editor) return;
     const model = editor.getModel();
@@ -165,6 +167,15 @@
       }));
       showSuggest(fallback, position);
       return;
+    }
+
+    // Auto-refresh metadata cache once per session (cleared on rebuild)
+    if (!cacheChecked) {
+      cacheChecked = true;
+      try {
+        const { refreshMetadata } = await import('$lib/tauri');
+        await refreshMetadata({ connection_id: profileId });
+      } catch { /* silent */ }
     }
 
     try {
@@ -282,6 +293,7 @@
       lineHeight: 20,
       quickSuggestions: true,
       suggestOnTriggerCharacters: true,
+      wordBasedSuggestions: false,
       tabCompletion: 'off',
       automaticLayout: true,
     });
