@@ -107,11 +107,12 @@
   // ── suggest widget position helper ────────────────────────────────────
 
   function updateSuggestPosition(pos: monaco.Position) {
-    if (!editor) return;
+    if (!editor || !containerEl) return;
     const coords = editor.getScrolledVisiblePosition(pos);
+    const containerRect = containerEl.getBoundingClientRect();
     suggestPos = {
-      top: coords.top + 24,
-      left: coords.left,
+      top: containerRect.top + coords.top + 20,
+      left: containerRect.left + coords.left,
     };
   }
 
@@ -133,8 +134,39 @@
     suggestVisible = false;
     suggestItems = [];
     suggestActive = 0;
-    lastCompletionWord = '';
     lastCompletionPos = null;
+  }
+
+  async function triggerCompletion(pos?: monaco.Position) {
+    if (!editor) return;
+    const model = editor.getModel();
+    if (!model) return;
+    const position = pos ?? editor.getPosition();
+    if (!position) return;
+
+    if (!profileId) {
+      const fallback: CompletionItem[] = SQL_KEYWORDS.map((kw) => ({
+        label: kw,
+        kind: 'keyword',
+        detail: '',
+        score: 50,
+      }));
+      showSuggest(fallback, position);
+      return;
+    }
+
+    try {
+      const text = model.getValue();
+      const resp = await requestCompletion({
+        connection_id: profileId,
+        sql: text,
+        cursor_line: position.lineNumber,
+        cursor_column: position.column,
+      });
+      showSuggest(resp.suggestions, position);
+    } catch {
+      hideSuggest();
+    }
   }
 
   function handleSuggestSelect(item: CompletionItem) {
@@ -258,39 +290,26 @@
       if (handleSuggestKey(e)) return;
     });
 
-    // Completion provider — calls Rust, but returns empty so Monaco doesn't render its widget
+    // Completion provider — calls Rust, returns empty to suppress Monaco widget
     const TRIGGERS = [...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ', '.', ' ', '_'];
 
     monaco.languages.registerCompletionItemProvider('sql', {
       triggerCharacters: TRIGGERS,
-      async provideCompletionItems(model, position) {
-        if (!profileId) {
-          const fallback: CompletionItem[] = SQL_KEYWORDS.map((kw) => ({
-            label: kw,
-            kind: 'keyword',
-            detail: '',
-            score: 50,
-          }));
-          showSuggest(fallback, position);
-          return { suggestions: [] };
-        }
-
-        try {
-          const sql = model.getValue();
-          const resp = await requestCompletion({
-            connection_id: profileId,
-            sql,
-            cursor_line: position.lineNumber,
-            cursor_column: position.column,
-          });
-
-          showSuggest(resp.suggestions, position);
-        } catch {
-          // failed silently
-          hideSuggest();
-        }
-
+      async provideCompletionItems(_model, position) {
+        // Fire-and-forget: trigger our custom widget, tell Monaco to show nothing
+        triggerCompletion(position);
         return { suggestions: [] };
+      },
+    });
+
+    // Ctrl+Space: manual trigger
+    editor.addAction({
+      id: 'getagrip.triggerSuggest',
+      label: 'Trigger SQL Suggestions',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Space],
+      run: () => {
+        const pos = editor?.getPosition();
+        if (pos) triggerCompletion(pos);
       },
     });
 
