@@ -4,6 +4,7 @@
 
   export let open = false;
   export let onClose: () => void;
+  export let onSettings: () => void = () => {};
 
   let query = '';
   let selectedIndex = 0;
@@ -37,6 +38,7 @@
     }
 
     cmds.push(
+      { id: 'settings', label: 'Open Settings', shortcut: 'Ctrl+,', action: () => { onSettings(); onClose(); } },
       { id: 'run', label: 'Run Query', shortcut: 'Ctrl+Enter', action: () => onClose() },
       { id: 'toggle-sidebar', label: $sidebarVisible ? 'Hide Sidebar' : 'Show Sidebar', shortcut: 'Ctrl+B', action: () => { sidebarVisible.update((v) => !v); onClose(); } },
       { id: 'clear-results', label: 'Clear Results', action: () => { resultSets.set([]); activeResultSetId.set(null); resultsPanelHeight.set(0); onClose(); } },

@@ -71,6 +71,23 @@
       node.children_loaded = true;
       node.expanded = true;
       node.loading = false;
+
+      // Populate schema cache for autocomplete
+      if (kind === 'TablesFolder' && parentDb) {
+        const tables = children.filter((c) => c.kind === 'Table').map((t) => t.name);
+        schemaCache.update((c) => ({
+          ...c,
+          tablesByDb: { ...c.tablesByDb, [parentDb]: tables },
+        }));
+      } else if (kind === 'Table' && parentDb) {
+        const tableName = node.id.split('/').pop() ?? node.name;
+        const columns = children.filter((c) => c.kind === 'Column').map((col) => col.name);
+        const key = `${parentDb}.${tableName}`;
+        schemaCache.update((c) => ({
+          ...c,
+          columnsByTable: { ...c.columnsByTable, [key]: columns },
+        }));
+      }
     } catch (e) {
       node.has_error = true;
       node.loading = false;

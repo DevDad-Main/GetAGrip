@@ -9,6 +9,7 @@
   import CommandPalette from './components/CommandPalette.svelte';
   import HistoryPanel from './components/HistoryPanel.svelte';
   import ResizeHandle from './components/ResizeHandle.svelte';
+  import SettingsModal from './components/SettingsModal.svelte';
   import Toast from './components/Toast.svelte';
 
   import {
@@ -19,6 +20,7 @@
   import type { ConnectionProfile } from '$lib/tauri';
 
   let historyVisible = false;
+  let settingsVisible = false;
   let sidebarW = 260;
 
   // Auto-hide results panel when all result tabs are closed
@@ -90,6 +92,10 @@
         resultsPanelHeight.set(280);
       }
     }
+    if (ctrl && e.key === ',') {
+      e.preventDefault();
+      settingsVisible = !settingsVisible;
+    }
     if (e.key === 'Escape') {
       commandPaletteOpen.update((v) => false);
     }
@@ -106,7 +112,7 @@
 <svelte:window on:keydown={handleKeydown} />
 
 <div class="app-shell">
-  <TitleBar title="GetAGrip" />
+  <TitleBar title="GetAGrip" onShowSettings={() => settingsVisible = true} historyVisible={historyVisible} onToggleHistory={() => historyVisible = !historyVisible} />
   <main class="content">
     {#if $sidebarVisible}
       <div class="sidebar-col" style="width: {sidebarW}px">
@@ -146,7 +152,8 @@
   onClose={handleCloseModal}
   editProfile={editProfile}
 />
-<CommandPalette open={$commandPaletteOpen} onClose={() => commandPaletteOpen.set(false)} />
+<SettingsModal open={settingsVisible} onClose={() => settingsVisible = false} />
+<CommandPalette open={$commandPaletteOpen} onClose={() => commandPaletteOpen.set(false)} onSettings={() => settingsVisible = true} />
 <Toast />
 
 <style>
