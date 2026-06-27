@@ -2,8 +2,9 @@
   import { tabs, activeTab, statusText } from '$lib/stores';
   import EditorTabs from './EditorTabs.svelte';
   import MonacoEditor from './MonacoEditor.svelte';
+  import { Play } from 'lucide-svelte';
 
-  let runFn: (() => void) | null = $state(null);
+  let runFn: (() => void) | null = null;
 
   function handleSqlChange(sql: string) {
     const tab = $activeTab;
@@ -20,8 +21,8 @@
 <section class="editor-pane">
   <EditorTabs />
   <div class="toolbar">
-    <button class="toolbar-run" onclick={handleRun} title="Run (Ctrl+Enter)">
-      <span class="run-glyph">▶</span> Run
+    <button class="toolbar-run" on:click={handleRun} title="Run (Ctrl+Enter)">
+      <Play size="11" /> Run
     </button>
     <span class="toolbar-spacer"></span>
     {#if $activeTab}
@@ -64,9 +65,6 @@
   .toolbar-run:hover {
     background: #4e873f;
     border-color: #4e873f;
-  }
-  .run-glyph {
-    font-size: 10px;
   }
   .toolbar-spacer {
     flex: 1;

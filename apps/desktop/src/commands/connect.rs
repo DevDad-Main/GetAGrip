@@ -114,7 +114,7 @@ pub async fn connect(url: String, name: String) -> Result<ConnectResult, String>
             db.clone()
         };
         let mut node = ExplorerNode::new(
-            format!("db:{url}:{db}"),
+            format!("db|{url}|{db}"),
             label,
             ExplorerNodeKind::Database,
         );

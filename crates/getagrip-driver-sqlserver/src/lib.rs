@@ -62,6 +62,10 @@ fn parse_url(url: &str, trust_cert: bool) -> AtlasResult<Config> {
     let (host, port_str) = host_port.split_once(':').unwrap_or((host_port, "1433"));
     let port: u16 = port_str.parse().unwrap_or(1433);
 
+    let database = database.trim();
+    let host = host.trim();
+    let username = username.trim();
+
     config.host(host);
     config.port(port);
     if !database.is_empty() { config.database(database); }

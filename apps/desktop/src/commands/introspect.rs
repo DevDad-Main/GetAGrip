@@ -55,7 +55,7 @@ pub async fn introspect(
             let mut nodes: Vec<ExplorerNode> = Vec::new();
             if tc > 0 {
                 let mut folder = ExplorerNode::new(
-                    format!("tables:{url}:{db_name}"),
+                    format!("tables|{url}|{db_name}"),
                     format!("Tables ({tc})"),
                     ExplorerNodeKind::Folder,
                 );
@@ -64,7 +64,7 @@ pub async fn introspect(
             }
             if vc > 0 {
                 let mut folder = ExplorerNode::new(
-                    format!("views:{url}:{db_name}"),
+                    format!("views|{url}|{db_name}"),
                     format!("Views ({vc})"),
                     ExplorerNodeKind::Folder,
                 );
@@ -87,7 +87,7 @@ pub async fn introspect(
                     row.get(0).map(|v| {
                         let name = v.to_string();
                         ExplorerNode::new(
-                            format!("table:{url}:{db_name}:{name}"),
+                            format!("table|{url}|{db_name}|{name}"),
                             name,
                             ExplorerNodeKind::Table,
                         )
@@ -108,7 +108,7 @@ pub async fn introspect(
                     row.get(0).map(|v| {
                         let name = v.to_string();
                         ExplorerNode::new(
-                            format!("view:{url}:{db_name}:{name}"),
+                            format!("view|{url}|{db_name}|{name}"),
                             name,
                             ExplorerNodeKind::View,
                         )
@@ -120,7 +120,7 @@ pub async fn introspect(
             let db_name = parent_db.ok_or_else(|| "database name missing".to_string())?;
             // Decode the table name from the node_id (format: "table:{url}:{db}:{table}").
             let table_name = node_id
-                .split(':')
+                .split('|')
                 .nth(3)
                 .ok_or_else(|| format!("bad node_id: {node_id}"))?
                 .to_string();
@@ -140,7 +140,7 @@ pub async fn introspect(
                         return None;
                     }
                     Some(ExplorerNode::new(
-                        format!("col:{url}:{db_name}:{table_name}:{name}"),
+                        format!("col|{url}|{db_name}|{table_name}|{name}"),
                         format!("{name}  {dtype}"),
                         ExplorerNodeKind::Column,
                     ))

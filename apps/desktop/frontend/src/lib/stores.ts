@@ -1,5 +1,5 @@
 /**
- * Svelte 5 stores — minimal, module-level.
+ * Svelte stores — minimal, module-level.
  *
  * No global state manager. Each component subscribes to the slices it
  * needs. Shared state lives here; component-local state lives in the

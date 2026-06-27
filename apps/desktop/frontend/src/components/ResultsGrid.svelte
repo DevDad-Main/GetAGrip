@@ -71,9 +71,11 @@
     border-top: 1px solid var(--border);
     background: var(--bg);
     height: 220px;
+    min-height: 100px;
+    max-height: 60vh;
     display: flex;
     flex-direction: column;
-    min-height: 0;
+    overflow: hidden;
   }
   .results-header {
     display: flex;
@@ -99,6 +101,7 @@
     flex: 1;
     overflow: auto;
     min-height: 0;
+    position: relative;
   }
   .results-scroll {
     min-width: min-content;

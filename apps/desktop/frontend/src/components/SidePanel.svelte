@@ -1,14 +1,18 @@
 <script lang="ts">
-  import { sidebarVisible, connectionState, connectionName, explorerNodes } from '$lib/stores';
+  import { sidebarVisible, connectionState, connectionName } from '$lib/stores';
+  import { treeNodes } from '$lib/treeState';
   import ExplorerTree from './ExplorerTree.svelte';
+  import { Plus } from 'lucide-svelte';
 
-  let { onConnect }: { onConnect: () => void } = $props();
+  export let onConnect: () => void;
 </script>
 
 <aside class="sidebar" class:hidden={!$sidebarVisible}>
   <div class="sidebar-header">
     <span>EXPLORER</span>
-    <button class="sidebar-connect" onclick={onConnect} title="Connect to database">+</button>
+    <button class="sidebar-connect" on:click={onConnect} title="Connect to database">
+      <Plus size="14" />
+    </button>
   </div>
 
   {#if $connectionState === 'connected'}
@@ -16,8 +20,8 @@
       <span class="conn-name">{$connectionName}</span>
       <span class="conn-badge">●</span>
     </div>
-    {#if $explorerNodes.length > 0}
-      <ExplorerTree />
+    {#if $treeNodes.length > 0}
+      <ExplorerTree nodes={$treeNodes} depth={0} />
     {:else}
       <div class="sidebar-empty">No databases found.</div>
     {/if}

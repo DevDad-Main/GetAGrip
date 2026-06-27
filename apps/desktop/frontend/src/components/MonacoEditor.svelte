@@ -4,18 +4,12 @@
   import { executeQuery, type QueryResultDto } from '$lib/tauri';
   import { connectionUrl, resultColumns, resultRows, resultElapsedMs, resultRowsAffected, showResults, statusText, schemaCache } from '$lib/stores';
 
-  let {
-    sql = $bindable(''),
-    onSqlChange,
-    onReady,
-  }: {
-    sql: string;
-    onSqlChange?: (sql: string) => void;
-    onReady?: (runQuery: () => void) => void;
-  } = $props();
+  export let sql = '';
+  export let onSqlChange: (sql: string) => void = () => {};
+  export let onReady: (runQuery: () => void) => void = () => {};
 
-  let editor: monaco.editor.IStandaloneCodeEditor | null = $state(null);
-  let containerEl: HTMLDivElement | undefined = $state(undefined);
+  let editor: monaco.editor.IStandaloneCodeEditor | null = null;
+  let containerEl: HTMLDivElement | undefined;
 
   // Define the Darcula theme once
   monaco.editor.defineTheme('darcula', {
@@ -203,7 +197,7 @@
     editor.focus();
 
     // Notify parent that we're ready, passing the run function
-    onReady?.(handleRunQuery);
+    onReady(handleRunQuery);
   });
 
   async function handleRunQuery() {

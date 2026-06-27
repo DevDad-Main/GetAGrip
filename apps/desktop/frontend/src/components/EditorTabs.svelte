@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tabs, activeTabId, nextTabId } from '$lib/stores';
   import type { EditorTab } from '$lib/stores';
+  import { Plus, X } from 'lucide-svelte';
 
   function selectTab(id: string) {
     activeTabId.set(id);
@@ -9,11 +10,10 @@
   function closeTab(e: MouseEvent, id: string) {
     e.stopPropagation();
     const currentTabs = $tabs;
-    if (currentTabs.length <= 1) return; // keep at least one tab
+    if (currentTabs.length <= 1) return;
     const idx = currentTabs.findIndex((t) => t.id === id);
     const newTabs = currentTabs.filter((t) => t.id !== id);
     tabs.set(newTabs);
-    // If we closed the active tab, switch to the previous one (or the new last one)
     if ($activeTabId === id) {
       const newActive = newTabs[Math.min(idx, newTabs.length - 1)]?.id ?? newTabs[0]?.id;
       if (newActive) activeTabId.set(newActive);
@@ -32,15 +32,15 @@
   <div class="tab-scroll">
     {#each $tabs as tab (tab.id)}
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-      <div class="tab" class:active={tab.id === $activeTabId} onclick={() => selectTab(tab.id)}>
+      <div class="tab" class:active={tab.id === $activeTabId} on:click={() => selectTab(tab.id)}>
         <span class="tab-title">{tab.title}</span>
         <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-        <button class="tab-close" onclick={(e) => closeTab(e, tab.id)} title="Close">×</button>
+        <button class="tab-close" on:click={(e) => closeTab(e, tab.id)} title="Close"><X size="12" /></button>
       </div>
     {/each}
   </div>
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <button class="tab-add" onclick={addTab} title="New query tab">+</button>
+  <button class="tab-add" on:click={addTab} title="New query tab"><Plus size="14" /></button>
 </div>
 
 <style>
@@ -98,11 +98,17 @@
   .tab-close {
     border: none;
     background: transparent;
-    font-size: 14px;
     color: var(--text-muted);
     padding: 0 2px;
     cursor: pointer;
-    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+  }
+  .tab-close:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.08);
   }
   .tab-close:hover {
     color: var(--text);
@@ -110,11 +116,13 @@
   .tab-add {
     border: none;
     background: transparent;
-    font-size: 16px;
     color: var(--text-muted);
-    padding: 4px 12px;
+    padding: 4px 10px;
     cursor: pointer;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   .tab-add:hover {
     color: var(--text);

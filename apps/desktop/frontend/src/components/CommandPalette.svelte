@@ -2,10 +2,11 @@
   import { commandPaletteOpen, connectionState, connectionUrl } from '$lib/stores';
   import { disconnect } from '$lib/tauri';
 
-  let { open = false, onClose }: { open: boolean; onClose: () => void } = $props();
+  export let open = false;
+  export let onClose: () => void;
 
-  let query = $state('');
-  let selectedIndex = $state(0);
+  let query = '';
+  let selectedIndex = 0;
 
   interface Command {
     id: string;
@@ -13,35 +14,34 @@
     action: () => void;
   }
 
-  let commands: Command[] = $derived([
-    { id: 'connect', label: 'Connect to Database', action: () => { onClose(); /* App handles connect modal */ } },
+  const commands: Command[] = [
+    { id: 'connect', label: 'Connect to Database', action: () => { onClose(); } },
     { id: 'disconnect', label: 'Disconnect', action: () => { disconnect($connectionUrl ?? ''); onClose(); } },
     { id: 'new-tab', label: 'New Query Tab', action: () => onClose() },
     { id: 'run', label: 'Run Query', action: () => onClose() },
     { id: 'clear-results', label: 'Clear Results', action: () => onClose() },
     { id: 'toggle-sidebar', label: 'Toggle Sidebar', action: () => onClose() },
     { id: 'about', label: 'About GetAGrip', action: () => { alert('GetAGrip v0.1.0 — Tauri + Svelte + Monaco'); onClose(); } },
-  ]);
+  ];
 
-  let filtered = $derived(
-    query.trim()
-      ? commands.filter((c) => c.label.toLowerCase().includes(query.toLowerCase()))
-      : commands
-  );
+  $: filtered = query.trim()
+    ? commands.filter((c) => c.label.toLowerCase().includes(query.toLowerCase()))
+    : commands;
+
+  $: if (selectedIndex >= filtered.length) selectedIndex = Math.max(0, filtered.length - 1);
 
   function handleKeydown(e: KeyboardEvent) {
-    const items = filtered();
     if (e.key === 'Escape') {
       onClose();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+      selectedIndex = Math.min(selectedIndex + 1, filtered.length - 1);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       selectedIndex = Math.max(selectedIndex - 1, 0);
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      items[selectedIndex]?.action();
+      filtered[selectedIndex]?.action();
     }
   }
 
@@ -52,23 +52,23 @@
 
 {#if open}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="palette-backdrop" onclick={onClose}>
-    <div class="palette" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Command palette">
+  <div class="palette-backdrop" on:click={onClose}>
+    <div class="palette" on:click={(e) => e.stopPropagation()} role="dialog" aria-label="Command palette">
       <div class="palette-header">
         <span class="palette-icon">⌘</span>
         <input
           type="text"
           placeholder="Type a command..."
           bind:value={query}
-          onkeydown={handleKeydown}
-          oninput={handleInput}
+          on:keydown={handleKeydown}
+          on:input={handleInput}
           autofocus
         />
       </div>
       <div class="palette-list">
         {#each filtered as cmd, idx (cmd.id)}
           <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-          <div class="palette-item" class:selected={idx === selectedIndex} onclick={() => cmd.action()}>
+          <div class="palette-item" class:selected={idx === selectedIndex} on:click={() => cmd.action()}>
             <span>{cmd.label}</span>
           </div>
         {:else}

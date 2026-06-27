@@ -1,25 +1,24 @@
 <script lang="ts">
-  import { connectionState, connectionUrl, connectionName, connectionProduct, connectionVersion, explorerNodes } from '$lib/stores';
+  import { connectionState, connectionUrl, connectionName, connectionProduct, connectionVersion } from '$lib/stores';
+  import { treeNodes } from '$lib/treeState';
   import { testConnection, connect, type ConnectResult } from '$lib/tauri';
 
-  let { open = false, onClose }: { open: boolean; onClose: () => void } = $props();
+  export let open = false;
+  export let onClose: () => void;
 
   // Form fields
-  let host = $state('localhost');
-  let port = $state('1433');
-  let database = $state('');
-  let username = $state('');
-  let password = $state('');
-  let trustCert = $state(true);
+  let host = 'localhost';
+  let port = '1433';
+  let database = '';
+  let username = 'sa';
+  let password = '';
+  let trustCert = true;
+  let useUrl = false;
+  let url = '';
 
-  // Mode: URL (advanced) or form
-  let useUrl = $state(false);
-  let url = $state('');
-
-  // Status
-  let testing = $state(false);
-  let connecting = $state(false);
-  let error = $state<string | null>(null);
+  let testing = false;
+  let connecting = false;
+  let error: string | null = null;
 
   function buildUrl(): string {
     if (useUrl) return url;
@@ -63,8 +62,8 @@
       connectionProduct.set(result.product_name);
       connectionVersion.set(result.version);
       connectionState.set('connected');
-      // Set explorer roots — skip the synthetic "Server" root, just show databases
-      explorerNodes.set(result.nodes.filter(n => n.kind === 'Database'));
+      // Set tree nodes — skip the synthetic "Server" root, just show databases
+      treeNodes.set(result.nodes.filter((n) => n.kind === 'Database'));
       onClose();
     } catch (e: unknown) {
       error = String(e);
@@ -76,66 +75,65 @@
 </script>
 
 {#if open}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="modal-backdrop" onclick={onClose}>
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Connect to database">
+  <div class="modal-backdrop" on:click|self={onClose}>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Connect to database">
       <div class="modal-header">
-        Connect to Database
-        <button class="modal-close" onclick={onClose} title="Close">×</button>
+        <span class="modal-title">Connect to SQL Server</span>
+        <button class="modal-close" on:click={onClose} title="Close">×</button>
       </div>
-
       <div class="modal-body">
-        <div class="mode-toggle">
-          <button class:active={!useUrl} onclick={() => useUrl = false}>Form</button>
-          <button class:active={useUrl} onclick={() => useUrl = true}>URL</button>
+        <div class="field mode-toggle">
+          <button class:active={!useUrl} on:click={() => (useUrl = false)}>Form</button>
+          <button class:active={useUrl} on:click={() => (useUrl = true)}>URL</button>
         </div>
 
         {#if useUrl}
-          <label class="field">
-            <span class="label">Connection URL</span>
+          <div class="field">
             <input type="text" bind:value={url} placeholder="sqlserver://user:pass@host/db?trustServerCertificate=true" />
-          </label>
+          </div>
         {:else}
-          <div class="form-grid">
-            <label class="field">
-              <span class="label">Host</span>
+          <div class="field-row">
+            <div class="field">
+              <label>Host</label>
               <input type="text" bind:value={host} placeholder="localhost" />
-            </label>
-            <label class="field">
-              <span class="label">Port</span>
+            </div>
+            <div class="field field-sm">
+              <label>Port</label>
               <input type="text" bind:value={port} placeholder="1433" />
+            </div>
+          </div>
+          <div class="field">
+            <label>Database <span class="optional">(optional)</span></label>
+            <input type="text" bind:value={database} placeholder="master" />
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>Username</label>
+              <input type="text" bind:value={username} placeholder="sa" />
+            </div>
+            <div class="field">
+              <label>Password</label>
+              <input type="password" bind:value={password} placeholder="••••••••" />
+            </div>
+          </div>
+          <div class="field checkbox">
+            <label>
+              <input type="checkbox" bind:checked={trustCert} />
+              Trust server certificate
             </label>
           </div>
-          <label class="field">
-            <span class="label">Database</span>
-            <input type="text" bind:value={database} placeholder="master" />
-          </label>
-          <label class="field">
-            <span class="label">Username</span>
-            <input type="text" bind:value={username} placeholder="sa" />
-          </label>
-          <label class="field">
-            <span class="label">Password</span>
-            <input type="password" bind:value={password} placeholder="••••••••" />
-          </label>
-          <label class="field checkbox">
-            <input type="checkbox" bind:checked={trustCert} />
-            <span>Trust server certificate</span>
-          </label>
         {/if}
 
         {#if error}
-          <div class="error-banner">{error}</div>
+          <div class="modal-error">{error}</div>
         {/if}
       </div>
-
       <div class="modal-footer">
-        <button onclick={handleTest} disabled={testing || connecting}>
-          {testing ? 'Testing…' : 'Test Connection'}
+        <button class="btn" on:click={handleTest} disabled={testing || connecting}>
+          {#if testing}...{:else}Test{/if}
         </button>
-        <button class="primary" onclick={handleConnect} disabled={connecting || testing}>
-          {connecting ? 'Connecting…' : 'Connect'}
+        <button class="btn btn-primary" on:click={handleConnect} disabled={testing || connecting}>
+          {#if connecting}Connecting...{:else}Connect{/if}
         </button>
       </div>
     </div>
@@ -146,38 +144,41 @@
   .modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.6);
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: 100;
   }
   .modal {
     background: var(--bg-elev);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
     width: 420px;
     max-width: 90vw;
     display: flex;
     flex-direction: column;
+    box-shadow: var(--shadow-lg);
   }
   .modal-header {
     display: flex;
     align-items: center;
-    padding: 10px 16px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-title {
     font-size: 13px;
     font-weight: 600;
     color: var(--text);
-    border-bottom: 1px solid var(--border);
   }
   .modal-close {
     margin-left: auto;
     border: none;
     background: transparent;
     font-size: 18px;
-    padding: 0 4px;
     color: var(--text-muted);
+    cursor: pointer;
+    padding: 0 4px;
   }
   .modal-close:hover {
     color: var(--text);
@@ -190,65 +191,79 @@
   }
   .mode-toggle {
     display: flex;
-    gap: 0;
+    gap: 4px;
     margin-bottom: 4px;
   }
   .mode-toggle button {
-    border-radius: 0;
-    padding: 4px 16px;
+    flex: 1;
+    padding: 4px 12px;
     font-size: 11px;
     background: var(--bg-input);
-    border-color: var(--border);
-  }
-  .mode-toggle button:first-child {
-    border-radius: var(--radius-sm) 0 0 var(--radius-sm);
-  }
-  .mode-toggle button:last-child {
-    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-    border-left: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
   }
   .mode-toggle button.active {
-    background: var(--accent-emphasis);
+    background: var(--accent-soft);
     border-color: var(--accent);
-    color: #fff;
-  }
-  .form-grid {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 8px;
+    color: var(--accent);
   }
   .field {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 4px;
   }
-  .field .label {
+  .field-sm {
+    width: 90px;
+    flex-shrink: 0;
+  }
+  .field-row {
+    display: flex;
+    gap: 10px;
+  }
+  .field label {
     font-size: 10px;
     font-weight: 600;
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: var(--text-muted);
   }
-  .field.checkbox {
-    flex-direction: row;
+  .optional {
+    font-weight: 400;
+    text-transform: none;
+    color: var(--text-faint);
+  }
+  .field input[type="text"],
+  .field input[type="password"] {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    font-size: 12px;
+    border-radius: var(--radius-sm);
+    outline: none;
+  }
+  .field input:focus {
+    border-color: var(--accent);
+  }
+  .field.checkbox label {
+    display: flex;
     align-items: center;
     gap: 6px;
-    margin-top: 4px;
-  }
-  .field.checkbox .label {
-    display: none;
-  }
-  .field.checkbox span {
     font-size: 12px;
-    color: var(--text-muted);
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text);
+    cursor: pointer;
   }
-  .error-banner {
+  .modal-error {
     background: rgba(188, 60, 60, 0.15);
     border: 1px solid var(--error);
     color: var(--error);
+    padding: 8px 12px;
+    font-size: 11px;
     border-radius: var(--radius-sm);
-    padding: 6px 10px;
-    font-size: 12px;
   }
   .modal-footer {
     display: flex;
@@ -256,5 +271,29 @@
     gap: 8px;
     padding: 12px 16px;
     border-top: 1px solid var(--border);
+  }
+  .btn {
+    padding: 6px 16px;
+    font-size: 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-input);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .btn:hover:not(:disabled) {
+    background: var(--bg-input-focus);
+  }
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-emphasis);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

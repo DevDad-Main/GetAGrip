@@ -9,7 +9,7 @@
 
   import { commandPaletteOpen } from '$lib/stores';
 
-  let connectModalOpen = $state(false);
+  let connectModalOpen = false;
 
   function openConnectModal() {
     connectModalOpen = true;
@@ -21,15 +21,15 @@
   function handleKeydown(e: KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
       e.preventDefault();
-      commandPaletteOpen.set(!$commandPaletteOpen);
+      commandPaletteOpen.update((v) => !v);
     }
     if (e.key === 'Escape') {
-      commandPaletteOpen.set(false);
+      commandPaletteOpen.update((v) => false);
     }
   }
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window on:keydown={handleKeydown} />
 
 <div class="app-shell">
   <TitleBar title="GetAGrip" />
@@ -46,15 +46,16 @@
 
 <style>
   .app-shell {
-    width: 100%;
-    height: 100%;
     display: grid;
     grid-template-rows: var(--titlebar-h) 1fr auto var(--statusbar-h);
+    height: 100vh;
+    width: 100vw;
     background: var(--bg);
   }
   .content {
     display: grid;
     grid-template-columns: var(--sidebar-w) 1fr;
     overflow: hidden;
+    min-height: 0;
   }
 </style>

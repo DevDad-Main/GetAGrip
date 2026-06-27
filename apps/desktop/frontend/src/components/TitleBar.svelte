@@ -1,5 +1,5 @@
 <script lang="ts">
-  let { title = 'GetAGrip' }: { title?: string } = $props();
+  export let title = 'GetAGrip';
 </script>
 
 <header class="titlebar" data-tauri-drag-region>
