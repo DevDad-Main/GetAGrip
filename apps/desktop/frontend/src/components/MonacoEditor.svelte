@@ -15,6 +15,8 @@
 
   import { THEMES, type ThemeDef } from '$lib/themes';
 
+  const SQL_KEYWORDS = ['SELECT','FROM','WHERE','JOIN','LEFT JOIN','INNER JOIN','ON','AND','OR','NOT','IN','EXISTS','BETWEEN','LIKE','IS','NULL','AS','INSERT INTO','VALUES','UPDATE','SET','DELETE FROM','CREATE TABLE','ALTER TABLE','DROP TABLE','ORDER BY','GROUP BY','HAVING','LIMIT','OFFSET','UNION','DISTINCT','TOP','CASE','WHEN','THEN','ELSE','END','ASC','DESC','BEGIN','COMMIT','ROLLBACK'];
+
   let editor: monaco.editor.IStandaloneCodeEditor | null = null;
   let containerEl: HTMLDivElement | undefined;
 
@@ -172,8 +174,19 @@
           endColumn: word.endColumn,
         };
 
+        // Fallback keywords when no datasource or Rust call fails
+        const fallback = SQL_KEYWORDS.map((kw) => ({
+          label: kw,
+          kind: monaco.languages.CompletionItemKind.Keyword,
+          insertText: kw + ' ',
+          detail: '',
+          range,
+          sortText: '5000',
+          filterText: kw,
+        }));
+
         if (!profileId) {
-          return { suggestions: [] };
+          return { suggestions: fallback };
         }
 
         try {
@@ -196,9 +209,9 @@
             filterText: item.label,
           }));
 
-          return { suggestions };
+          return { suggestions: suggestions.length > 0 ? suggestions : fallback };
         } catch {
-          return { suggestions: [] };
+          return { suggestions: fallback };
         }
       },
     });
