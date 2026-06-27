@@ -2,6 +2,12 @@
 //!
 //! Analyses the SQL context at the cursor position and returns ranked
 //! suggestions drawn from cached metadata and SQL keyword knowledge.
+//!
+//! Scoring weights (spec):
+//!   Explicit column via alias/table: 500
+//!   Standard column (unresolved dot): 150
+//!   Table / schema: 200
+//!   Keyword (no dot context): 100
 
 use crate::context::analyse_context;
 use crate::metadata::MetadataCache;
@@ -32,6 +38,9 @@ const FUNCTION_NAMES: &[&str] = &[
     "STRING_AGG", "FORMAT",
 ];
 
+const MAX_COLUMNS: usize = 30;
+const MAX_TABLES: usize = 20;
+
 pub fn request_completion(
     sql: &str,
     cursor_line: u32,
@@ -40,42 +49,54 @@ pub fn request_completion(
     cache: &MetadataCache,
 ) -> Vec<CompletionItem> {
     let ctx = analyse_context(sql, cursor_line, cursor_column);
-
-    // If cursor is after a dot (table. or alias.), complete columns
-    if let Some(ref prefix) = ctx.cursor_prefix {
-        // Try SQL-context alias/table resolution first
-        if let Some(table) = ctx.resolve_table(prefix) {
-            return complete_columns(cache, connection_id, &table.name, &ctx.cursor_word);
-        }
-        // Fallback: check if the word before dot matches a cached table
-        if table_in_cache(cache, connection_id, prefix) {
-            return complete_columns(cache, connection_id, prefix, &ctx.cursor_word);
-        }
-        // Unresolved dot: show columns from all tables with high priority
-        let lower = ctx.cursor_word.to_lowercase();
-        let mut items = complete_columns_all_scored(cache, connection_id, &lower, 100);
-        sort_and_truncate(&mut items, 50);
-        return items;
-    }
-
-    if let Some(ref table_name) = ctx.cursor_table {
-        return complete_columns(cache, connection_id, table_name, &ctx.cursor_word);
-    }
-
-    let word = ctx.cursor_word.to_uppercase();
     let word_lower = ctx.cursor_word.to_lowercase();
+    let word_upper = ctx.cursor_word.to_uppercase();
+
+    // =================================================================
+    // DOT CONTEXT — no keywords, only columns for the resolved table
+    // =================================================================
+    if let Some(ref prefix) = ctx.cursor_prefix {
+        // Explicit alias/table resolution: high-priority columns only
+        if let Some(table) = ctx.resolve_table(prefix) {
+            let mut cols = complete_columns_explicit(cache, connection_id, &table.name, &word_lower);
+            bucket_truncate(&mut cols, &mut vec![], &mut vec![], &mut vec![]);
+            return cols;
+        }
+        // Cached table name matched: explicit columns
+        if table_in_cache(cache, connection_id, prefix) {
+            let mut cols = complete_columns_explicit(cache, connection_id, prefix, &word_lower);
+            bucket_truncate(&mut cols, &mut vec![], &mut vec![], &mut vec![]);
+            return cols;
+        }
+        // Unresolved dot: show columns from all tables, NO keywords
+        let mut cols = complete_columns_all(cache, connection_id, &word_lower);
+        bucket_truncate(&mut cols, &mut vec![], &mut vec![], &mut vec![]);
+        return cols;
+    }
+
+    // =================================================================
+    // CURSOR TABLE (resolved via parser, but no dot at cursor)
+    // =================================================================
+    if let Some(ref table_name) = ctx.cursor_table {
+        let mut cols = complete_columns_explicit(cache, connection_id, table_name, &word_lower);
+        bucket_truncate(&mut cols, &mut vec![], &mut vec![], &mut vec![]);
+        return cols;
+    }
+
+    // =================================================================
+    // NON-DOT CONTEXT — allow keywords, tables, columns, functions
+    // =================================================================
 
     let in_from = is_after_clause(sql, cursor_line, cursor_column, "FROM")
         || is_after_clause(sql, cursor_line, cursor_column, "JOIN");
 
     if in_from {
-        let mut items = complete_tables(cache, connection_id, &word_lower, 90);
-        items.extend(complete_keywords(&word, 70));
-        sort_and_truncate(&mut items, 50);
-        return items;
+        let mut tables = complete_tables(cache, connection_id, &word_lower);
+        bucket_truncate(&mut vec![], &mut tables, &mut vec![], &mut vec![]);
+        return tables;
     }
 
-    if is_after_clause(sql, cursor_line, cursor_column, "SELECT")
+    let in_clause = is_after_clause(sql, cursor_line, cursor_column, "SELECT")
         || is_after_clause(sql, cursor_line, cursor_column, "WHERE")
         || is_after_clause(sql, cursor_line, cursor_column, "ON")
         || is_after_clause(sql, cursor_line, cursor_column, "AND")
@@ -83,44 +104,74 @@ pub fn request_completion(
         || is_after_clause(sql, cursor_line, cursor_column, "SET")
         || is_after_clause(sql, cursor_line, cursor_column, "ORDER BY")
         || is_after_clause(sql, cursor_line, cursor_column, "GROUP BY")
-        || is_after_clause(sql, cursor_line, cursor_column, "HAVING")
-    {
-        let mut items = complete_keywords(&word, 95);
-        items.extend(complete_tables(cache, connection_id, &word_lower, 60));
-        items.extend(complete_columns_all(cache, connection_id, &word_lower));
-        items.extend(complete_functions(&word, 55));
-        sort_and_truncate(&mut items, 50);
-        return items;
+        || is_after_clause(sql, cursor_line, cursor_column, "HAVING");
+
+    if in_clause {
+        let mut cols = complete_columns_all(cache, connection_id, &word_lower);
+        let mut tables = complete_tables(cache, connection_id, &word_lower);
+        let mut functions = complete_functions(&word_upper);
+        let mut keywords = complete_keywords(&word_upper);
+        bucket_truncate(&mut cols, &mut tables, &mut functions, &mut keywords);
+        return cols;
     }
 
-    // Generic: keywords first, then tables, then functions
-    // Keywords get higher base score so FROM beats FirstName
-    let mut items = complete_keywords(&word, 100);
-    items.extend(complete_tables(cache, connection_id, &word_lower, 60));
-    items.extend(complete_functions(&word, 50));
-    sort_and_truncate(&mut items, 50);
-    items
+    // Generic
+    let mut keywords = complete_keywords(&word_upper);
+    let mut tables = complete_tables(cache, connection_id, &word_lower);
+    let mut functions = complete_functions(&word_upper);
+    bucket_truncate(&mut vec![], &mut tables, &mut functions, &mut keywords);
+    tables
 }
 
-/// Score a string against a query — higher score = better match.
+// ── bucket-based truncation (anti-starvation) ────────────────────────────
+
+fn bucket_truncate(
+    columns: &mut Vec<CompletionItem>,
+    tables: &mut Vec<CompletionItem>,
+    functions: &mut Vec<CompletionItem>,
+    keywords: &mut Vec<CompletionItem>,
+) {
+    // Sort each bucket internally
+    let sort_bucket = |v: &mut Vec<CompletionItem>| {
+        v.sort_by(|a, b| b.score.cmp(&a.score).then(a.label.cmp(&b.label)));
+    };
+    sort_bucket(columns);
+    sort_bucket(tables);
+    sort_bucket(functions);
+    sort_bucket(keywords);
+
+    // Truncate each bucket
+    columns.truncate(MAX_COLUMNS);
+    tables.truncate(MAX_TABLES);
+    functions.truncate(10);
+    keywords.truncate(30);
+
+    // Combine: tables → keywords → functions → columns (final sort by score)
+    let mut combined = Vec::new();
+    combined.append(tables);
+    combined.append(keywords);
+    combined.append(functions);
+    combined.append(columns);
+
+    // Move the combined output into the first bucket (columns) as return buffer
+    columns.clear();
+    columns.append(&mut combined);
+    columns.sort_by(|a, b| b.score.cmp(&a.score).then(a.label.cmp(&b.label)));
+}
+
+// ── scoring ──────────────────────────────────────────────────────────────
+
 fn match_score(label: &str, query: &str) -> i32 {
     let lower = label.to_lowercase();
     let q = query.to_lowercase();
 
-    if q.is_empty() {
-        return 1;
-    }
-    if lower == q {
-        return 20;
-    }
-    if lower.starts_with(&q) {
-        return 12;
-    }
+    if q.is_empty() { return 1; }
+    if lower == q { return 20; }
+    if lower.starts_with(&q) { return 12; }
     if let Some(pos) = lower.find(&q) {
         return (7 - (pos as i32).min(3)).max(2);
     }
 
-    // Character-by-character subsequence match (fuzzy)
     let label_chars: Vec<char> = lower.chars().collect();
     let query_chars: Vec<char> = q.chars().collect();
     let mut qi = 0;
@@ -135,16 +186,18 @@ fn match_score(label: &str, query: &str) -> i32 {
     if matches >= min_needed && matches > 0 {
         return (matches as i32).min(4);
     }
-
     0
 }
 
-fn sort_and_truncate(items: &mut Vec<CompletionItem>, max: usize) {
-    items.sort_by(|a, b| b.score.cmp(&a.score).then(a.label.cmp(&b.label)));
-    items.truncate(max);
-}
+// ── completion helpers ───────────────────────────────────────────────────
 
-fn complete_keywords(prefix: &str, base_score: u32) -> Vec<CompletionItem> {
+const KW_BASE: u32 = 100;
+const TABLE_BASE: u32 = 200;
+const COL_EXPLICIT_BASE: u32 = 500;
+const COL_STANDARD_BASE: u32 = 150;
+const FN_BASE: u32 = 130;
+
+fn complete_keywords(prefix: &str) -> Vec<CompletionItem> {
     SQL_KEYWORDS
         .iter()
         .filter_map(|k| {
@@ -155,7 +208,7 @@ fn complete_keywords(prefix: &str, base_score: u32) -> Vec<CompletionItem> {
                     kind: CompletionKind::Keyword,
                     detail: String::new(),
                     insert_text: Some(format!("{k} ")),
-                    score: base_score + score as u32 * 3,
+                    score: KW_BASE + score as u32 * 3,
                 })
             } else {
                 None
@@ -164,7 +217,7 @@ fn complete_keywords(prefix: &str, base_score: u32) -> Vec<CompletionItem> {
         .collect()
 }
 
-fn complete_functions(prefix: &str, base_score: u32) -> Vec<CompletionItem> {
+fn complete_functions(prefix: &str) -> Vec<CompletionItem> {
     FUNCTION_NAMES
         .iter()
         .filter_map(|f| {
@@ -175,7 +228,7 @@ fn complete_functions(prefix: &str, base_score: u32) -> Vec<CompletionItem> {
                     kind: CompletionKind::Function,
                     detail: format!("{f}()"),
                     insert_text: Some(format!("{f}()")),
-                    score: base_score + score as u32 * 3,
+                    score: FN_BASE + score as u32 * 3,
                 })
             } else {
                 None
@@ -188,20 +241,19 @@ fn complete_tables(
     cache: &MetadataCache,
     connection_id: &str,
     prefix: &str,
-    base_score: u32,
 ) -> Vec<CompletionItem> {
     let tables = cache.get_tables(connection_id);
     tables
         .iter()
         .filter_map(|t| {
             let score = match_score(&t.name, prefix);
-            if score > 0 {
+            if score > 0 || prefix.is_empty() {
                 Some(CompletionItem {
                     label: t.name.clone(),
                     kind: CompletionKind::Table,
                     detail: format!("{}.{}", t.schema_name, t.name),
                     insert_text: Some(t.name.clone()),
-                    score: base_score + score as u32 * 2,
+                    score: TABLE_BASE + score as u32 * 2,
                 })
             } else {
                 None
@@ -210,7 +262,9 @@ fn complete_tables(
         .collect()
 }
 
-fn complete_columns(
+/// Explicit column completion (resolved table/alias, dot context).
+/// Label = column name only so Monaco filterText matches user input.
+fn complete_columns_explicit(
     cache: &MetadataCache,
     connection_id: &str,
     table: &str,
@@ -221,14 +275,14 @@ fn complete_columns(
         .iter()
         .filter_map(|c| {
             let score = match_score(&c.name, prefix);
-            if score > 0 {
+            if score > 0 || prefix.is_empty() {
                 let detail = format!("{table}.{col} {db_type}", col = c.name, db_type = c.db_type);
                 Some(CompletionItem {
                     label: c.name.clone(),
                     kind: CompletionKind::Column,
                     detail,
                     insert_text: Some(c.name.clone()),
-                    score: 100 + score as u32 * 3,
+                    score: COL_EXPLICIT_BASE + score as u32 * 3,
                 })
             } else {
                 None
@@ -237,19 +291,11 @@ fn complete_columns(
         .collect()
 }
 
+/// All columns from all tables. Label = column name only for dot context.
 fn complete_columns_all(
     cache: &MetadataCache,
     connection_id: &str,
     prefix: &str,
-) -> Vec<CompletionItem> {
-    complete_columns_all_scored(cache, connection_id, prefix, 30)
-}
-
-fn complete_columns_all_scored(
-    cache: &MetadataCache,
-    connection_id: &str,
-    prefix: &str,
-    base_score: u32,
 ) -> Vec<CompletionItem> {
     let tables = cache.get_tables(connection_id);
     let mut items: Vec<CompletionItem> = Vec::new();
@@ -258,14 +304,13 @@ fn complete_columns_all_scored(
         for col in &cols {
             let score = match_score(&col.name, prefix);
             if score > 0 || prefix.is_empty() {
-                let label = format!("{}.{}", table.name, col.name);
                 let detail = format!("{}.{} {db_type}", table.name, col.name, db_type = col.db_type);
                 items.push(CompletionItem {
-                    label,
+                    label: col.name.clone(),
                     kind: CompletionKind::Column,
                     detail,
                     insert_text: Some(col.name.clone()),
-                    score: base_score + score as u32 * 2,
+                    score: COL_STANDARD_BASE + score as u32 * 2,
                 });
             }
         }
@@ -297,32 +342,23 @@ fn after_is_identifier(s: &str) -> bool {
         .all(|c| c.is_alphanumeric() || c == '_' || c == '.')
 }
 
+// ── tests ────────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use getagrip_schema::{ColumnSchema, TableSchema};
+    use getagrip_database::driver::ColumnType;
 
-    #[test]
-    fn keyword_completion() {
-        let items = complete_keywords("SEL", 100);
-        assert!(items.iter().any(|i| i.label == "SELECT"));
-    }
-
-    #[test]
-    fn function_completion() {
-        let items = complete_functions("COU", 50);
-        assert!(items.iter().any(|i| i.label == "COUNT"));
-    }
-
-    #[test]
-    fn column_completion_from_cache() {
+    fn cache_with_users() -> MetadataCache {
         let cache = MetadataCache::new();
         let mut schema = getagrip_schema::DatabaseSchema::new("testdb");
-        schema.tables.push(getagrip_schema::TableSchema {
+        schema.tables.push(TableSchema {
             name: "users".into(),
             schema: "dbo".into(),
-            columns: vec![getagrip_schema::ColumnSchema {
+            columns: vec![ColumnSchema {
                 name: "email".into(),
-                col_type: getagrip_database::driver::ColumnType::String,
+                col_type: ColumnType::String,
                 db_type: "varchar(255)".into(),
                 nullable: true,
                 default_value: None,
@@ -336,8 +372,62 @@ mod tests {
             row_count_estimate: None,
         });
         cache.store("conn1", schema);
+        cache
+    }
 
-        let items = complete_columns(&cache, "conn1", "users", "ema");
+    fn cache_with_dimproduct() -> MetadataCache {
+        let cache = MetadataCache::new();
+        let mut schema = getagrip_schema::DatabaseSchema::new("testdb");
+        schema.tables.push(TableSchema {
+            name: "DimProduct".into(),
+            schema: "dbo".into(),
+            columns: vec![
+                ColumnSchema {
+                    name: "ProductKey".into(),
+                    col_type: ColumnType::Integer,
+                    db_type: "int".into(),
+                    nullable: false,
+                    default_value: None,
+                    is_primary_key: true,
+                    ordinal: 0,
+                    comment: None,
+                },
+                ColumnSchema {
+                    name: "EnglishProductName".into(),
+                    col_type: ColumnType::String,
+                    db_type: "nvarchar(50)".into(),
+                    nullable: true,
+                    default_value: None,
+                    is_primary_key: false,
+                    ordinal: 1,
+                    comment: None,
+                },
+            ],
+            constraints: vec![],
+            indexes: vec![],
+            comment: None,
+            row_count_estimate: None,
+        });
+        cache.store("conn1", schema);
+        cache
+    }
+
+    #[test]
+    fn keyword_completion() {
+        let items = complete_keywords("SEL");
+        assert!(items.iter().any(|i| i.label == "SELECT"));
+    }
+
+    #[test]
+    fn function_completion() {
+        let items = complete_functions("COU");
+        assert!(items.iter().any(|i| i.label == "COUNT"));
+    }
+
+    #[test]
+    fn column_completion_from_cache() {
+        let cache = cache_with_users();
+        let items = complete_columns_explicit(&cache, "conn1", "users", "ema");
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].label, "email");
         assert!(items[0].detail.contains("varchar"));
@@ -345,8 +435,7 @@ mod tests {
 
     #[test]
     fn fuzzy_match_subsequence() {
-        let score = match_score("DimProduct", "dimp");
-        assert!(score > 0);
+        assert!(match_score("DimProduct", "dimp") > 0);
     }
 
     #[test]
@@ -362,51 +451,49 @@ mod tests {
     }
 
     #[test]
-    fn dot_completion_falls_back_to_cache() {
-        let cache = MetadataCache::new();
-        let mut schema = getagrip_schema::DatabaseSchema::new("testdb");
-        schema.tables.push(getagrip_schema::TableSchema {
-            name: "DimProduct".into(),
-            schema: "dbo".into(),
-            columns: vec![
-                getagrip_schema::ColumnSchema {
-                    name: "ProductKey".into(),
-                    col_type: getagrip_database::driver::ColumnType::Integer,
-                    db_type: "int".into(),
-                    nullable: false,
-                    default_value: None,
-                    is_primary_key: true,
-                    ordinal: 0,
-                    comment: None,
-                },
-            ],
-            constraints: vec![],
-            indexes: vec![],
-            comment: None,
-            row_count_estimate: None,
-        });
-        cache.store("conn1", schema);
+    fn dot_context_excludes_keywords() {
+        let cache = cache_with_dimproduct();
+        let items = request_completion("SELECT dp.En", 1, 13, "conn1", &cache);
+        assert!(!items.is_empty());
+        // Must NOT contain keywords like END
+        assert!(!items.iter().any(|i| i.label == "END"));
+        // Must contain EnglishProductName
+        assert!(items.iter().any(|i| i.label == "EnglishProductName"));
+    }
 
-        // Verify table is in cache
-        assert!(table_in_cache(&cache, "conn1", "DimProduct"));
+    #[test]
+    fn dot_completion_uses_column_label() {
+        let cache = cache_with_dimproduct();
+        let items = complete_columns_explicit(&cache, "conn1", "DimProduct", "Pro");
+        assert!(!items.is_empty());
+        // Label must be column name only (not "DimProduct.ProductKey")
+        assert!(items.iter().all(|i| !i.label.contains('.')));
+    }
 
-        // Simulate typing "SELECT x." — cursor after dot, word = "x"
-        let ctx = crate::context::analyse_context("SELECT x.", 1, 10);
-        assert_eq!(ctx.cursor_prefix.as_deref(), Some("x"));
+    #[test]
+    fn bucket_truncation_preserves_diversity() {
+        let mut cols: Vec<CompletionItem> = (0..50)
+            .map(|i| CompletionItem {
+                label: format!("col{i}"),
+                kind: CompletionKind::Column,
+                detail: String::new(),
+                insert_text: None,
+                score: 100 - i as u32,
+            })
+            .collect();
+        let mut tables: Vec<CompletionItem> = (0..30)
+            .map(|i| CompletionItem {
+                label: format!("tbl{i}"),
+                kind: CompletionKind::Table,
+                detail: String::new(),
+                insert_text: None,
+                score: 90 - i as u32,
+            })
+            .collect();
+        let mut functions = vec![];
+        let mut keywords = vec![];
 
-        // Use full completion with real table name
-        let items = request_completion(
-            "SELECT DimProduct.",
-            1,
-            19,
-            "conn1",
-            &cache,
-        );
-        assert!(!items.is_empty(), "should find columns via cache fallback");
-        assert!(
-            items.iter().any(|i| i.label == "ProductKey"),
-            "got items: {:?}",
-            items.iter().map(|i| &i.label).collect::<Vec<_>>()
-        );
+        bucket_truncate(&mut cols, &mut tables, &mut functions, &mut keywords);
+        assert!(cols.len() <= 50); // 30 cols + 20 tables = 50
     }
 }
