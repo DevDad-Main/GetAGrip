@@ -1,6 +1,7 @@
 <script lang="ts">
   import { saveDatasource, updateDatasource, type ConnectionProfile, type DatasourceInput } from '$lib/tauri';
   import { loadDatasources } from '$lib/stores';
+  import { handleConnect } from './DataSourceList.svelte';
   import { X } from 'lucide-svelte';
 
   export let open = false;
@@ -85,13 +86,18 @@
     };
 
     try {
+      let profile: ConnectionProfile;
       if (editProfile) {
-        await updateDatasource(editProfile.id, input);
+        profile = await updateDatasource(editProfile.id, input);
       } else {
-        await saveDatasource(input);
+        profile = await saveDatasource(input);
       }
       await loadDatasources();
       handleClose();
+      // Auto-connect for new datasources
+      if (!editProfile) {
+        handleConnect(profile);
+      }
     } catch (e) {
       error = String(e);
     } finally {

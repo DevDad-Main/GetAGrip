@@ -8,6 +8,7 @@
   import DataSourceForm from './components/DataSourceForm.svelte';
   import CommandPalette from './components/CommandPalette.svelte';
   import HistoryPanel from './components/HistoryPanel.svelte';
+  import Toast from './components/Toast.svelte';
 
   import {
     commandPaletteOpen, activeModal, modalPayload, sidebarVisible,
@@ -79,6 +80,7 @@
   editProfile={editProfile}
 />
 <CommandPalette open={$commandPaletteOpen} onClose={() => commandPaletteOpen.set(false)} />
+<Toast />
 
 <style>
   .app-shell {
