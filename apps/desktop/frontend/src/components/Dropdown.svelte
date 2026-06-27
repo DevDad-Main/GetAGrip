@@ -35,7 +35,7 @@
     <span class="dd-label" class:placeholder={!selected}>
       {selected?.name ?? placeholder}
     </span>
-    <ChevronDown size="10" class="dd-arrow" class:open />
+    <span class="dd-arrow" class:open><ChevronDown size="10" /></span>
   </div>
 
   {#if open}
@@ -93,6 +93,8 @@
     color: var(--text-muted);
   }
   .dd-arrow {
+    display: flex;
+    align-items: center;
     flex-shrink: 0;
     color: var(--text-muted);
     transition: transform 0.15s;
