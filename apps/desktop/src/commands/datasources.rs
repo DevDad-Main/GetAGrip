@@ -198,6 +198,14 @@ pub async fn connect_datasource(
 
     // Resolve credentials from vault
     let (username, password) = resolve_credential(&profile, &state.vault);
+    tracing::info!(
+        "connect_datasource: profile={}, host={}:{}, has_username={}, has_password={}",
+        profile.name,
+        profile.host,
+        profile.port,
+        username.is_some(),
+        password.is_some(),
+    );
 
     let managed = state
         .manager
@@ -271,10 +279,24 @@ fn resolve_credential(
     let username = profile.credential.username().map(|s| s.to_string());
     let password = match &profile.credential {
         getagrip_core::Credential::Password { vault_key, .. } => {
-            vault.get(vault_key).ok().flatten()
+            let pw = vault.get(vault_key).ok().flatten();
+            tracing::info!(
+                "resolve_credential: vault_key={}, has_password={}",
+                vault_key,
+                pw.is_some()
+            );
+            pw
         }
-        _ => None,
+        _ => {
+            tracing::warn!("resolve_credential: credential is not Password variant");
+            None
+        }
     };
+    tracing::info!(
+        "resolve_credential: username={:?}, password_present={}",
+        username,
+        password.is_some()
+    );
     (username, password)
 }
 
