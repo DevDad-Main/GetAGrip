@@ -1,6 +1,5 @@
-<script lang="ts">
+<script context="module" lang="ts">
   import { writable } from 'svelte/store';
-  import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-svelte';
 
   export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
@@ -20,6 +19,10 @@
       toasts.update((t) => t.filter((x) => x.id !== id));
     }, 4000);
   }
+</script>
+
+<script lang="ts">
+  import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-svelte';
 
   function remove(id: number) {
     toasts.update((t) => t.filter((x) => x.id !== id));

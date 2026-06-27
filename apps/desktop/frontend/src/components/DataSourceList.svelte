@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { datasources, activeDatasourceId, datasourceStates, datasourceTrees } from '$lib/stores';
-  import { connectDatasource, disconnectDatasource, introspectNode, type ConnectionProfile, type ManagedConnectionDto } from '$lib/tauri';
-  import { notify } from './Toast.svelte';
+  import { datasources, activeDatasourceId, datasourceStates } from '$lib/stores';
+  import { handleConnect, handleDisconnect, handleDeleteDatasource } from '$lib/connection';
+  import type { ConnectionProfile } from '$lib/tauri';
   import { Link, Link2Off, RotateCw, Pencil, Trash2 } from 'lucide-svelte';
 
   const DRIVER_LABELS: Record<string, string> = {
@@ -24,102 +24,8 @@
     return DRIVER_LABELS[driver] ?? driver.slice(0, 2).toUpperCase();
   }
 
-  export async function handleConnect(profile: ConnectionProfile) {
-    datasourceStates.update((s) => ({
-      ...s,
-      [profile.id]: {
-        profileId: profile.id,
-        name: profile.name,
-        driver: profile.driver,
-        state: 'connecting',
-        host: profile.host,
-        port: profile.port,
-        database: profile.database,
-        lastError: null,
-      },
-    }));
-
-    try {
-      const result: ManagedConnectionDto = await connectDatasource(profile.id);
-      const state = result.state === 'Connected' ? 'connected' : 'error';
-      datasourceStates.update((s) => ({
-        ...s,
-        [profile.id]: {
-          profileId: profile.id,
-          name: result.name,
-          driver: result.driver,
-          state,
-          host: result.host,
-          port: result.port,
-          database: result.database,
-          lastError: result.last_error,
-        },
-      }));
-      activeDatasourceId.set(profile.id);
-
-      // Auto-load databases into the tree
-      if (state === 'connected') {
-        notify(`Connected to ${result.name}`, 'success');
-        try {
-          const nodes = await introspectNode(profile.id, null, null, null);
-          datasourceTrees.update((t) => ({ ...t, [profile.id]: nodes }));
-        } catch {}
-      } else {
-        notify(`Connection failed: ${result.last_error ?? 'unknown error'}`, 'error');
-      }
-    } catch (e) {
-      notify(`Connection failed: ${e}`, 'error');
-      datasourceStates.update((s) => ({
-        ...s,
-        [profile.id]: {
-          profileId: profile.id,
-          name: profile.name,
-          driver: profile.driver,
-          state: 'error',
-          host: profile.host,
-          port: profile.port,
-          database: profile.database,
-          lastError: String(e),
-        },
-      }));
-    }
-  }
-
-  export async function handleDisconnect(profileId: string) {
-    try {
-      await disconnectDatasource(profileId);
-      datasourceStates.update((s) => ({ ...s, [profileId]: { ...s[profileId], state: 'disconnected' } }));
-      notify('Disconnected', 'info');
-      datasourceTrees.update((t) => {
-        const copy = { ...t };
-        delete copy[profileId];
-        return copy;
-      });
-    } catch (e) {
-      console.error('disconnect failed:', e);
-    }
-  }
-
-  export async function handleDelete(profileId: string) {
-    const { deleteDatasource } = await import('$lib/tauri');
-    const { loadDatasources } = await import('$lib/stores');
-    try {
-      await deleteDatasource(profileId);
-      activeDatasourceId.set(null);
-      datasourceTrees.update((t) => {
-        const copy = { ...t };
-        delete copy[profileId];
-        return copy;
-      });
-      await loadDatasources();
-    } catch (e) {
-      console.error('delete failed:', e);
-    }
-  }
-
-  function handleRowClick(e: MouseEvent, ds: ConnectionProfile, isConnected: boolean) {
-    // Only select the datasource, don't auto-connect
-    activeDatasourceId.set(ds.id);
+  function handleRowClick(profile: ConnectionProfile) {
+    activeDatasourceId.set(profile.id);
   }
 </script>
 
@@ -135,7 +41,7 @@
       class:active={ds.id === $activeDatasourceId}
       class:connected={isConnected}
       class:error={hasError}
-      on:click={(e) => handleRowClick(e, ds, isConnected)}
+      on:click={() => handleRowClick(ds)}
       title={`${ds.name} — ${ds.host}:${ds.port}`}
     >
       <span class="ds-dot" style="background: {isConnected ? 'var(--success)' : hasError ? 'var(--error)' : envColor(ds.environment ?? 'none')};"></span>
@@ -160,7 +66,7 @@
         <button class="ds-action ds-edit" on:click|stopPropagation={() => onEdit(ds)} title="Edit">
           <Pencil size="12" />
         </button>
-        <button class="ds-action ds-del" on:click|stopPropagation={() => handleDelete(ds.id)} title="Delete">
+        <button class="ds-action ds-del" on:click|stopPropagation={() => handleDeleteDatasource(ds.id)} title="Delete">
           <Trash2 size="12" />
         </button>
       </div>

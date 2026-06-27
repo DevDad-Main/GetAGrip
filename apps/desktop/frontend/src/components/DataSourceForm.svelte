@@ -1,7 +1,7 @@
 <script lang="ts">
   import { saveDatasource, updateDatasource, type ConnectionProfile, type DatasourceInput } from '$lib/tauri';
   import { loadDatasources } from '$lib/stores';
-  import { handleConnect } from './DataSourceList.svelte';
+  import { handleConnect } from '$lib/connection';
   import { X } from 'lucide-svelte';
 
   export let open = false;
