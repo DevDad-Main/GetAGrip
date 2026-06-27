@@ -138,7 +138,7 @@ async fn list_schemas(
 
     let sql = match profile.driver {
         getagrip_core::ConnectionDriver::Mssql => {
-            format!("SELECT SCHEMA_NAME FROM [{database}].sys.schemas WHERE SCHEMA_NAME NOT IN ('sys','INFORMATION_SCHEMA','guest','db_owner','db_accessadmin','db_securityadmin','db_ddladmin','db_backupoperator','db_datareader','db_datawriter','db_denydatareader','db_denydatawriter') ORDER BY SCHEMA_NAME")
+            format!("SELECT name FROM [{database}].sys.schemas WHERE name NOT IN ('sys','INFORMATION_SCHEMA','guest','db_owner','db_accessadmin','db_securityadmin','db_ddladmin','db_backupoperator','db_datareader','db_datawriter','db_denydatareader','db_denydatawriter') ORDER BY name")
         }
         _ => {
             "SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ('information_schema','pg_catalog') ORDER BY schema_name".to_string()
