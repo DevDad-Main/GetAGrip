@@ -87,7 +87,7 @@
       if ($resultsPanelHeight > 0) {
         resultsPanelHeight.set(0);
       } else if ($resultSets.length > 0) {
-        resultsPanelHeight.set(220);
+        resultsPanelHeight.set(280);
       }
     }
     if (e.key === 'Escape') {
@@ -128,7 +128,7 @@
         </div>
       {:else if $resultSets.length > 0}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="results-reveal" on:mousedown={(e) => { e.preventDefault(); resultsPanelHeight.set(220); }} title="Click to show results (Ctrl+J)">
+        <div class="results-reveal" on:mousedown={(e) => { e.preventDefault(); resultsPanelHeight.set(280); }} title="Click to show results (Ctrl+J)">
           <div class="reveal-grip"></div>
         </div>
       {/if}

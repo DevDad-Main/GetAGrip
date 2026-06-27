@@ -201,7 +201,7 @@
         const updated = [...rs, ...newSets];
         if (newSets.length > 0) {
           activeResultSetId.set(newSets[0].id);
-          resultsPanelHeight.set(220);
+          resultsPanelHeight.set(280);
         }
         return updated;
       });
