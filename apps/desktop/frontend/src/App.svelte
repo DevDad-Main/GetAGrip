@@ -14,11 +14,17 @@
   import {
     commandPaletteOpen, activeModal, modalPayload, sidebarVisible,
     loadDatasources, resultsPanelHeight, resultSets, activeResultSetId,
+    datasourceStates,
   } from '$lib/stores';
   import type { ConnectionProfile } from '$lib/tauri';
 
   let historyVisible = false;
   let sidebarW = 260;
+
+  // Auto-hide results panel when all result tabs are closed
+  $: if ($resultSets.length === 0 && $resultsPanelHeight > 0) {
+    resultsPanelHeight.set(0);
+  }
 
   function clearResults() {
     resultSets.set([]);
@@ -76,6 +82,14 @@
       modalPayload.set(null);
       activeModal.set('datasource');
     }
+    if (ctrl && e.key === 'j') {
+      e.preventDefault();
+      if ($resultsPanelHeight > 0) {
+        resultsPanelHeight.set(0);
+      } else if ($resultSets.length > 0) {
+        resultsPanelHeight.set(220);
+      }
+    }
     if (e.key === 'Escape') {
       commandPaletteOpen.update((v) => false);
     }
@@ -111,6 +125,11 @@
         <ResizeHandle direction="vertical" size={$resultsPanelHeight} onResize={(s) => resultsPanelHeight.set(s)} minSize={80} maxSize={800} onCollapse={() => resultsPanelHeight.set(0)} collapseThreshold={40} />
         <div class="results-col" style="height: {$resultsPanelHeight}px">
           <ResultsPanel />
+        </div>
+      {:else if $resultSets.length > 0}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="results-reveal" on:mousedown={(e) => { e.preventDefault(); resultsPanelHeight.set(220); }} title="Click to show results (Ctrl+J)">
+          <div class="reveal-grip"></div>
         </div>
       {/if}
     </div>
@@ -159,6 +178,24 @@
   .results-col {
     flex-shrink: 0;
     overflow: hidden;
+  }
+  .results-reveal {
+    flex-shrink: 0;
+    height: 5px;
+    width: 100%;
+    cursor: row-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    transition: background 0.15s;
+  }
+  .results-reveal:hover {
+    background: var(--bg-hover);
+  }
+  .results-reveal:hover .reveal-grip {
+    opacity: 0.7;
+    background: var(--accent);
   }
   .sidebar-reveal {
     flex-shrink: 0;
