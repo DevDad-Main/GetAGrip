@@ -108,7 +108,7 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
     min-width: 360px;
     max-width: 600px;
-    max-height: 360px;
+    max-height: 400px;
     display: flex;
     flex-direction: column;
     font-size: 12px;
@@ -178,7 +178,7 @@
     color: var(--text-muted);
     font-size: 11px;
     white-space: pre-wrap;
-    max-height: 100px;
+    max-height: 140px;
     overflow-y: auto;
   }
 </style>

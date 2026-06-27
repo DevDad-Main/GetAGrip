@@ -111,7 +111,7 @@
     if (!editor || !containerEl) return;
     const coords = editor.getScrolledVisiblePosition(pos);
     const containerRect = containerEl.getBoundingClientRect();
-    const widgetHeight = 340; // approximate max height
+    const widgetHeight = 420; // approximate max height
     const below = containerRect.top + coords.top + 20;
     // If would overflow viewport, flip above cursor
     const top = (below + widgetHeight > window.innerHeight)
@@ -396,7 +396,7 @@
           startLineNumber: position.lineNumber,
           startColumn: 1,
           endLineNumber: position.lineNumber,
-          endColumn: position.column - 1,
+          endColumn: position.column,
         });
 
         // Find the function name before the opening paren
