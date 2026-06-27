@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import * as monaco from 'monaco-editor';
-  import { executeQueryV2, requestCompletion, type QueryResultDto } from '$lib/tauri';
+  import { executeQueryV2, requestCompletion, type QueryResultDto, type CompletionItem } from '$lib/tauri';
   import {
     resultSets, activeResultSetId, statusText,
     nextResultSetId, resultsPanelHeight, activeTheme, type ResultSet,
   } from '$lib/stores';
+  import CustomSuggestWidget from './CustomSuggestWidget.svelte';
 
   export let sql = '';
   export let profileId: string | null = null;
@@ -19,6 +20,13 @@
 
   let editor: monaco.editor.IStandaloneCodeEditor | null = null;
   let containerEl: HTMLDivElement | undefined;
+
+  // Custom suggest widget state
+  let suggestVisible = false;
+  let suggestItems: CompletionItem[] = [];
+  let suggestActive = 0;
+  let suggestPos = { top: 0, left: 0 };
+  let lastCompletionPos: monaco.Position | null = null;
 
   function defineMonacoTheme(t: ThemeDef) {
     const d = t.isDark;
@@ -86,18 +94,115 @@
     return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
   }
 
-  // Pre-define all themes
   THEMES.forEach((t) => defineMonacoTheme(t));
 
-  // Sync external sql prop changes into the editor (e.g. tab switching)
   $: if (editor && sql !== editor.getValue()) {
     editor.setValue(sql);
   }
 
-  // Switch Monaco theme when activeTheme store changes
   $: if (editor && $activeTheme) {
     monaco.editor.setTheme($activeTheme);
   }
+
+  // ── suggest widget position helper ────────────────────────────────────
+
+  function updateSuggestPosition(pos: monaco.Position) {
+    if (!editor) return;
+    const coords = editor.getScrolledVisiblePosition(pos);
+    suggestPos = {
+      top: coords.top + 24,
+      left: coords.left,
+    };
+  }
+
+  // ── suggest widget lifecycle ──────────────────────────────────────────
+
+  function showSuggest(items: CompletionItem[], pos: monaco.Position) {
+    if (items.length === 0) {
+      hideSuggest();
+      return;
+    }
+    suggestItems = items;
+    suggestActive = 0;
+    updateSuggestPosition(pos);
+    suggestVisible = true;
+    lastCompletionPos = pos;
+  }
+
+  function hideSuggest() {
+    suggestVisible = false;
+    suggestItems = [];
+    suggestActive = 0;
+    lastCompletionWord = '';
+    lastCompletionPos = null;
+  }
+
+  function handleSuggestSelect(item: CompletionItem) {
+    if (!editor || !lastCompletionPos) return;
+    const insertText = item.insert_text ?? item.label;
+    const word = editor.getModel()?.getWordUntilPosition(lastCompletionPos);
+    if (word) {
+      const range = {
+        startLineNumber: lastCompletionPos.lineNumber,
+        endLineNumber: lastCompletionPos.lineNumber,
+        startColumn: word.startColumn,
+        endColumn: word.endColumn,
+      };
+      editor.executeEdits('completion', [{ range, text: insertText }]);
+    } else {
+      editor.executeEdits('completion', [{
+        range: {
+          startLineNumber: lastCompletionPos.lineNumber,
+          endLineNumber: lastCompletionPos.lineNumber,
+          startColumn: lastCompletionPos.column,
+          endColumn: lastCompletionPos.column,
+        },
+        text: insertText,
+      }]);
+    }
+    editor.focus();
+    hideSuggest();
+  }
+
+  // ── keyboard handler for custom suggest ───────────────────────────────
+
+  function handleSuggestKey(e: monaco.IKeyboardEvent) {
+    if (!suggestVisible) return false;
+
+    // Don't capture Ctrl+Enter (run query)
+    if (e.ctrlKey || e.metaKey) return false;
+
+    if (e.keyCode === monaco.KeyCode.Escape) {
+      hideSuggest();
+      e.preventDefault();
+      e.stopPropagation();
+      return true;
+    }
+    if (e.keyCode === monaco.KeyCode.DownArrow) {
+      suggestActive = Math.min(suggestActive + 1, suggestItems.length - 1);
+      e.preventDefault();
+      e.stopPropagation();
+      return true;
+    }
+    if (e.keyCode === monaco.KeyCode.UpArrow) {
+      suggestActive = Math.max(0, suggestActive - 1);
+      e.preventDefault();
+      e.stopPropagation();
+      return true;
+    }
+    if (e.keyCode === monaco.KeyCode.Enter || e.keyCode === monaco.KeyCode.Tab) {
+      if (suggestActive >= 0 && suggestActive < suggestItems.length) {
+        handleSuggestSelect(suggestItems[suggestActive]);
+      }
+      hideSuggest();
+      e.preventDefault();
+      e.stopPropagation();
+      return true;
+    }
+    return false;
+  }
+
+  // ── main mount ────────────────────────────────────────────────────────
 
   onMount(() => {
     if (!containerEl) return;
@@ -131,9 +236,9 @@
       overviewRulerLanes: 0,
       lineDecorationsWidth: 0,
       lineHeight: 20,
-      quickSuggestions: true,
-      suggestOnTriggerCharacters: true,
-      tabCompletion: 'on',
+      quickSuggestions: false,
+      suggestOnTriggerCharacters: false,
+      tabCompletion: 'off',
       automaticLayout: true,
     });
 
@@ -144,49 +249,30 @@
     });
 
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+      hideSuggest();
       handleRunQuery();
     });
 
-    editor.addCommand(monaco.KeyCode.Escape, () => {
-      editor?.trigger('keyboard', 'escape', null);
+    // Keyboard interceptor for custom suggest widget
+    editor.onKeyDown((e) => {
+      if (handleSuggestKey(e)) return;
     });
 
-    const kindMap: Record<string, monaco.languages.CompletionItemKind> = {
-      table: monaco.languages.CompletionItemKind.Class,
-      view: monaco.languages.CompletionItemKind.Class,
-      column: monaco.languages.CompletionItemKind.Field,
-      function: monaco.languages.CompletionItemKind.Function,
-      keyword: monaco.languages.CompletionItemKind.Keyword,
-      schema: monaco.languages.CompletionItemKind.Module,
-      alias: monaco.languages.CompletionItemKind.Variable,
-    };
-
+    // Completion provider — calls Rust, but returns empty so Monaco doesn't render its widget
     const TRIGGERS = [...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ', '.', ' ', '_'];
 
     monaco.languages.registerCompletionItemProvider('sql', {
       triggerCharacters: TRIGGERS,
       async provideCompletionItems(model, position) {
-        const word = model.getWordUntilPosition(position);
-        const range = {
-          startLineNumber: position.lineNumber,
-          endLineNumber: position.lineNumber,
-          startColumn: word.startColumn,
-          endColumn: word.endColumn,
-        };
-
-        // Fallback keywords when no datasource or Rust call fails
-        const fallback = SQL_KEYWORDS.map((kw) => ({
-          label: kw,
-          kind: monaco.languages.CompletionItemKind.Keyword,
-          insertText: kw + ' ',
-          detail: '',
-          range,
-          sortText: '5000',
-          filterText: kw,
-        }));
-
         if (!profileId) {
-          return { suggestions: fallback };
+          const fallback: CompletionItem[] = SQL_KEYWORDS.map((kw) => ({
+            label: kw,
+            kind: 'keyword',
+            detail: '',
+            score: 50,
+          }));
+          showSuggest(fallback, position);
+          return { suggestions: [] };
         }
 
         try {
@@ -198,27 +284,30 @@
             cursor_column: position.column,
           });
 
-          const suggestions: monaco.languages.CompletionItem[] = resp.suggestions.map((item) => ({
-            label: item.label,
-            kind: kindMap[item.kind] ?? monaco.languages.CompletionItemKind.Text,
-            insertText: item.insert_text ?? item.label,
-            detail: item.detail,
-            documentation: item.documentation,
-            range,
-            sortText: String(1000 - item.score).padStart(4, '0'),
-            filterText: item.label,
-          }));
-
-          return { suggestions: suggestions.length > 0 ? suggestions : fallback };
+          showSuggest(resp.suggestions, position);
         } catch {
-          return { suggestions: fallback };
+          // failed silently
+          hideSuggest();
         }
+
+        return { suggestions: [] };
       },
+    });
+
+    // Dismiss on click elsewhere in editor
+    editor.onDidChangeCursorPosition((e) => {
+      if (suggestVisible && lastCompletionPos) {
+        const cur = e.position;
+        const lp = lastCompletionPos;
+        // If cursor moved far from completion point, dismiss
+        if (cur.lineNumber !== lp.lineNumber || Math.abs(cur.column - lp.column) > 50) {
+          hideSuggest();
+        }
+      }
     });
 
     editor.layout();
     editor.focus();
-    // Sometimes the webview hasn't finished layout yet — retry
     setTimeout(() => { editor?.layout(); editor?.focus(); }, 100);
     onReady(handleRunQuery);
   });
@@ -273,6 +362,16 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="monaco-container" bind:this={containerEl} on:click={() => editor?.focus()}></div>
+
+<CustomSuggestWidget
+  items={suggestItems}
+  visible={suggestVisible}
+  position={suggestPos}
+  activeIndex={suggestActive}
+  on:select={(e) => handleSuggestSelect(e.detail)}
+  on:close={hideSuggest}
+  on:change={(e) => suggestActive = e.detail}
+/>
 
 <style>
   .monaco-container {
