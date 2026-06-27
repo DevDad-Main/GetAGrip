@@ -159,8 +159,10 @@
       alias: monaco.languages.CompletionItemKind.Variable,
     };
 
+    const TRIGGERS = [...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ', '.', ' ', '_'];
+
     monaco.languages.registerCompletionItemProvider('sql', {
-      triggerCharacters: ['.', ' '],
+      triggerCharacters: TRIGGERS,
       async provideCompletionItems(model, position) {
         const word = model.getWordUntilPosition(position);
         const range = {
@@ -190,6 +192,7 @@
             detail: item.detail,
             range,
             sortText: String(1000 - item.score).padStart(4, '0'),
+            filterText: item.label,
           }));
 
           return { suggestions };
