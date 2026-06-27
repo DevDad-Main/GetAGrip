@@ -25,7 +25,7 @@ use commands::datasources::{
     save_datasource, test_datasource, update_datasource,
 };
 use commands::explorer::introspect_node;
-use commands::export::export_result;
+use commands::export::{export_result, save_export};
 use commands::history::{clear_history, list_history};
 use commands::introspect::introspect;
 use commands::query::execute_query;
@@ -48,6 +48,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let app_data = app
                 .path()
@@ -104,6 +105,7 @@ fn main() {
             disconnect_datasource,
             test_datasource,
             export_result,
+            save_export,
             list_history,
             clear_history,
         ])

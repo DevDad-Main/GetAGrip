@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { ResultSet } from '$lib/stores';
   import { resultSets } from '$lib/stores';
-  import { exportResult, type ExportInput, type ExportColumn } from '$lib/tauri';
+  import { exportResult, saveExport, type ExportInput, type ExportColumn } from '$lib/tauri';
+  import { save } from '@tauri-apps/plugin-dialog';
   import { notify } from './Toast.svelte';
   import { Copy, Download, ChevronDown, ArrowUp, ArrowDown } from 'lucide-svelte';
 
@@ -84,13 +85,14 @@
 
       if (download) {
         const ext = format === 'tsv' ? 'tsv' : format === 'markdown' ? 'md' : format;
-        const mime = format === 'json' ? 'application/json' : 'text/plain';
-        const blob = new Blob([output], { type: mime });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = `query_result.${ext}`; a.click();
-        URL.revokeObjectURL(url);
-        notify(`Downloaded query_result.${ext}`, 'success');
+        const filePath = await save({
+          defaultPath: `query_result.${ext}`,
+          filters: [{ name: format.toUpperCase(), extensions: [ext] }],
+        });
+        if (filePath) {
+          await saveExport(input, filePath);
+          notify(`Saved to ${filePath}`, 'success');
+        }
       } else {
         navigator.clipboard.writeText(output)
           .then(() => notify(`Copied ${format.toUpperCase()} to clipboard`, 'success'))

@@ -25,6 +25,7 @@ getagrip-telemetry = { path = "../../crates/getagrip-telemetry" }
 # Tauri
 tauri = { workspace = true }
 tauri-plugin-shell = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true }

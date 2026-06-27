@@ -238,6 +238,10 @@ export async function exportResult(input: ExportInput): Promise<string> {
   return invoke<string>('export_result', { input });
 }
 
+export async function saveExport(input: ExportInput, path: string): Promise<void> {
+  return invoke<void>('save_export', { input, path });
+}
+
 // ---- Legacy query (Phase 1 compat) -----------------------------------------
 
 export async function executeQuery(sql: string, url: string): Promise<QueryResultDto> {

@@ -102,6 +102,20 @@ fn json_to_value(v: &serde_json::Value) -> Value {
 }
 
 #[tauri::command]
+pub async fn save_export(input: ExportInput, path: String) -> Result<(), String> {
+    let include_header = input.include_header.unwrap_or(true);
+    let resolved = build_resolved_rows(&input.columns, &input.rows);
+    let output = match input.format.to_lowercase().as_str() {
+        "csv" => export_csv(&resolved, include_header),
+        "tsv" => export_tsv(&resolved, include_header),
+        "json" => export_json(&resolved),
+        "markdown" | "md" => export_markdown(&resolved),
+        _ => return Err(format!("unsupported export format: {}", input.format)),
+    };
+    std::fs::write(&path, output).map_err(|e| format!("write: {e}"))
+}
+
+#[tauri::command]
 pub async fn export_result(input: ExportInput) -> Result<String, String> {
     let include_header = input.include_header.unwrap_or(true);
     let resolved = build_resolved_rows(&input.columns, &input.rows);
