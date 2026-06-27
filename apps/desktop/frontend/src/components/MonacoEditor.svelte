@@ -164,15 +164,16 @@
 
   function runDiagnostics() {
     if (!editor) return;
-    const model = editor.getModel();
-    if (!model) return;
 
     clearTimeout(diagTimer ?? undefined);
     diagTimer = setTimeout(async () => {
       try {
+        const model = editor?.getModel();
+        if (!model) return;
         const sql = model.getValue();
         if (!sql.trim()) {
           monaco.editor.setModelMarkers(model, 'sql-diagnostics', []);
+          diagStore.set([]);
           return;
         }
         const resp = profileId
@@ -192,7 +193,7 @@
         }));
         monaco.editor.setModelMarkers(model, 'sql-diagnostics', markers);
       } catch { /* silent */ }
-    }, 600);
+    }, 500);
   }
 
   // Re-run diagnostics when datasource connects (cache populated)
