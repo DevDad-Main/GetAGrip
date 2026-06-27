@@ -35,7 +35,10 @@ const FUNCTION_NAMES: &[&str] = &[
     "GETDATE", "GETUTCDATE", "CURRENT_TIMESTAMP", "DATEADD",
     "DATEDIFF", "DATEPART", "YEAR", "MONTH", "DAY",
     "ABS", "ROUND", "CEILING", "FLOOR", "POWER", "SQRT",
-    "STRING_AGG", "FORMAT",
+    "STRING_AGG", "FORMAT", "CONCAT", "CONCAT_WS", "IIF",
+    "ISNULL", "ISNUMERIC", "TRY_CAST", "TRY_CONVERT",
+    "ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE",
+    "LEAD", "LAG", "FIRST_VALUE", "LAST_VALUE",
 ];
 
 const MAX_COLUMNS: usize = 30;
@@ -159,16 +162,25 @@ fn bucket_truncate(
     functions.truncate(10);
     keywords.truncate(30);
 
-    // Combine: tables → keywords → functions → columns (final sort by score)
+    // Combine: tables → keywords → functions → columns
     let mut combined = Vec::new();
     combined.append(tables);
     combined.append(keywords);
     combined.append(functions);
     combined.append(columns);
 
-    // Move the combined output into the first bucket (columns) as return buffer
+    // Deduplicate by label (keep highest score)
+    let mut seen = std::collections::HashSet::new();
+    let mut deduped = Vec::new();
+    for item in combined {
+        if seen.insert(item.label.clone()) {
+            deduped.push(item);
+        }
+    }
+
+    // Write result back through columns
     columns.clear();
-    columns.append(&mut combined);
+    columns.append(&mut deduped);
     columns.sort_by(|a, b| b.score.cmp(&a.score).then(a.label.cmp(&b.label)));
 }
 
@@ -221,6 +233,9 @@ fn complete_keywords(prefix: &str) -> Vec<CompletionItem> {
                     kind: CompletionKind::Keyword,
                     detail: String::new(),
                     documentation: Some("keyword".into()),
+                    source_table: None,
+                    source_schema: None,
+                    data_type: None,
                     insert_text: Some(format!("{k} ")),
                     score: KW_BASE + score as u32 * 3,
                 })
@@ -239,7 +254,7 @@ fn complete_functions(prefix: &str) -> Vec<CompletionItem> {
             if score > 0 || prefix.is_empty() {
                 let doc = if matches!(f, &"COUNT" | &"SUM" | &"AVG" | &"MIN" | &"MAX") {
                     "aggregate function"
-                } else if matches!(f, &"UPPER" | &"LOWER" | &"TRIM" | &"LEN" | &"SUBSTRING" | &"REPLACE") {
+                } else if matches!(f, &"UPPER" | &"LOWER" | &"TRIM" | &"LEN" | &"SUBSTRING" | &"REPLACE" | &"CONCAT" | &"CONCAT_WS") {
                     "string function"
                 } else if matches!(f, &"GETDATE" | &"GETUTCDATE" | &"DATEADD" | &"DATEDIFF" | &"DATEPART") {
                     "date function"
@@ -251,6 +266,9 @@ fn complete_functions(prefix: &str) -> Vec<CompletionItem> {
                     kind: CompletionKind::Function,
                     detail: format!("{f}()"),
                     documentation: Some(doc.into()),
+                    source_table: None,
+                    source_schema: None,
+                    data_type: None,
                     insert_text: Some(format!("{f}()")),
                     score: FN_BASE + score as u32 * 3,
                 })
@@ -278,6 +296,9 @@ fn complete_tables(
                     kind: CompletionKind::Table,
                     detail: format!("{}.{}", t.schema_name, t.name),
                     documentation: Some(doc),
+                    source_table: Some(t.name.clone()),
+                    source_schema: Some(t.schema_name.clone()),
+                    data_type: None,
                     insert_text: Some(t.name.clone()),
                     score: TABLE_BASE + score as u32 * 2,
                 })
@@ -289,7 +310,6 @@ fn complete_tables(
 }
 
 /// Explicit column completion (resolved table/alias, dot context).
-/// Label = column name only so Monaco filterText matches user input.
 fn complete_columns_explicit(
     cache: &MetadataCache,
     connection_id: &str,
@@ -305,12 +325,15 @@ fn complete_columns_explicit(
                 let nullable = if c.nullable { "" } else { " NOT NULL" };
                 let pk = if c.is_primary_key { " PK" } else { "" };
                 let doc = format!("{table}.{col}\n{db_type}{nullable}{pk}", col = c.name, db_type = c.db_type);
-                let detail = format!("{table}.{col}  {db_type}{nullable}{pk}", col = c.name, db_type = c.db_type);
+                let detail = format!("{db_type}{nullable}{pk}", db_type = c.db_type);
                 Some(CompletionItem {
                     label: c.name.clone(),
                     kind: CompletionKind::Column,
                     detail,
                     documentation: Some(doc),
+                    source_table: Some(table.to_string()),
+                    source_schema: None,
+                    data_type: Some(c.db_type.clone()),
                     insert_text: Some(c.name.clone()),
                     score: COL_EXPLICIT_BASE + score as u32 * 3,
                 })
@@ -342,6 +365,9 @@ fn complete_columns_all(
                     kind: CompletionKind::Column,
                     detail,
                     documentation: Some(doc),
+                    source_table: Some(table.name.clone()),
+                    source_schema: Some(table.schema_name.clone()),
+                    data_type: Some(col.db_type.clone()),
                     insert_text: Some(col.name.clone()),
                     score: COL_STANDARD_BASE + score as u32 * 2,
                 });
@@ -518,6 +544,9 @@ mod tests {
                 kind: CompletionKind::Column,
                 detail: String::new(),
                 documentation: None,
+                source_table: None,
+                source_schema: None,
+                data_type: None,
                 insert_text: None,
                 score: 100 - i as u32,
             })
@@ -528,6 +557,9 @@ mod tests {
                 kind: CompletionKind::Table,
                 detail: String::new(),
                 documentation: None,
+                source_table: None,
+                source_schema: None,
+                data_type: None,
                 insert_text: None,
                 score: 90 - i as u32,
             })

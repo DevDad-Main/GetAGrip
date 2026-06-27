@@ -16,6 +16,9 @@ pub struct CompletionItem {
     pub kind: CompletionKind,
     pub detail: String,
     pub documentation: Option<String>,
+    pub source_table: Option<String>,
+    pub source_schema: Option<String>,
+    pub data_type: Option<String>,
     pub insert_text: Option<String>,
     pub score: u32,
 }
