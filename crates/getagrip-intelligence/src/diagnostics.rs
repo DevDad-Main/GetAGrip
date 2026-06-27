@@ -67,7 +67,6 @@ fn split_sql_statements(sql: &str) -> Vec<(String, u32)> {
     let mut current_line = 0u32;
 
     for ch in sql.chars() {
-        current.push(ch);
         if ch == '\n' {
             current_line += 1;
         }
@@ -77,7 +76,10 @@ fn split_sql_statements(sql: &str) -> Vec<(String, u32)> {
                 result.push((trimmed, line_offset));
             }
             current.clear();
+            // offset points to the line of the NEXT statement
             line_offset = current_line;
+        } else {
+            current.push(ch);
         }
     }
 
