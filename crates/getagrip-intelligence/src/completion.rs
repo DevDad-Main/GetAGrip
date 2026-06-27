@@ -359,9 +359,9 @@ fn complete_columns_all(
             if score > 0 || prefix.is_empty() {
                 let nullable = if col.nullable { "" } else { " NOT NULL" };
                 let doc = format!("{tbl}.{col}\n{db_type}{nullable}", tbl = table.name, col = col.name, db_type = col.db_type);
-                let detail = format!("{tbl}.{col}  {db_type}", tbl = table.name, col = col.name, db_type = col.db_type);
+                let detail = format!("{db_type}{nullable}", db_type = col.db_type);
                 items.push(CompletionItem {
-                    label: col.name.clone(),
+                    label: format!("{col}  [{tbl}]", col = col.name, tbl = table.name),
                     kind: CompletionKind::Column,
                     detail,
                     documentation: Some(doc),
@@ -515,10 +515,10 @@ mod tests {
         let cache = cache_with_dimproduct();
         let items = request_completion("SELECT dp.En", 1, 13, "conn1", &cache);
         assert!(!items.is_empty());
-        // EnglishProductName must be present and at the top
-        assert!(items.iter().any(|i| i.label == "EnglishProductName"));
-        // EnglishProductName must outrank END (columns have base 150+score, keywords penalized /4)
-        let col_idx = items.iter().position(|i| i.label == "EnglishProductName").unwrap();
+        // EnglishProductName must be present (now with table prefix in label)
+        assert!(items.iter().any(|i| i.label.contains("EnglishProductName")));
+        // EnglishProductName must outrank END
+        let col_idx = items.iter().position(|i| i.label.contains("EnglishProductName")).unwrap();
         if let Some(kw_idx) = items.iter().position(|i| i.label == "END") {
             assert!(
                 col_idx < kw_idx,

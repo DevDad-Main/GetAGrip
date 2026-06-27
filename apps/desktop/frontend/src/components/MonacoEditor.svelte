@@ -133,11 +133,6 @@
       lineHeight: 20,
       quickSuggestions: true,
       suggestOnTriggerCharacters: true,
-      suggest: {
-        showDetails: true,
-        showInlineDetails: true,
-        preview: true,
-      },
       tabCompletion: 'on',
       automaticLayout: true,
     });
