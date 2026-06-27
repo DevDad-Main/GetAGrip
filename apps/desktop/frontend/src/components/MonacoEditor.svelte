@@ -314,6 +314,114 @@
       if (handleSuggestKey(e)) return;
     });
 
+    // ── Hover provider ─────────────────────────────────────────────────
+
+    const fnDocs: Record<string, string> = {
+      COUNT: '**COUNT(expr)**\n\nReturns the number of rows or non-null values.\n\nAggregate function.',
+      SUM: '**SUM(expr)**\n\nReturns the sum of all values.\n\nAggregate function.',
+      AVG: '**AVG(expr)**\n\nReturns the average of all values.\n\nAggregate function.',
+      MIN: '**MIN(expr)**\n\nReturns the minimum value.\n\nAggregate function.',
+      MAX: '**MAX(expr)**\n\nReturns the maximum value.\n\nAggregate function.',
+      COALESCE: '**COALESCE(val1, val2, ...)**\n\nReturns the first non-null argument.\n\nScalar function.',
+      NULLIF: '**NULLIF(expr1, expr2)**\n\nReturns NULL if expr1 = expr2, otherwise expr1.\n\nScalar function.',
+      CAST: '**CAST(expr AS type)**\n\nConverts an expression to a specified data type.\n\nConversion function.',
+      CONVERT: '**CONVERT(type, expr)**\n\nConverts an expression to a specified data type (MSSQL).\n\nConversion function.',
+      CONCAT: '**CONCAT(str1, str2, ...)**\n\nConcatenates two or more strings.\n\nString function.',
+      CONCAT_WS: '**CONCAT_WS(separator, str1, str2, ...)**\n\nConcatenates strings with a separator.\n\nString function.',
+      UPPER: '**UPPER(str)**\n\nConverts a string to uppercase.\n\nString function.',
+      LOWER: '**LOWER(str)**\n\nConverts a string to lowercase.\n\nString function.',
+      TRIM: '**TRIM(str)**\n\nRemoves leading and trailing spaces.\n\nString function.',
+      LEN: '**LEN(str)**\n\nReturns the length of a string.\n\nString function.',
+      SUBSTRING: '**SUBSTRING(str, start, length)**\n\nReturns part of a string.\n\nString function.',
+      REPLACE: '**REPLACE(str, old, new)**\n\nReplaces occurrences of a substring.\n\nString function.',
+      CHARINDEX: '**CHARINDEX(substr, str)**\n\nReturns the starting position of a substring.\n\nString function.',
+      GETDATE: '**GETDATE()**\n\nReturns the current date and time.\n\nDate function.',
+      GETUTCDATE: '**GETUTCDATE()**\n\nReturns the current UTC date and time.\n\nDate function.',
+      DATEADD: '**DATEADD(datepart, number, date)**\n\nAdds an interval to a date.\n\nDate function.',
+      DATEDIFF: '**DATEDIFF(datepart, start, end)**\n\nReturns the difference between two dates.\n\nDate function.',
+      DATEPART: '**DATEPART(datepart, date)**\n\nReturns a specific part of a date.\n\nDate function.',
+      YEAR: '**YEAR(date)**\n\nReturns the year from a date.\n\nDate function.',
+      MONTH: '**MONTH(date)**\n\nReturns the month from a date.\n\nDate function.',
+      DAY: '**DAY(date)**\n\nReturns the day from a date.\n\nDate function.',
+      STRING_AGG: '**STRING_AGG(expr, separator)**\n\nConcatenates values from multiple rows.\n\nAggregate function.',
+      FORMAT: '**FORMAT(value, format)**\n\nFormats a value with a .NET format string.\n\nString function.',
+      ROW_NUMBER: '**ROW_NUMBER() OVER (ORDER BY ...)**\n\nNumbers the output of a result set.\n\nWindow function.',
+      RANK: '**RANK() OVER (ORDER BY ...)**\n\nRanks rows with gaps for ties.\n\nWindow function.',
+      DENSE_RANK: '**DENSE_RANK() OVER (ORDER BY ...)**\n\nRanks rows without gaps for ties.\n\nWindow function.',
+      LEAD: '**LEAD(expr, offset, default) OVER (...)**\n\nAccesses a subsequent row\'s value.\n\nWindow function.',
+      LAG: '**LAG(expr, offset, default) OVER (...)**\n\nAccesses a previous row\'s value.\n\nWindow function.',
+    };
+
+    monaco.languages.registerHoverProvider('sql', {
+      provideHover(model, position) {
+        const word = model.getWordAtPosition(position);
+        if (!word) return null;
+        const upper = word.word.toUpperCase();
+        if (fnDocs[upper]) {
+          return {
+            range: {
+              startLineNumber: position.lineNumber,
+              endLineNumber: position.lineNumber,
+              startColumn: word.startColumn,
+              endColumn: word.endColumn,
+            },
+            contents: [{ value: fnDocs[upper] }],
+          };
+        }
+        return null;
+      },
+    });
+
+    // ── Signature help provider ─────────────────────────────────────────
+
+    const fnSignatures: Record<string, monaco.languages.SignatureInformation> = {
+      COUNT: { label: 'COUNT(expression)', documentation: 'Returns the number of rows', parameters: [{ label: 'expression', documentation: 'Column name, *, or 1' }] },
+      SUM: { label: 'SUM(expression)', documentation: 'Returns the sum of all values', parameters: [{ label: 'expression', documentation: 'Numeric column or expression' }] },
+      COALESCE: { label: 'COALESCE(value1, value2, ...)', documentation: 'Returns the first non-null argument', parameters: [{ label: 'value1', documentation: 'First value to check' }, { label: 'value2', documentation: 'Fallback value' }] },
+      CONCAT: { label: 'CONCAT(string1, string2, ...)', documentation: 'Concatenates strings', parameters: [{ label: 'string1', documentation: 'First string' }, { label: 'string2', documentation: 'Second string' }] },
+      SUBSTRING: { label: 'SUBSTRING(string, start, length)', documentation: 'Returns part of a string', parameters: [{ label: 'string', documentation: 'The source string' }, { label: 'start', documentation: 'Start position (1-based)' }, { label: 'length', documentation: 'Number of characters to return' }] },
+      REPLACE: { label: 'REPLACE(string, old, new)', documentation: 'Replaces occurrences', parameters: [{ label: 'string', documentation: 'The source string' }, { label: 'old', documentation: 'Substring to find' }, { label: 'new', documentation: 'Replacement string' }] },
+      DATEADD: { label: 'DATEADD(datepart, number, date)', documentation: 'Adds an interval to a date', parameters: [{ label: 'datepart', documentation: 'year, month, day, hour, etc.' }, { label: 'number', documentation: 'Value to add' }, { label: 'date', documentation: 'The source date' }] },
+      DATEDIFF: { label: 'DATEDIFF(datepart, start, end)', documentation: 'Returns the difference between dates', parameters: [{ label: 'datepart', documentation: 'year, month, day, hour, etc.' }, { label: 'start', documentation: 'Start date' }, { label: 'end', documentation: 'End date' }] },
+      DATEPART: { label: 'DATEPART(datepart, date)', documentation: 'Returns a specific part of a date', parameters: [{ label: 'datepart', documentation: 'year, month, day, hour, etc.' }, { label: 'date', documentation: 'The source date' }] },
+      CAST: { label: 'CAST(expression AS type)', documentation: 'Converts an expression to a type', parameters: [{ label: 'expression', documentation: 'Value to convert' }] },
+      CONVERT: { label: 'CONVERT(type, expression)', documentation: 'Converts an expression (MSSQL)', parameters: [{ label: 'type', documentation: 'Target data type' }, { label: 'expression', documentation: 'Value to convert' }] },
+    };
+
+    monaco.languages.registerSignatureHelpProvider('sql', {
+      signatureHelpTriggerCharacters: ['(', ','],
+      signatureHelpRetriggerCharacters: [','],
+      provideSignatureHelp(model, position) {
+        const textUntilPos = model.getValueInRange({
+          startLineNumber: position.lineNumber,
+          startColumn: 1,
+          endLineNumber: position.lineNumber,
+          endColumn: position.column - 1,
+        });
+
+        // Find the function name before the opening paren
+        const match = textUntilPos.match(/(\w+)\s*\([^)]*$/);
+        if (!match) return null;
+
+        const fnName = match[1].toUpperCase();
+        const sig = fnSignatures[fnName];
+        if (!sig) return null;
+
+        // Count commas before cursor to determine active parameter
+        const afterParen = textUntilPos.slice(textUntilPos.lastIndexOf('(') + 1);
+        const activeParam = afterParen.split(',').length - 1;
+
+        return {
+          value: {
+            signatures: [sig],
+            activeSignature: 0,
+            activeParameter: Math.min(activeParam, (sig.parameters?.length ?? 1) - 1),
+          },
+          dispose: () => {},
+        };
+      },
+    });
+
     // Completion provider — calls Rust, returns empty to suppress Monaco widget
     const TRIGGERS = [...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ', '.', ' ', '_'];
 
