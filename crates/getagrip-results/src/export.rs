@@ -76,6 +76,41 @@ fn json_value(val: &getagrip_database::driver::Value) -> String {
     }
 }
 
+/// Export rows as TSV (tab-separated values).
+pub fn export_tsv(rows: &[ResultRow], include_header: bool) -> String {
+    let mut out = String::new();
+
+    if let Some(first) = rows.first() {
+        if include_header {
+            let headers: Vec<String> = first
+                .columns()
+                .iter()
+                .map(|c| tsv_escape(&c.name))
+                .collect();
+            out.push_str(&headers.join("\t"));
+            out.push('\n');
+        }
+
+        for row in rows {
+            let values: Vec<String> = (0..row.len())
+                .map(|i| row.get(i).map(|v| tsv_escape(&v.to_string())).unwrap_or_default())
+                .collect();
+            out.push_str(&values.join("\t"));
+            out.push('\n');
+        }
+    }
+
+    out
+}
+
+fn tsv_escape(s: &str) -> String {
+    if s.contains('\t') || s.contains('\n') {
+        s.replace('\t', " ").replace('\n', " ")
+    } else {
+        s.to_owned()
+    }
+}
+
 /// Export rows as a Markdown table.
 pub fn export_markdown(rows: &[ResultRow]) -> String {
     if rows.is_empty() {

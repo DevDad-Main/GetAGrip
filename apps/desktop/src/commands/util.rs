@@ -1,9 +1,11 @@
 //! Shared helpers for Tauri command handlers.
-//!
-//! The SQL Server driver is the only supported driver in Phase 1. All
-//! command handlers need the same "parse URL → connect → run" flow, so it
-//! lives here to avoid duplication.
 
+use std::fs;
+use std::path::Path;
+use std::sync::Arc;
+
+use getagrip_core::session::{ConnectionDriver, ConnectionProfile, ConnectionProfiles};
+use getagrip_database::DatabaseDriver;
 use getagrip_database::driver::{ColumnInfo, QueryResult, Value};
 use getagrip_driver_sqlserver::SqlServerDriver;
 
@@ -12,6 +14,30 @@ use crate::commands::query::{QueryColumnDto, QueryResultDto};
 /// Build a [`SqlServerDriver`] with default options (trust cert = true).
 pub fn driver() -> SqlServerDriver {
     SqlServerDriver::new()
+}
+
+/// Create the appropriate driver for a connection profile.
+pub fn driver_for(profile: &ConnectionProfile) -> Result<Arc<dyn DatabaseDriver>, String> {
+    match profile.driver {
+        ConnectionDriver::Mssql => Ok(Arc::new(SqlServerDriver::new())),
+        ConnectionDriver::Postgres => Err("PostgreSQL driver not yet implemented".into()),
+        ConnectionDriver::Mysql => Err("MySQL driver not yet implemented".into()),
+        ConnectionDriver::Sqlite => Err("SQLite driver not yet implemented".into()),
+        ConnectionDriver::Oracle => Err("Oracle driver not yet implemented".into()),
+        ConnectionDriver::MongoDB => Err("MongoDB driver not yet implemented".into()),
+        ConnectionDriver::Redis => Err("Redis driver not yet implemented".into()),
+        ConnectionDriver::Generic => Err("Generic driver not yet implemented".into()),
+    }
+}
+
+/// Persist connection profiles to the datasources.json file.
+pub fn persist_profiles(profiles: &ConnectionProfiles, path: &Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("create dir: {e}"))?;
+    }
+    let json = serde_json::to_string_pretty(profiles).map_err(|e| format!("serialize: {e}"))?;
+    fs::write(path, json).map_err(|e| format!("write: {e}"))?;
+    Ok(())
 }
 
 /// Convert a [`QueryResult`] into a JSON-friendly DTO for the frontend.
