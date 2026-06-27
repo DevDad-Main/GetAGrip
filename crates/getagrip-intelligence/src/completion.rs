@@ -53,24 +53,27 @@ pub fn request_completion(
     let word_upper = ctx.cursor_word.to_uppercase();
 
     // =================================================================
-    // DOT CONTEXT — no keywords, only columns for the resolved table
+    // DOT CONTEXT — columns at high priority, keywords penalized to bottom
     // =================================================================
     if let Some(ref prefix) = ctx.cursor_prefix {
-        // Explicit alias/table resolution: high-priority columns only
+        let mut keywords = penalize_bucket(&mut complete_keywords(&word_upper), 4);
+        let mut functions = penalize_bucket(&mut complete_functions(&word_upper), 4);
+
+        // Explicit alias/table resolution
         if let Some(table) = ctx.resolve_table(prefix) {
             let mut cols = complete_columns_explicit(cache, connection_id, &table.name, &word_lower);
-            bucket_truncate(&mut cols, &mut vec![], &mut vec![], &mut vec![]);
+            bucket_truncate(&mut cols, &mut vec![], &mut functions, &mut keywords);
             return cols;
         }
-        // Cached table name matched: explicit columns
+        // Cached table name matched
         if table_in_cache(cache, connection_id, prefix) {
             let mut cols = complete_columns_explicit(cache, connection_id, prefix, &word_lower);
-            bucket_truncate(&mut cols, &mut vec![], &mut vec![], &mut vec![]);
+            bucket_truncate(&mut cols, &mut vec![], &mut functions, &mut keywords);
             return cols;
         }
-        // Unresolved dot: show columns from all tables, NO keywords
+        // Unresolved dot: all columns + penalized keywords
         let mut cols = complete_columns_all(cache, connection_id, &word_lower);
-        bucket_truncate(&mut cols, &mut vec![], &mut vec![], &mut vec![]);
+        bucket_truncate(&mut cols, &mut vec![], &mut functions, &mut keywords);
         return cols;
     }
 
@@ -79,7 +82,8 @@ pub fn request_completion(
     // =================================================================
     if let Some(ref table_name) = ctx.cursor_table {
         let mut cols = complete_columns_explicit(cache, connection_id, table_name, &word_lower);
-        bucket_truncate(&mut cols, &mut vec![], &mut vec![], &mut vec![]);
+        let mut keywords = penalize_bucket(&mut complete_keywords(&word_upper), 4);
+        bucket_truncate(&mut cols, &mut vec![], &mut vec![], &mut keywords);
         return cols;
     }
 
@@ -121,6 +125,15 @@ pub fn request_completion(
     let mut functions = complete_functions(&word_upper);
     bucket_truncate(&mut vec![], &mut tables, &mut functions, &mut keywords);
     tables
+}
+
+// ── penalty helper ───────────────────────────────────────────────────────
+
+fn penalize_bucket(items: &mut Vec<CompletionItem>, divisor: u32) -> Vec<CompletionItem> {
+    for item in items.iter_mut() {
+        item.score /= divisor;
+    }
+    std::mem::take(items)
 }
 
 // ── bucket-based truncation (anti-starvation) ────────────────────────────
@@ -451,14 +464,20 @@ mod tests {
     }
 
     #[test]
-    fn dot_context_excludes_keywords() {
+    fn dot_context_penalizes_keywords() {
         let cache = cache_with_dimproduct();
         let items = request_completion("SELECT dp.En", 1, 13, "conn1", &cache);
         assert!(!items.is_empty());
-        // Must NOT contain keywords like END
-        assert!(!items.iter().any(|i| i.label == "END"));
-        // Must contain EnglishProductName
+        // EnglishProductName must be present and at the top
         assert!(items.iter().any(|i| i.label == "EnglishProductName"));
+        // EnglishProductName must outrank END (columns have base 150+score, keywords penalized /4)
+        let col_idx = items.iter().position(|i| i.label == "EnglishProductName").unwrap();
+        if let Some(kw_idx) = items.iter().position(|i| i.label == "END") {
+            assert!(
+                col_idx < kw_idx,
+                "EnglishProductName should rank above END, got col@{col_idx} kw@{kw_idx}"
+            );
+        }
     }
 
     #[test]
