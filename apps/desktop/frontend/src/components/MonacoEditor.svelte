@@ -111,7 +111,7 @@
     if (!editor || !containerEl) return;
     const coords = editor.getScrolledVisiblePosition(pos);
     const containerRect = containerEl.getBoundingClientRect();
-    const widgetHeight = 420; // approximate max height
+    const widgetHeight = 480; // approximate max height
     const below = containerRect.top + coords.top + 20;
     // If would overflow viewport, flip above cursor
     const top = (below + widgetHeight > window.innerHeight)

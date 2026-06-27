@@ -178,7 +178,11 @@
     color: var(--text-muted);
     font-size: 11px;
     white-space: pre-wrap;
-    max-height: 140px;
+    max-height: 200px;
     overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .cs-docs::-webkit-scrollbar {
+    display: none;
   }
 </style>
