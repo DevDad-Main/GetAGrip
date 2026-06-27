@@ -163,7 +163,7 @@
   let diagTimer: ReturnType<typeof setTimeout> | null = null;
 
   function runDiagnostics() {
-    if (!editor || !profileId) return;
+    if (!editor) return;
     const model = editor.getModel();
     if (!model) return;
 
@@ -175,7 +175,9 @@
           monaco.editor.setModelMarkers(model, 'sql-diagnostics', []);
           return;
         }
-        const resp = await requestDiagnostics({ connection_id: profileId, sql });
+        const resp = profileId
+          ? await requestDiagnostics({ connection_id: profileId, sql })
+          : { diagnostics: [] };
         const markers: monaco.editor.IMarkerData[] = resp.diagnostics.map((d) => ({
           severity: d.severity === 'error' ? monaco.MarkerSeverity.Error
             : d.severity === 'warning' ? monaco.MarkerSeverity.Warning

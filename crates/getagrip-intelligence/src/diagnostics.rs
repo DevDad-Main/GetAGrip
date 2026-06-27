@@ -26,10 +26,28 @@ pub fn request_diagnostics(
     let dialect = GenericDialect {};
     let parsed = match sqlparser::parser::Parser::parse_sql(&dialect, sql) {
         Ok(stmts) => stmts,
-        Err(_) => return vec![],
+        Err(e) => {
+            // Return syntax error as a diagnostic
+            let msg = e.to_string();
+            let (line, col) = parse_error_location(&msg);
+            return vec![DiagnosticItem {
+                severity: DiagnosticLevel::Error,
+                message: format!("Syntax error: {msg}"),
+                line,
+                column: col,
+                end_line: None,
+                end_column: None,
+                hint: None,
+            }];
+        }
     };
 
     let mut diagnostics = Vec::new();
+
+    let tables = cache.get_tables(connection_id);
+    if tables.is_empty() {
+        return diagnostics; // No metadata, skip semantic checks
+    }
 
     for stmt in &parsed {
         check_statement(stmt, connection_id, cache, &mut diagnostics);
@@ -298,6 +316,20 @@ fn table_object_name(tbl: &sqlparser::ast::TableObject) -> String {
     }
 }
 
+fn parse_error_location(msg: &str) -> (u32, u32) {
+    if let Some(pos) = msg.find(" at Line: ") {
+        let rest = &msg[pos + " at Line: ".len()..];
+        if let Some(comma) = rest.find(", Column: ") {
+            let line_str = &rest[..comma];
+            let col_str = &rest[comma + ", Column: ".len()..];
+            if let (Ok(line), Ok(col)) = (line_str.parse::<u32>(), col_str.parse::<u32>()) {
+                return (line, col);
+            }
+        }
+    }
+    (1, 1)
+}
+
 fn table_factor_name(tf: &TableFactor) -> Option<String> {
     match tf {
         TableFactor::Table { name, .. } => Some(object_name_str(name)),
@@ -313,6 +345,19 @@ mod tests {
     #[test]
     fn detects_unknown_table() {
         let cache = MetadataCache::new();
+        // Populate cache so semantic checks run
+        let mut schema = getagrip_schema::DatabaseSchema::new("testdb");
+        schema.tables.push(getagrip_schema::TableSchema {
+            name: "users".into(),
+            schema: "dbo".into(),
+            columns: vec![],
+            constraints: vec![],
+            indexes: vec![],
+            comment: None,
+            row_count_estimate: None,
+        });
+        cache.store("conn1", schema);
+
         let diags = request_diagnostics(
             "SELECT * FROM nonexistent",
             "conn1",
