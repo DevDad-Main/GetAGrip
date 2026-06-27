@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use getagrip_core::id::Id;
-use getagrip_core::secrets::SecretKind;
+use getagrip_core::secrets::{SecretKind, SecretsVault};
 use getagrip_core::session::{ConnectionDriver, ConnectionProfile, ConnectionProfileId};
-use getagrip_core::EnvironmentColor;
+use getagrip_core::{CredentialStore, EnvironmentColor};
 
 use crate::commands::util::{driver_for, persist_profiles};
 use crate::state::AppState;
@@ -196,9 +196,18 @@ pub async fn connect_datasource(
 
     let driver = driver_for(&profile)?;
 
+    // Resolve credentials from vault
+    let (username, password) = resolve_credential(&profile, &state.vault);
+
     let managed = state
         .manager
-        .connect(&profile, driver, getagrip_database::PoolConfig::default())
+        .connect(
+            &profile,
+            driver,
+            getagrip_database::PoolConfig::default(),
+            username.as_deref(),
+            password.as_deref(),
+        )
         .await
         .map_err(|e| format!("{e}"))?;
 
@@ -247,20 +256,42 @@ pub async fn test_datasource(
     };
 
     let driver = driver_for(&profile)?;
-    let url = build_test_url(&profile);
+    let (username, password) = resolve_credential(&profile, &state.vault);
+    let url = build_test_url(&profile, username.as_deref(), password.as_deref());
 
     driver.test_connection(&url).await.map(|_| {
         format!("Connection to {} successful", profile.name)
     }).map_err(|e| format!("Connection failed: {e}"))
 }
 
-fn build_test_url(profile: &ConnectionProfile) -> String {
+fn resolve_credential(
+    profile: &ConnectionProfile,
+    vault: &SecretsVault,
+) -> (Option<String>, Option<String>) {
+    let username = profile.credential.username().map(|s| s.to_string());
+    let password = match &profile.credential {
+        getagrip_core::Credential::Password { vault_key, .. } => {
+            vault.get(vault_key).ok().flatten()
+        }
+        _ => None,
+    };
+    (username, password)
+}
+
+fn build_test_url(profile: &ConnectionProfile, username: Option<&str>, password: Option<&str>) -> String {
+    let user_pass = if let (Some(u), Some(p)) = (username, password) {
+        format!("{}:{}@", u, p)
+    } else if let Some(u) = username {
+        format!("{}@", u)
+    } else {
+        String::new()
+    };
     let db = profile.database.as_deref().unwrap_or("");
     match profile.driver {
-        ConnectionDriver::Postgres => format!("postgres://{}:{}/{}", profile.host, profile.port, db),
-        ConnectionDriver::Mysql => format!("mysql://{}:{}/{}", profile.host, profile.port, db),
-        ConnectionDriver::Mssql => format!("mssql://{}:{}/{}", profile.host, profile.port, db),
+        ConnectionDriver::Postgres => format!("postgres://{}{}:{}/{}", user_pass, profile.host, profile.port, db),
+        ConnectionDriver::Mysql => format!("mysql://{}{}:{}/{}", user_pass, profile.host, profile.port, db),
+        ConnectionDriver::Mssql => format!("mssql://{}{}:{}/{}", user_pass, profile.host, profile.port, db),
         ConnectionDriver::Sqlite => format!("sqlite://{}", profile.host),
-        other => format!("{}://{}:{}/{}", other.display_name().to_lowercase(), profile.host, profile.port, db),
+        other => format!("{}://{}{}:{}/{}", other.display_name().to_lowercase(), user_pass, profile.host, profile.port, db),
     }
 }

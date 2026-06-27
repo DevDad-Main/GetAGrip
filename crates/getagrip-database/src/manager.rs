@@ -69,6 +69,8 @@ impl ConnectionManager {
         profile: &ConnectionProfile,
         driver: Arc<dyn DatabaseDriver>,
         pool_config: PoolConfig,
+        username: Option<&str>,
+        password: Option<&str>,
     ) -> AtlasResult<ManagedConnection> {
         let key = profile.id.to_string();
 
@@ -98,7 +100,7 @@ impl ConnectionManager {
         );
 
         // Build connection URL.
-        let url = build_url(profile)?;
+        let url = build_url(profile, username, password)?;
 
         // Attempt connection.
         match driver.connect(&url).await {
@@ -177,38 +179,49 @@ impl Default for ConnectionManager {
 }
 
 /// Build a database URL from a connection profile.
-fn build_url(profile: &ConnectionProfile) -> AtlasResult<String> {
+fn build_url(profile: &ConnectionProfile, username: Option<&str>, password: Option<&str>) -> AtlasResult<String> {
+    let user_pass = if let (Some(u), Some(p)) = (username, password) {
+        format!("{}:{}@", u, p)
+    } else if let Some(u) = username {
+        format!("{}@", u)
+    } else {
+        String::new()
+    };
+
+    let db = profile.database.as_deref().unwrap_or("");
     match profile.driver {
         ConnectionDriver::Sqlite => {
             Ok(format!("sqlite://{}", profile.host))
         }
         ConnectionDriver::Postgres => {
             Ok(format!(
-                "postgres://{}:{}/{}",
-                profile.host, profile.port,
-                profile.database.as_deref().unwrap_or("postgres"),
+                "postgres://{}{}:{}/{}",
+                user_pass, profile.host, profile.port,
+                if db.is_empty() { "postgres" } else { db },
             ))
         }
         ConnectionDriver::Mysql => {
             Ok(format!(
-                "mysql://{}:{}/{}",
-                profile.host, profile.port,
-                profile.database.as_deref().unwrap_or("mysql"),
+                "mysql://{}{}:{}/{}",
+                user_pass, profile.host, profile.port,
+                if db.is_empty() { "mysql" } else { db },
             ))
         }
         ConnectionDriver::Mssql => {
-            Ok(format!(
-                "mssql://{}:{}/{}",
-                profile.host, profile.port,
-                profile.database.as_deref().unwrap_or("master"),
-            ))
+            let base = format!(
+                "mssql://{}{}:{}/{}?trustServerCertificate=true",
+                user_pass, profile.host, profile.port,
+                if db.is_empty() { "master" } else { db },
+            );
+            Ok(base)
         }
         _ => Ok(format!(
-            "{}://{}:{}/{}",
+            "{}://{}{}:{}/{}",
             profile.driver.display_name().to_lowercase(),
+            user_pass,
             profile.host,
             profile.port,
-            profile.database.as_deref().unwrap_or(""),
+            db,
         )),
     }
 }
@@ -229,14 +242,21 @@ mod tests {
     #[test]
     fn build_url_postgres() {
         let profile = ConnectionProfile::new("pg", ConnectionDriver::Postgres, "db.example.com");
-        let url = build_url(&profile).unwrap();
+        let url = build_url(&profile, None, None).unwrap();
         assert_eq!(url, "postgres://db.example.com:5432/postgres");
     }
 
     #[test]
     fn build_url_sqlite() {
         let profile = ConnectionProfile::new("sql", ConnectionDriver::Sqlite, ":memory:");
-        let url = build_url(&profile).unwrap();
+        let url = build_url(&profile, None, None).unwrap();
         assert_eq!(url, "sqlite://:memory:");
+    }
+
+    #[test]
+    fn build_url_with_credentials() {
+        let profile = ConnectionProfile::new("pg", ConnectionDriver::Mssql, "db.example.com");
+        let url = build_url(&profile, Some("sa"), Some("pass123")).unwrap();
+        assert_eq!(url, "mssql://sa:pass123@db.example.com:1433/master?trustServerCertificate=true");
     }
 }
