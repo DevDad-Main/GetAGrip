@@ -192,6 +192,12 @@ button.danger {
   display: none !important;
 }
 
+/* Keep Monaco's hover/peek views within viewport (fixes off-screen on line 1) */
+.monaco-editor .monaco-hover-content {
+  max-height: 300px !important;
+  overflow-y: auto !important;
+}
+
 .gap-sm { gap: 4px; }
 .gap-md { gap: 8px; }
 .gap-lg { gap: 16px; }
