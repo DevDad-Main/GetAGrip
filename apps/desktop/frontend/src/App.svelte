@@ -71,12 +71,12 @@
       <div class="sidebar-col" style="width: {sidebarW}px">
         <SidePanel />
       </div>
-      <ResizeHandle direction="horizontal" size={sidebarW} onResize={(s) => sidebarW = s} />
+      <ResizeHandle direction="horizontal" size={sidebarW} onResize={(s) => sidebarW = s} onCollapse={() => sidebarVisible.set(false)} collapseThreshold={60} />
     {/if}
     <div class="editor-column">
       <EditorPane />
       {#if resultsH > 0}
-        <ResizeHandle direction="vertical" size={resultsH} onResize={(s) => resultsH = s} minSize={80} maxSize={800} />
+        <ResizeHandle direction="vertical" size={resultsH} onResize={(s) => resultsH = s} minSize={80} maxSize={800} onCollapse={() => resultsH = 0} collapseThreshold={40} />
         <div class="results-col" style="height: {resultsH}px">
           <ResultsPanel />
         </div>
