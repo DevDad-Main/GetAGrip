@@ -14,7 +14,8 @@
 
     function onMove(ev: MouseEvent) {
       const current = direction === 'horizontal' ? ev.clientX : ev.clientY;
-      const delta = current - start;
+      let delta = current - start;
+      if (direction === 'vertical') delta = -delta;
       const newSize = startSize + delta;
 
       if (newSize < collapseThreshold && onCollapse) {

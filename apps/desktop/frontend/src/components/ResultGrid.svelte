@@ -184,9 +184,6 @@
     white-space: nowrap;
     z-index: 1;
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 4px;
   }
   .rg-table th:hover { background: var(--bg-input); }
   .sort-icon {

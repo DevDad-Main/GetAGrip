@@ -26,13 +26,11 @@
   .results-panel {
     border-top: 1px solid var(--border);
     background: var(--bg);
-    height: 220px;
-    min-height: 100px;
-    max-height: 60vh;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    height: 100%;
   }
   .rp-header {
     display: flex;
