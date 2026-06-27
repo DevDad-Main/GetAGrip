@@ -69,12 +69,8 @@
     class="cs-widget"
     style="top: {position.top}px; left: {position.left}px;"
     on:click|stopPropagation
+    on:mousedown|stopPropagation
   >
-    <div class="cs-header">
-      <span class="cs-header-label">
-        {items.length} suggestion{items.length !== 1 ? 's' : ''}
-      </span>
-    </div>
     <div class="cs-list">
       {#each items as item, i (item.label + i)}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -118,15 +114,6 @@
     font-size: 12px;
     font-family: var(--font-mono, monospace);
     user-select: none;
-  }
-
-  .cs-header {
-    padding: 4px 10px;
-    border-bottom: 1px solid var(--border);
-    color: var(--text-muted);
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
   }
 
   .cs-list {

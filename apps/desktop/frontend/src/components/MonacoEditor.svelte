@@ -27,6 +27,7 @@
   let suggestActive = 0;
   let suggestPos = { top: 0, left: 0 };
   let lastCompletionPos: monaco.Position | null = null;
+  let completionWordStartCol = 0;
 
   function defineMonacoTheme(t: ThemeDef) {
     const d = t.isDark;
@@ -123,6 +124,10 @@
       hideSuggest();
       return;
     }
+    const model = editor?.getModel();
+    const word = model?.getWordUntilPosition(pos);
+    completionWordStartCol = word?.startColumn ?? pos.column;
+
     suggestItems = items;
     suggestActive = 0;
     updateSuggestPosition(pos);
@@ -135,6 +140,7 @@
     suggestItems = [];
     suggestActive = 0;
     lastCompletionPos = null;
+    completionWordStartCol = 0;
   }
 
   async function triggerCompletion(pos?: monaco.Position) {
@@ -313,16 +319,24 @@
       },
     });
 
-    // Dismiss on click elsewhere in editor
+    // Auto-close when cursor moves away from completion context
     editor.onDidChangeCursorPosition((e) => {
-      if (suggestVisible && lastCompletionPos) {
-        const cur = e.position;
-        const lp = lastCompletionPos;
-        // If cursor moved far from completion point, dismiss
-        if (cur.lineNumber !== lp.lineNumber || Math.abs(cur.column - lp.column) > 50) {
-          hideSuggest();
-        }
+      if (!suggestVisible) return;
+      const cur = e.position;
+      // Different line or moved before completion word start — dismiss
+      if (cur.lineNumber !== lastCompletionPos?.lineNumber || cur.column < completionWordStartCol) {
+        hideSuggest();
       }
+    });
+
+    // Close on editor blur
+    editor.onDidBlurEditorText(() => {
+      hideSuggest();
+    });
+
+    // Close when clicking editor container (outside the widget)
+    containerEl.addEventListener('mousedown', () => {
+      if (suggestVisible) hideSuggest();
     });
 
     editor.layout();
