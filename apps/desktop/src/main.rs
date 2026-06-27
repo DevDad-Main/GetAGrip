@@ -17,6 +17,7 @@ use tauri::Manager;
 
 use getagrip_core::{ConnectionProfiles, EventBus, SecretsVault};
 use getagrip_database::ConnectionManager;
+use getagrip_intelligence::MetadataCache;
 use getagrip_query_engine::QueryHistory;
 
 use commands::connect::{connect, disconnect, test_connection};
@@ -27,6 +28,9 @@ use commands::datasources::{
 use commands::explorer::introspect_node;
 use commands::export::{export_result, save_export};
 use commands::history::{clear_history, list_history};
+use commands::intelligence::{
+    refresh_metadata_cmd, request_completion_cmd, request_diagnostics_cmd,
+};
 use commands::introspect::introspect;
 use commands::query::execute_query;
 use commands::settings::{get_settings, set_setting, SettingsState};
@@ -97,6 +101,7 @@ fn main() {
                 manager: Arc::new(ConnectionManager::new()),
                 history,
                 event_bus: Arc::new(EventBus::new()),
+                metadata_cache: MetadataCache::new(),
                 profiles_path,
                 history_path,
             };
@@ -127,6 +132,9 @@ fn main() {
             save_export,
             list_history,
             clear_history,
+            request_completion_cmd,
+            request_diagnostics_cmd,
+            refresh_metadata_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error running tauri");

@@ -243,6 +243,66 @@ export async function saveExport(input: ExportInput, path: string): Promise<void
   return invoke<void>('save_export', { input, path });
 }
 
+// ---- Intelligence engine commands ------------------------------------------
+
+export interface CompletionRequest {
+  connection_id: string;
+  sql: string;
+  cursor_line: number;
+  cursor_column: number;
+}
+
+export interface CompletionItem {
+  label: string;
+  kind: CompletionKind;
+  detail: string;
+  insert_text?: string;
+  score: number;
+}
+
+export type CompletionKind = 'table' | 'view' | 'column' | 'function' | 'keyword' | 'schema' | 'alias';
+
+export interface CompletionResponse {
+  suggestions: CompletionItem[];
+  cursor_word?: string;
+}
+
+export async function requestCompletion(req: CompletionRequest): Promise<CompletionResponse> {
+  return invoke<CompletionResponse>('request_completion_cmd', { request: req });
+}
+
+export interface DiagnosticsRequest {
+  connection_id: string;
+  sql: string;
+}
+
+export interface DiagnosticItem {
+  severity: 'error' | 'warning' | 'hint';
+  message: string;
+  line: number;
+  column: number;
+  end_line?: number;
+  end_column?: number;
+  hint?: string;
+}
+
+export interface DiagnosticsResponse {
+  diagnostics: DiagnosticItem[];
+}
+
+export async function requestDiagnostics(req: DiagnosticsRequest): Promise<DiagnosticsResponse> {
+  return invoke<DiagnosticsResponse>('request_diagnostics_cmd', { request: req });
+}
+
+export interface MetadataRefreshRequest {
+  connection_id: string;
+  database?: string;
+}
+
+export async function refreshMetadata(req: MetadataRefreshRequest): Promise<void> {
+  return invoke<void>('refresh_metadata_cmd', { request: req });
+}
+
 // ---- Legacy query (Phase 1 compat) -----------------------------------------
 
 export async function executeQuery(sql: string, url: string): Promise<QueryResultDto> {

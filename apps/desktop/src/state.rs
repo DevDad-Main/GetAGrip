@@ -5,6 +5,7 @@ use parking_lot::RwLock;
 
 use getagrip_core::{ConnectionProfiles, EventBus, SecretsVault};
 use getagrip_database::ConnectionManager;
+use getagrip_intelligence::MetadataCache;
 use getagrip_query_engine::QueryHistory;
 
 pub struct AppState {
@@ -13,6 +14,7 @@ pub struct AppState {
     pub manager: Arc<ConnectionManager>,
     pub history: Arc<QueryHistory>,
     pub event_bus: Arc<EventBus>,
+    pub metadata_cache: MetadataCache,
     pub profiles_path: PathBuf,
     pub history_path: PathBuf,
 }

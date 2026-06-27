@@ -1,0 +1,151 @@
+use tauri::State;
+
+use getagrip_core::id::Id;
+use getagrip_core::session::ConnectionProfileId;
+use getagrip_intelligence::{
+    CompletionRequest, CompletionResponse, DiagnosticsRequest, DiagnosticsResponse,
+    MetadataRefreshRequest,
+};
+use getagrip_intelligence::completion::request_completion;
+use getagrip_intelligence::diagnostics::request_diagnostics;
+
+use crate::state::AppState;
+
+#[tauri::command]
+pub async fn request_completion_cmd(
+    state: State<'_, AppState>,
+    request: CompletionRequest,
+) -> Result<CompletionResponse, String> {
+    let db = get_database_name(&state, &request.connection_id);
+
+    let suggestions = request_completion(
+        &request.sql,
+        request.cursor_line,
+        request.cursor_column,
+        &request.connection_id,
+        &db,
+        &state.metadata_cache,
+    );
+
+    Ok(CompletionResponse {
+        suggestions,
+        cursor_word: None,
+    })
+}
+
+#[tauri::command]
+pub async fn request_diagnostics_cmd(
+    state: State<'_, AppState>,
+    request: DiagnosticsRequest,
+) -> Result<DiagnosticsResponse, String> {
+    let db = get_database_name(&state, &request.connection_id);
+
+    let diagnostics = request_diagnostics(
+        &request.sql,
+        &request.connection_id,
+        &db,
+        &state.metadata_cache,
+    );
+
+    Ok(DiagnosticsResponse { diagnostics })
+}
+
+#[tauri::command]
+pub async fn refresh_metadata_cmd(
+    state: State<'_, AppState>,
+    request: MetadataRefreshRequest,
+) -> Result<(), String> {
+    let profile_id = Id::<ConnectionProfileId>::parse(&request.connection_id)
+        .ok_or_else(|| format!("invalid profile id: {}", request.connection_id))?;
+
+    let managed = state
+        .manager
+        .get(profile_id)
+        .ok_or_else(|| format!("not connected: {}", request.connection_id))?;
+
+    let pool = managed
+        .pool
+        .ok_or_else(|| format!("no pool for profile: {}", request.connection_id))?;
+
+    let mut conn = pool.acquire().await.map_err(|e| format!("acquire: {e}"))?;
+    let db = managed.profile.database.as_deref().unwrap_or("master");
+
+    let mut schema = getagrip_schema::DatabaseSchema::new(db);
+
+    let tables_sql = format!(
+        "SELECT TABLE_SCHEMA, TABLE_NAME FROM {db}.INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_SCHEMA, TABLE_NAME"
+    );
+    if let Ok(result) = conn.connection_mut().execute(&tables_sql).await {
+        for row in &result.rows {
+            let table_schema = row
+                .get_by_name("TABLE_SCHEMA")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "dbo".into());
+            let table_name = row
+                .get_by_name("TABLE_NAME")
+                .map(|v| v.to_string())
+                .unwrap_or_default();
+
+            let cols_sql = format!(
+                "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, ORDINAL_POSITION FROM {db}.INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{table_schema}' AND TABLE_NAME = '{table_name}' ORDER BY ORDINAL_POSITION"
+            );
+            let mut columns = Vec::new();
+            if let Ok(col_result) = conn.connection_mut().execute(&cols_sql).await {
+                for col_row in &col_result.rows {
+                    let col_name = col_row
+                        .get_by_name("COLUMN_NAME")
+                        .map(|v| v.to_string())
+                        .unwrap_or_default();
+                    let data_type = col_row
+                        .get_by_name("DATA_TYPE")
+                        .map(|v| v.to_string())
+                        .unwrap_or_default();
+                    let nullable = col_row
+                        .get_by_name("IS_NULLABLE")
+                        .map(|v| v.to_string() == "YES")
+                        .unwrap_or(true);
+                    let ordinal = col_row
+                        .get_by_name("ORDINAL_POSITION")
+                        .map(|v| v.to_string().parse::<u16>().unwrap_or(0))
+                        .unwrap_or(0);
+
+                    columns.push(getagrip_schema::ColumnSchema {
+                        name: col_name,
+                        col_type: getagrip_database::driver::ColumnType::String,
+                        db_type: data_type,
+                        nullable,
+                        default_value: None,
+                        is_primary_key: false,
+                        ordinal,
+                        comment: None,
+                    });
+                }
+            }
+
+            schema.tables.push(getagrip_schema::TableSchema {
+                name: table_name,
+                schema: table_schema,
+                columns,
+                constraints: vec![],
+                indexes: vec![],
+                comment: None,
+                row_count_estimate: None,
+            });
+        }
+    }
+
+    state.metadata_cache.store(&request.connection_id, schema);
+    tracing::info!("Metadata refreshed for connection {}", request.connection_id);
+
+    Ok(())
+}
+
+fn get_database_name(state: &AppState, connection_id: &str) -> String {
+    let profiles = state.profiles.read();
+    profiles
+        .profiles
+        .values()
+        .find(|p| p.id.to_string() == connection_id || p.name == connection_id)
+        .and_then(|p| p.database.clone())
+        .unwrap_or_else(|| "master".to_string())
+}

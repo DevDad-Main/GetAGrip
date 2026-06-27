@@ -8,6 +8,7 @@ pub mod datasources;
 pub mod explorer;
 pub mod export;
 pub mod history;
+pub mod intelligence;
 pub mod introspect;
 pub mod query;
 pub mod settings;

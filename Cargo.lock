@@ -1253,8 +1253,10 @@ dependencies = [
  "getagrip-database",
  "getagrip-driver-sqlserver",
  "getagrip-explorer",
+ "getagrip-intelligence",
  "getagrip-query-engine",
  "getagrip-results",
+ "getagrip-schema",
  "getagrip-settings",
  "getagrip-sql",
  "getagrip-telemetry",
@@ -1351,6 +1353,22 @@ dependencies = [
  "getagrip-core",
  "getagrip-database",
  "serde",
+]
+
+[[package]]
+name = "getagrip-intelligence"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "getagrip-core",
+ "getagrip-database",
+ "getagrip-schema",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "sqlparser",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

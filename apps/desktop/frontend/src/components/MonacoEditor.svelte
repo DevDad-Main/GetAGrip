@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import * as monaco from 'monaco-editor';
-  import { executeQueryV2, type QueryResultDto } from '$lib/tauri';
+  import { executeQueryV2, requestCompletion, type QueryResultDto } from '$lib/tauri';
   import {
-    resultSets, activeResultSetId, statusText, schemaCache,
+    resultSets, activeResultSetId, statusText,
     nextResultSetId, resultsPanelHeight, activeTheme, type ResultSet,
   } from '$lib/stores';
 
@@ -149,13 +149,19 @@
       editor?.trigger('keyboard', 'escape', null);
     });
 
+    const kindMap: Record<string, monaco.languages.CompletionItemKind> = {
+      table: monaco.languages.CompletionItemKind.Class,
+      view: monaco.languages.CompletionItemKind.Class,
+      column: monaco.languages.CompletionItemKind.Field,
+      function: monaco.languages.CompletionItemKind.Function,
+      keyword: monaco.languages.CompletionItemKind.Keyword,
+      schema: monaco.languages.CompletionItemKind.Module,
+      alias: monaco.languages.CompletionItemKind.Variable,
+    };
+
     monaco.languages.registerCompletionItemProvider('sql', {
       triggerCharacters: ['.', ' '],
-      provideCompletionItems(model, position) {
-        const textUntilPosition = model.getValueInRange({
-          startLineNumber: 1, startColumn: 1,
-          endLineNumber: position.lineNumber, endColumn: position.column,
-        });
+      async provideCompletionItems(model, position) {
         const word = model.getWordUntilPosition(position);
         const range = {
           startLineNumber: position.lineNumber,
@@ -164,41 +170,32 @@
           endColumn: word.endColumn,
         };
 
-        const suggestions: monaco.languages.CompletionItem[] = [];
-        const cache = $schemaCache;
-
-        const dotMatch = textUntilPosition.match(/(\w+)\.\s*$/i);
-        if (dotMatch) {
-          const tableName = dotMatch[1];
-          for (const [db, tables] of Object.entries(cache.tablesByDb)) {
-            if (tables.includes(tableName)) {
-              const columns = cache.columnsByTable[`${db}.${tableName}`] ?? [];
-              for (const col of columns) {
-                suggestions.push({
-                  label: col, kind: monaco.languages.CompletionItemKind.Field,
-                  insertText: col, range, detail: 'column',
-                });
-              }
-            }
-          }
-        } else {
-          const allTables = Object.values(cache.tablesByDb).flat();
-          for (const table of allTables) {
-            suggestions.push({
-              label: table, kind: monaco.languages.CompletionItemKind.Class,
-              insertText: table, range, detail: 'table',
-            });
-          }
-          const keywords = ['SELECT', 'FROM', 'WHERE', 'ORDER BY', 'GROUP BY', 'HAVING', 'JOIN', 'LEFT JOIN', 'INNER JOIN', 'ON', 'INSERT INTO', 'UPDATE', 'DELETE FROM', 'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE', 'TOP', 'DISTINCT', 'AS', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'BETWEEN', 'IS NULL', 'IS NOT NULL', 'EXISTS', 'UNION', 'OFFSET', 'FETCH'];
-          for (const kw of keywords) {
-            suggestions.push({
-              label: kw, kind: monaco.languages.CompletionItemKind.Keyword,
-              insertText: kw, range,
-            });
-          }
+        if (!profileId) {
+          return { suggestions: [] };
         }
 
-        return { suggestions };
+        try {
+          const sql = model.getValue();
+          const resp = await requestCompletion({
+            connection_id: profileId,
+            sql,
+            cursor_line: position.lineNumber,
+            cursor_column: position.column,
+          });
+
+          const suggestions: monaco.languages.CompletionItem[] = resp.suggestions.map((item) => ({
+            label: item.label,
+            kind: kindMap[item.kind] ?? monaco.languages.CompletionItemKind.Text,
+            insertText: item.insert_text ?? item.label,
+            detail: item.detail,
+            range,
+            sortText: String(1000 - item.score).padStart(4, '0'),
+          }));
+
+          return { suggestions };
+        } catch {
+          return { suggestions: [] };
+        }
       },
     });
 

@@ -1,0 +1,19 @@
+[package]
+name = "getagrip-intelligence"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "GetAGrip: database intelligence engine — metadata caching, SQL completion, diagnostics."
+
+[dependencies]
+getagrip-core = { path = "../getagrip-core" }
+getagrip-database = { path = "../getagrip-database" }
+getagrip-schema = { path = "../getagrip-schema" }
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlparser = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

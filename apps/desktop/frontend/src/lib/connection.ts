@@ -1,5 +1,5 @@
 import { datasources, activeDatasourceId, datasourceStates, datasourceTrees, schemaCache } from './stores';
-import { connectDatasource, disconnectDatasource, deleteDatasource, introspectNode, type ConnectionProfile, type ManagedConnectionDto } from './tauri';
+import { connectDatasource, disconnectDatasource, deleteDatasource, introspectNode, refreshMetadata, type ConnectionProfile, type ManagedConnectionDto } from './tauri';
 import { notify } from '../components/Toast.svelte';
 
 async function loadAllTableNames(profileId: string) {
@@ -73,6 +73,8 @@ export async function handleConnect(profile: ConnectionProfile) {
         datasourceTrees.update((t) => ({ ...t, [profile.id]: nodes }));
         // Background: load table names for autocomplete
         loadAllTableNames(profile.id);
+        // Populate Rust metadata cache for intelligence engine
+        refreshMetadata({ connection_id: profile.id }).catch(() => {});
       } catch {}
     } else {
       notify(`Connection failed: ${result.last_error ?? 'unknown error'}`, 'error');
