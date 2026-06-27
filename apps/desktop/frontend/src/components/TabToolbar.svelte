@@ -9,8 +9,13 @@
 
   $: dsOptions = $datasources.map((ds) => ({ id: ds.id, name: ds.name }));
 
+  // Local mirror that stays in sync with the prop
+  let selectedId: string | null = datasourceId;
+  $: if (datasourceId !== selectedId) selectedId = datasourceId;
+
   function handleDsChange(e: CustomEvent<string | null>) {
     const newId = e.detail;
+    selectedId = newId;
     activeDatasourceId.set(newId);
     onChange(newId, schema);
   }
@@ -21,7 +26,7 @@
     <Database size="12" />
   </span>
   <Dropdown
-    bind:value={datasourceId}
+    bind:value={selectedId}
     options={dsOptions}
     placeholder="— no datasource —"
     on:change={handleDsChange}
