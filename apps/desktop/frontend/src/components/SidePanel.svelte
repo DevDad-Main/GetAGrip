@@ -19,19 +19,38 @@
     activeModal.set('datasource');
   }
 
-  function handleDsResize(newSize: number, containerHeight: number) {
-    // If dragged near the bottom, collapse datasources
-    if (newSize < 40) {
+  let _containerH = 600;
+
+  function handleDsResize(delta: number) {
+    const maxH = _containerH - 56; // minus both headers
+    const newH = dsHeight + delta;
+    if (newH < 40) {
       dsCollapsed = true;
-      dsHeight = 28; // just header height
-    } else if (newSize > containerHeight - 40) {
+      dsHeight = 28;
+    } else if (newH > maxH) {
       explorerCollapsed = true;
-      dsHeight = containerHeight - 28;
+      dsHeight = maxH;
     } else {
       dsCollapsed = false;
       explorerCollapsed = false;
-      dsHeight = newSize;
+      dsHeight = newH;
     }
+  }
+
+  function startDsDrag(e: MouseEvent) {
+    e.preventDefault();
+    const startY = e.clientY;
+    function onMove(ev: MouseEvent) { handleDsResize(ev.clientY - startY); }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
   }
 
   $: activeTrees = $datasourceTrees[$activeDatasourceId ?? ''] ?? [];
@@ -65,30 +84,8 @@
       <div class="handle-bar"></div>
     </div>
     <!-- Hidden resize overlay -->
-    <div
-      class="section-resize"
-      on:mousedown={(e) => {
-        e.preventDefault();
-        const startY = e.clientY;
-        const startH = dsHeight;
-        const containerH = (_containerH ?? 600);
-
-        function onMove(ev: MouseEvent) {
-          const delta = ev.clientY - startY;
-          handleDsResize(startH + delta, containerH);
-        }
-        function onUp() {
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onUp);
-          document.body.style.cursor = '';
-          document.body.style.userSelect = '';
-        }
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
-        document.body.style.cursor = 'row-resize';
-        document.body.style.userSelect = 'none';
-      }}
-    ></div>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="section-resize" on:mousedown={startDsDrag}></div>
   {/if}
 
   <!-- Explorer Section -->
