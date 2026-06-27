@@ -42,6 +42,10 @@
         kind = 'Database';
         parentDb = node.id.split('/').pop() ?? null;
         break;
+      case 'Schema':
+        kind = 'Schema';
+        parentDb = node.id.split('/')[1] ?? null;
+        break;
       case 'Folder':
         if (node.id.includes('/tables')) {
           kind = 'TablesFolder';
@@ -98,7 +102,7 @@
   }
 
   function isExpandable(kind: string): boolean {
-    return kind === 'Folder' || kind === 'Database' || kind === 'Table' || kind === 'Server';
+    return kind === 'Folder' || kind === 'Database' || kind === 'Schema' || kind === 'Table' || kind === 'Server';
   }
 </script>
 

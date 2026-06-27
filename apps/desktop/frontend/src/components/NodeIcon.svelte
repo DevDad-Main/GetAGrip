@@ -7,7 +7,7 @@
     Table,
     Eye,
     Columns3,
-    KeyRound,
+    Box,
   } from 'lucide-svelte';
 
   export let kind: string;
@@ -19,6 +19,8 @@
     <Server size="14" />
   {:else if kind === 'Database'}
     <Database size="14" />
+  {:else if kind === 'Schema'}
+    <Box size="14" />
   {:else if kind === 'Folder'}
     {#if expanded}
       <FolderOpen size="14" />
@@ -44,6 +46,7 @@
   }
   .node-icon[data-kind='Server'] { color: var(--accent); }
   .node-icon[data-kind='Database'] { color: var(--warning); }
+  .node-icon[data-kind='Schema'] { color: var(--info); }
   .node-icon[data-kind='Folder'] { color: var(--warning); }
   .node-icon[data-kind='Table'] { color: var(--text-muted); }
   .node-icon[data-kind='View'] { color: var(--info); }

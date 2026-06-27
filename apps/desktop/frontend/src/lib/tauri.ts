@@ -14,6 +14,9 @@ export type ExplorerNodeKind =
   | 'MaterializedView' | 'Index' | 'Function' | 'Procedure' | 'Sequence'
   | 'Column' | 'Constraint' | 'Extension' | 'Role' | 'Partition';
 
+export type IntrospectKind =
+  | 'Database' | 'Schema' | 'TablesFolder' | 'ViewsFolder' | 'Table';
+
 export interface ExplorerNode {
   id: string;
   name: string;
@@ -27,8 +30,6 @@ export interface ExplorerNode {
   loading: boolean;
   has_error: boolean;
 }
-
-export type IntrospectKind = 'Database' | 'TablesFolder' | 'ViewsFolder' | 'Table';
 
 export interface QueryColumnDto {
   name: string;
