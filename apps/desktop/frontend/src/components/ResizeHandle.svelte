@@ -5,32 +5,24 @@
   export let size: number;
   export let onResize: (size: number) => void;
 
-  let dragging = false;
-
   function onMouseDown(e: MouseEvent) {
     e.preventDefault();
-    dragging = true;
     const start = direction === 'horizontal' ? e.clientX : e.clientY;
     const startSize = size;
 
-    function onMouseMove(e: MouseEvent) {
-      if (!dragging) return;
-      const current = direction === 'horizontal' ? e.clientX : e.clientY;
+    function onMove(ev: MouseEvent) {
+      const current = direction === 'horizontal' ? ev.clientX : ev.clientY;
       const delta = current - start;
-      const newSize = Math.max(minSize, Math.min(maxSize, startSize + delta));
-      onResize(newSize);
+      onResize(Math.max(minSize, Math.min(maxSize, startSize + delta)));
     }
-
-    function onMouseUp() {
-      dragging = false;
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     }
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
     document.body.style.cursor = direction === 'horizontal' ? 'col-resize' : 'row-resize';
     document.body.style.userSelect = 'none';
   }
@@ -44,24 +36,25 @@
   on:mousedown={onMouseDown}
   role="separator"
   aria-orientation={direction}
-  tabindex="0"
 ></div>
 
 <style>
   .resize-handle {
     flex-shrink: 0;
-    background: var(--border);
+    background: transparent;
     transition: background 0.15s;
   }
   .resize-handle:hover {
-    background: var(--accent);
+    background: var(--accent-soft);
   }
   .horizontal {
-    width: 3px;
+    width: 6px;
     cursor: col-resize;
+    align-self: stretch;
   }
   .vertical {
-    height: 3px;
+    height: 6px;
     cursor: row-resize;
+    width: 100%;
   }
 </style>

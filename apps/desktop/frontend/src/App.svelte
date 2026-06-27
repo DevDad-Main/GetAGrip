@@ -71,19 +71,19 @@
       <div class="sidebar-col" style="width: {sidebarW}px">
         <SidePanel />
       </div>
-      <div class="resize-col"><ResizeHandle direction="horizontal" size={sidebarW} onResize={(s) => sidebarW = s} /></div>
+      <ResizeHandle direction="horizontal" size={sidebarW} onResize={(s) => sidebarW = s} />
     {/if}
     <div class="editor-column">
       <EditorPane />
       {#if resultsH > 0}
-        <div class="resize-row"><ResizeHandle direction="vertical" size={resultsH} onResize={(s) => resultsH = s} minSize={80} maxSize={800} /></div>
+        <ResizeHandle direction="vertical" size={resultsH} onResize={(s) => resultsH = s} minSize={80} maxSize={800} />
         <div class="results-col" style="height: {resultsH}px">
           <ResultsPanel />
         </div>
       {/if}
     </div>
     {#if historyVisible}
-      <div class="resize-col"><ResizeHandle direction="horizontal" size={300} onResize={() => {}} /></div>
+      <ResizeHandle direction="horizontal" size={300} onResize={() => {}} />
       <HistoryPanel visible={historyVisible} />
     {/if}
   </main>
@@ -126,12 +126,5 @@
   .results-col {
     flex-shrink: 0;
     overflow: hidden;
-  }
-  .resize-col {
-    flex-shrink: 0;
-    align-self: stretch;
-  }
-  .resize-row {
-    flex-shrink: 0;
   }
 </style>
