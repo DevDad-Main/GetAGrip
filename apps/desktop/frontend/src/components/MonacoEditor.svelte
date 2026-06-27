@@ -144,7 +144,7 @@
     suggestMatchWord = word?.word ?? '';
 
     suggestItems = items;
-    suggestActive = 0;
+    suggestActive = -1;
     updateSuggestPosition(pos);
     suggestVisible = true;
     lastCompletionPos = pos;
@@ -153,7 +153,7 @@
   function hideSuggest() {
     suggestVisible = false;
     suggestItems = [];
-    suggestActive = 0;
+    suggestActive = -1;
     suggestMatchWord = '';
     lastCompletionPos = null;
     completionWordStartCol = 0;
@@ -250,7 +250,11 @@
       return true;
     }
     if (e.keyCode === monaco.KeyCode.UpArrow) {
-      suggestActive = Math.max(0, suggestActive - 1);
+      if (suggestActive <= 0) {
+        suggestActive = -1;
+      } else {
+        suggestActive--;
+      }
       e.preventDefault();
       e.stopPropagation();
       return true;

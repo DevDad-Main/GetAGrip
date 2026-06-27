@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import { createEventDispatcher } from 'svelte';
   import { Table, Columns, FunctionSquare, CaseSensitive, Puzzle } from 'lucide-svelte';
   import type { CompletionItem, CompletionKind } from '$lib/tauri';
 
@@ -35,7 +35,7 @@
     alias: 'alias',
   };
 
-  $: capped = Math.min(activeIndex, items.length - 1);
+  $: capped = Math.max(-1, Math.min(activeIndex, items.length - 1));
 
   function highlightMatch(text: string, query: string): string {
     if (!query) return text;
@@ -73,15 +73,8 @@
     }
   }
 
-  onMount(() => {
-    if (items.length > 0) {
-      activeIndex = 0;
-    }
-  });
 
-  onDestroy(() => {
-    // cleanup if needed
-  });
+
 </script>
 
 {#if visible && position && items.length > 0}
@@ -97,7 +90,7 @@
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="cs-row"
-          class:active={i === capped}
+          class:active={i === capped && capped >= 0}
           on:click={() => dispatch('select', item)}
           on:mouseenter={() => activeIndex = i}
         >
@@ -111,7 +104,7 @@
         </div>
       {/each}
     </div>
-    {#if items[capped]?.documentation}
+    {#if capped >= 0 && items[capped]?.documentation}
       <div class="cs-docs">
         {items[capped].documentation}
       </div>
