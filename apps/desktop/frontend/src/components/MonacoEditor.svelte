@@ -187,11 +187,17 @@
           startLineNumber: d.line,
           startColumn: d.column,
           endLineNumber: d.end_line ?? d.line,
-          endColumn: d.end_column ?? 999,
+          endColumn: (d.end_column && d.end_column < 9999) ? d.end_column
+            : Math.min(d.column + 20, 9999),
         }));
         monaco.editor.setModelMarkers(model, 'sql-diagnostics', markers);
       } catch { /* silent */ }
     }, 600);
+  }
+
+  // Re-run diagnostics when datasource connects (cache populated)
+  $: if (profileId) {
+    runDiagnostics();
   }
 
   async function triggerCompletion(pos?: monaco.Position) {
