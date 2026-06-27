@@ -36,6 +36,18 @@
     color: var(--accent);
     font-weight: 600;
   }
+  .hw-inner :global(.hw-error) {
+    color: var(--error, #f44747);
+    font-weight: 700;
+  }
+  .hw-inner :global(.hw-warning) {
+    color: var(--warning, #cca700);
+    font-weight: 700;
+  }
+  .hw-inner :global(.hw-hint) {
+    color: var(--text-muted);
+    font-weight: 600;
+  }
   .hw-inner :global(em) {
     color: var(--text-muted);
     font-style: italic;

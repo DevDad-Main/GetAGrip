@@ -406,7 +406,26 @@
       }
       const model = editor?.getModel();
       if (!model) return;
-      const word = model.getWordAtPosition(e.target.position);
+
+      // Check for diagnostic markers at this position
+      const pos = e.target.position;
+      const markers = monaco.editor.getModelMarkers({ owner: 'sql-diagnostics', resource: model.uri });
+      const markerAtPos = markers.find((m) =>
+        pos.lineNumber >= m.startLineNumber && pos.lineNumber <= m.endLineNumber &&
+        pos.column >= m.startColumn && pos.column <= m.endColumn
+      );
+      if (markerAtPos) {
+        const sev = markerAtPos.severity === monaco.MarkerSeverity.Error ? 'Error'
+          : markerAtPos.severity === monaco.MarkerSeverity.Warning ? 'Warning' : 'Hint';
+        hoverContent = `<strong class="hw-${sev.toLowerCase()}">${sev}:</strong> ${markerAtPos.message.replace(/\n/g, '<br>')}`;
+        hoverX = e.event.posx + 12;
+        hoverY = e.event.posy - 8;
+        hoverVisible = true;
+        return;
+      }
+
+      // Check for function docs
+      const word = model.getWordAtPosition(pos);
       if (word) {
         const upper = word.word.toUpperCase();
         if (fnDocs[upper]) {
