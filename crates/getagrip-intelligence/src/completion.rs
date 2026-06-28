@@ -213,8 +213,10 @@ fn match_score(label: &str, query: &str) -> i32 {
             consecutive = 0;
         }
     }
-    // Require at least 2 consecutive matching chars to avoid false positives
-    if best_consecutive >= 2 && matches >= query_chars.len().min(3) {
+    // Require at least 2 consecutive matching chars and most query chars matched
+    // For short queries (<3 chars), require all chars to match
+    let min_matches = if query_chars.len() < 3 { query_chars.len() } else { 3 };
+    if best_consecutive >= 2 && matches >= min_matches {
         return (matches as i32).min(4);
     }
     0

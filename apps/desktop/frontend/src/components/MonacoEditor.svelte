@@ -171,6 +171,7 @@
 
   let cacheChecked = false;
   let diagTimer: ReturnType<typeof setTimeout> | null = null;
+  let completionReqId = 0;
 
   function runDiagnostics() {
     if (!editor) return;
@@ -226,18 +227,21 @@
     const position = pos ?? editor.getPosition();
     if (!position) return;
 
+    const reqId = ++completionReqId;
+
     if (!profileId) {
-      const fallback: CompletionItem[] = SQL_KEYWORDS.map((kw) => ({
-        label: kw,
-        kind: 'keyword',
-        detail: '',
-        score: 50,
-      }));
-      showSuggest(fallback, position);
+      if (reqId === completionReqId) {
+        const fallback: CompletionItem[] = SQL_KEYWORDS.map((kw) => ({
+          label: kw,
+          kind: 'keyword',
+          detail: '',
+          score: 50,
+        }));
+        showSuggest(fallback, position);
+      }
       return;
     }
 
-    // Auto-refresh metadata cache once per session (cleared on rebuild)
     if (!cacheChecked) {
       cacheChecked = true;
       try {
@@ -255,9 +259,13 @@
         cursor_line: position.lineNumber,
         cursor_column: position.column,
       });
-      showSuggest(resp.suggestions, position);
+      if (reqId === completionReqId) {
+        showSuggest(resp.suggestions, position);
+      }
     } catch {
-      hideSuggest();
+      if (reqId === completionReqId) {
+        hideSuggest();
+      }
     }
   }
 
