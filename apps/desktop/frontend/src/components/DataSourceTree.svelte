@@ -388,7 +388,7 @@
       {collapsed}
       {focusId}
       {renamingId}
-      {renameValue}
+      bind:renameValue={renameValue}
       {dragSource}
       {dropTargetId}
       {dropPosition}

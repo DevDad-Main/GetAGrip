@@ -231,6 +231,62 @@ export function removeDatasource(profileId: string): void {
   datasources.update((ds) => ds.filter((d) => d.id !== profileId));
 }
 
+// ---- Saved queries ------------------------------------------------------------
+
+export interface SavedQuery {
+  id: string;
+  name: string;
+  sql: string;
+  datasourceId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const SAVED_QUERIES_KEY = 'getagrip_saved_queries';
+
+function loadSavedQueries(): SavedQuery[] {
+  try {
+    const raw = localStorage.getItem(SAVED_QUERIES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export const savedQueries = writable<SavedQuery[]>(loadSavedQueries());
+
+savedQueries.subscribe((qs) => {
+  try {
+    localStorage.setItem(SAVED_QUERIES_KEY, JSON.stringify(qs));
+  } catch {}
+});
+
+let _sqCounter = 0;
+export function saveQuery(name: string, sql: string, datasourceId: string): SavedQuery {
+  _sqCounter += 1;
+  const now = new Date().toISOString();
+  const q: SavedQuery = {
+    id: `sq_${_sqCounter}`,
+    name,
+    sql,
+    datasourceId,
+    createdAt: now,
+    updatedAt: now,
+  };
+  savedQueries.update((qs) => [...qs, q]);
+  return q;
+}
+
+export function deleteQuery(id: string): void {
+  savedQueries.update((qs) => qs.filter((q) => q.id !== id));
+}
+
+export function renameQuery(id: string, name: string): void {
+  savedQueries.update((qs) =>
+    qs.map((q) => (q.id === id ? { ...q, name, updatedAt: new Date().toISOString() } : q)),
+  );
+}
+
 export function resetAll(): void {
   datasources.set([]);
   activeDatasourceId.set(null);

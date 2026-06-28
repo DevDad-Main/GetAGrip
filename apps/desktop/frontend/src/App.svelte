@@ -15,7 +15,7 @@
 
   import {
     commandPaletteOpen, activeModal, modalPayload, sidebarVisible,
-    loadDatasources, resultsPanelHeight, resultSets, activeResultSetId,
+    loadDatasources, loadFolders, resultsPanelHeight, resultSets, activeResultSetId,
     activeTheme,
   } from '$lib/stores';
   import { findTheme, applyAppTheme } from '$lib/themes';
@@ -62,6 +62,7 @@
 
   onMount(async () => {
     loadDatasources();
+    loadFolders();
     try {
       const settings = await getSettings();
       const themeVal = (settings.theme as string) ?? 'darcula';

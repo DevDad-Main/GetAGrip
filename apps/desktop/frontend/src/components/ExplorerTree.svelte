@@ -1,13 +1,48 @@
 <script lang="ts">
   import { get } from 'svelte/store';
-  import { datasourceTrees, schemaCache } from '$lib/stores';
+  import { datasourceTrees, schemaCache, savedQueries, tabs, activeTabId, activeDatasourceId } from '$lib/stores';
   import { introspectNode, type ExplorerNode, type IntrospectKind } from '$lib/tauri';
   import NodeIcon from './NodeIcon.svelte';
-  import { ChevronRight, ChevronDown, Loader2 } from 'lucide-svelte';
+  import { ChevronRight, ChevronDown, Loader2, X, Pencil } from 'lucide-svelte';
+  import { deleteQuery, renameQuery } from '$lib/stores';
 
   export let nodes: ExplorerNode[] = [];
   export let depth = 0;
   export let profileId: string | null = null;
+
+  let savedQueriesExpanded = false;
+  let renamingId: string | null = null;
+  let renameValue = '';
+
+  function loadQuery(q: { id: string; sql: string; datasourceId: string }) {
+    tabs.update((ts) =>
+      ts.map((t) =>
+        t.id === $activeTabId ? { ...t, sql: q.sql, datasourceId: q.datasourceId } : t,
+      ),
+    );
+    activeDatasourceId.set(q.datasourceId);
+  }
+
+  function startRename(id: string, currentName: string) {
+    renamingId = id;
+    renameValue = currentName;
+  }
+
+  function finishRename(id: string) {
+    if (renameValue.trim()) {
+      renameQuery(id, renameValue.trim());
+    }
+    renamingId = null;
+  }
+
+  function handleDelete(e: MouseEvent, id: string) {
+    e.stopPropagation();
+    deleteQuery(id);
+  }
+
+  $: profileQueries = profileId
+    ? $savedQueries.filter((q) => q.datasourceId === profileId)
+    : [];
 
   function updateTree() {
     // Trigger Svelte reactivity — nodes are mutated in-place
@@ -111,6 +146,69 @@
 </script>
 
 <ul class="tree" class:root={depth === 0}>
+  {#if depth === 0 && profileId}
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+    <li class="tree-node" class:expanded={savedQueriesExpanded}>
+      <div
+        class="tree-row saved-queries-header"
+        role="treeitem"
+        aria-expanded={savedQueriesExpanded}
+        tabindex="0"
+        style="padding-left: 8px"
+        on:click={() => savedQueriesExpanded = !savedQueriesExpanded}
+        on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); savedQueriesExpanded = !savedQueriesExpanded; } }}
+      >
+        <span class="tree-glyph tree-chevron">
+          {#if savedQueriesExpanded}
+            <ChevronDown size="13" />
+          {:else}
+            <ChevronRight size="13" />
+          {/if}
+        </span>
+        <NodeIcon kind="SavedQueriesFolder" expanded={savedQueriesExpanded} />
+        <span class="tree-label">Saved Queries</span>
+        {#if profileQueries.length > 0}
+          <span class="tree-count">{profileQueries.length}</span>
+        {/if}
+      </div>
+      {#if savedQueriesExpanded}
+        {#if profileQueries.length === 0}
+          <div class="tree-empty" style="padding-left: 24px">No saved queries</div>
+        {:else}
+          {#each profileQueries as q (q.id)}
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+            <div
+              class="tree-row saved-query-row"
+              tabindex="0"
+              style="padding-left: 24px"
+              on:click={() => loadQuery(q)}
+              on:keydown={(e) => { if (e.key === 'Enter') { loadQuery(q); } }}
+              title={q.sql.length > 80 ? q.sql.slice(0, 80) + '…' : q.sql}
+            >
+              <span class="tree-glyph"><NodeIcon kind="SavedQuery" expanded={false} /></span>
+              {#if renamingId === q.id}
+                <!-- svelte-ignore a11y_autofocus -->
+                <input
+                  class="rename-input"
+                  bind:value={renameValue}
+                  on:click|stopPropagation
+                  on:keydown={(e) => { if (e.key === 'Enter') { finishRename(q.id); } else if (e.key === 'Escape') { renamingId = null; } }}
+                  on:blur={() => finishRename(q.id)}
+                  autofocus
+                />
+              {:else}
+                <span class="tree-label">{q.name}</span>
+              {/if}
+              <span class="sq-actions">
+                <button class="sq-btn" on:click|stopPropagation={() => startRename(q.id, q.name)} title="Rename"><Pencil size="10" /></button>
+                <button class="sq-btn" on:click={(e) => handleDelete(e, q.id)} title="Delete"><X size="10" /></button>
+              </span>
+            </div>
+          {/each}
+        {/if}
+      {/if}
+    </li>
+  {/if}
   {#each nodes as node (node.id)}
     <li class="tree-node" class:expanded={node.expanded}>
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
@@ -193,6 +291,52 @@
   }
   .tree-chevron { color: var(--text-faint); }
   .tree-label { overflow: hidden; text-overflow: ellipsis; margin-left: 2px; }
+  .saved-queries-header { color: var(--text-muted); font-weight: 500; }
+  .tree-count {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--text-faint);
+    background: var(--bg);
+    padding: 0 5px;
+    border-radius: 8px;
+  }
+  .saved-query-row { gap: 3px; }
+  .saved-query-row:hover .sq-actions { opacity: 1; }
+  .sq-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 1px;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .sq-btn {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    padding: 1px 3px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    border-radius: 2px;
+  }
+  .sq-btn:hover { background: var(--bg-hover); color: var(--text); }
+  .tree-empty {
+    color: var(--text-faint);
+    font-size: 11px;
+    padding: 4px 8px;
+    font-style: italic;
+  }
+  .rename-input {
+    background: var(--bg);
+    border: 1px solid var(--accent);
+    color: var(--text);
+    font-size: 12px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    outline: none;
+    flex: 1;
+    min-width: 0;
+  }
   .spin { animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>

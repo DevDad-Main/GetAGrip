@@ -450,7 +450,7 @@
     color: var(--text-faint);
     font-size: 11px;
     font-style: italic;
-    padding: 3px 8px 3px 14px;
-    margin-left: 16px;
+    padding: 3px 8px 3px 36px;
+    margin-left: 0;
   }
 </style>

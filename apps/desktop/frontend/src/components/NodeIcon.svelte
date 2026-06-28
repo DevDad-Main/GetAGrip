@@ -8,6 +8,8 @@
     Eye,
     Columns3,
     Box,
+    Bookmark,
+    Book,
   } from 'lucide-svelte';
 
   export let kind: string;
@@ -33,6 +35,14 @@
     <Eye size="14" />
   {:else if kind === 'Column'}
     <Columns3 size="13" />
+  {:else if kind === 'SavedQuery'}
+    <Bookmark size="13" />
+  {:else if kind === 'SavedQueriesFolder'}
+    {#if expanded}
+      <Book size="14" />
+    {:else}
+      <Book size="14" />
+    {/if}
   {/if}
 </span>
 
