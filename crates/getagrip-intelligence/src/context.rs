@@ -80,18 +80,50 @@ pub fn analyse_context(sql: &str, cursor_line: u32, cursor_column: u32) -> SqlCo
     match parsed {
         Ok(statements) => {
             // Find which statement the cursor sits inside (if any).
-            ctx.statement_index =
+            let found_index =
                 find_statement_at_cursor(&statements, cursor_line, cursor_column);
-            // Build per-statement clause boundary maps.
-            ctx.statement_clauses = statements
+            // Build per-statement clause boundary maps for parsed statements.
+            let mut clauses: Vec<Vec<ClauseSpan>> = statements
                 .iter()
                 .map(|stmt| extract_clauses(sql, stmt))
                 .collect();
+            // If the cursor is NOT inside any parsed statement (e.g. the current
+            // statement is incomplete and failed to parse), synthesize a
+            // statement for the text after the last semicolon so clause
+            // detection still works.
+            let effective_index = match found_index {
+                Some(i) => i,
+                None => {
+                    if let Some(synthetic) =
+                        synthesize_current_statement(sql, cursor_line, cursor_column)
+                    {
+                        clauses.push(synthetic);
+                        clauses.len() - 1
+                    } else {
+                        // No statements at all — nothing to scope to.
+                        usize::MAX // sentinel, won't match any real index
+                    }
+                }
+            };
+            // Only set statement_index if we have a real statement.
+            if effective_index != usize::MAX {
+                ctx.statement_index = Some(effective_index);
+            }
+            ctx.statement_clauses = clauses;
             for stmt in &statements {
                 extract_from_statement(stmt, &mut ctx);
             }
         }
-        Err(_) => {}
+        Err(_) => {
+            // Parse failed entirely — try to synthesize a statement from the
+            // text after the last semicolon.
+            if let Some(synthetic) =
+                synthesize_current_statement(sql, cursor_line, cursor_column)
+            {
+                ctx.statement_clauses = vec![synthetic];
+                ctx.statement_index = Some(0);
+            }
+        }
     }
 
     detect_cursor_scope(&prefix, &mut ctx);
@@ -119,6 +151,94 @@ fn find_statement_at_cursor(
         }
     }
     None
+}
+
+/// Synthesize clause boundaries for the (possibly incomplete) statement the
+/// cursor is currently in, when the parser couldn't produce a statement for
+/// that region. Finds the text after the last semicolon before the cursor and
+/// extracts clauses from it, with positions in full-SQL coordinates.
+fn synthesize_current_statement(
+    sql: &str,
+    cursor_line: u32,
+    cursor_col: u32,
+) -> Option<Vec<ClauseSpan>> {
+    // Find the last semicolon before the cursor.
+    let cursor_offset = line_col_to_offset(sql, cursor_line, cursor_col);
+    let prefix = &sql[..cursor_offset];
+    let (after_semi, start_line, start_col) = match prefix.rfind(';') {
+        Some(pos) => {
+            let after = &sql[pos + 1..];
+            let (line, col) = offset_to_line_col(sql, pos + 1);
+            (after, line, col)
+        }
+        None => (sql, 1, 1),
+    };
+    let relative = extract_clauses_from_text(after_semi);
+    if relative.is_empty() {
+        None
+    } else {
+        // Convert relative (line, col) to full-SQL coordinates.
+        let absolute: Vec<ClauseSpan> = relative
+            .into_iter()
+            .map(|c| {
+                // c.end_line/c.end_col are relative to after_semi start.
+                // If on the first line of after_semi, offset by start_col.
+                // Otherwise line is start_line + (c.end_line - 1).
+                let abs_line = start_line + c.end_line - 1;
+                let abs_col = if c.end_line == 1 {
+                    start_col + c.end_col - 1
+                } else {
+                    c.end_col
+                };
+                ClauseSpan {
+                    name: c.name,
+                    end_line: abs_line,
+                    end_col: abs_col,
+                }
+            })
+            .collect();
+        Some(absolute)
+    }
+}
+
+/// Extract clause boundaries from arbitrary text (not tied to a parsed
+/// statement). Scans for known clause keywords and records their end
+/// positions as (line, col) relative to the start of `text` (1-based).
+fn extract_clauses_from_text(text: &str) -> Vec<ClauseSpan> {
+    const CLAUSE_KEYWORDS: &[&str] = &[
+        "ORDER BY", "GROUP BY", "LEFT JOIN", "RIGHT JOIN", "INNER JOIN",
+        "FULL JOIN", "INSERT INTO", "DELETE FROM", "CREATE TABLE",
+        "ALTER TABLE", "DROP TABLE", "CREATE INDEX", "DROP INDEX",
+        "CREATE VIEW", "DROP VIEW", "SELECT", "FROM", "WHERE", "JOIN",
+        "ON", "AND", "OR", "SET", "VALUES", "HAVING", "UPDATE",
+    ];
+
+    let mut spans: Vec<ClauseSpan> = Vec::new();
+    let mut search_start = 0usize;
+    while search_start < text.len() {
+        let best = CLAUSE_KEYWORDS
+            .iter()
+            .filter_map(|kw| {
+                text[search_start..]
+                    .find(*kw)
+                    .map(|p| (*kw, search_start + p))
+            })
+            .min_by_key(|(_, p)| *p);
+        match best {
+            Some((kw, pos)) => {
+                let end_byte = pos + kw.len() - 1;
+                let (el_pos, ec_pos) = offset_to_line_col(text, end_byte);
+                spans.push(ClauseSpan {
+                    name: kw.to_string(),
+                    end_line: el_pos,
+                    end_col: ec_pos,
+                });
+                search_start = pos + kw.len();
+            }
+            None => break,
+        }
+    }
+    spans
 }
 
 /// Extract clause boundaries from a single statement. Scans the statement's
@@ -156,9 +276,11 @@ fn extract_clauses(sql: &str, stmt: &Statement) -> Vec<ClauseSpan> {
             .min_by_key(|(_, p)| *p);
         match best {
             Some((kw, pos)) => {
-                let after_kw = pos + kw.len();
-                // Convert keyword end position to (line, col) within the SQL.
-                let (el_pos, ec_pos) = offset_to_line_col(&stmt_text, after_kw);
+                // end_line/end_col point at the LAST character of the keyword
+                // (inclusive). A cursor is "after" the clause when its position
+                // is strictly past this end.
+                let end_byte = pos + kw.len() - 1; // byte offset of last char
+                let (el_pos, ec_pos) = offset_to_line_col(&stmt_text, end_byte);
                 let end_line = sl + el_pos - 1;
                 let end_col = if el_pos == 1 { sc + ec_pos - 1 } else { ec_pos };
                 spans.push(ClauseSpan {
@@ -166,7 +288,7 @@ fn extract_clauses(sql: &str, stmt: &Statement) -> Vec<ClauseSpan> {
                     end_line,
                     end_col,
                 });
-                search_start = after_kw;
+                search_start = pos + kw.len();
             }
             None => break,
         }
@@ -484,9 +606,15 @@ mod tests {
 
     #[test]
     fn cursor_in_gap_between_statements() {
-        // Position (1,10) is the semicolon — between statements.
+        // Position (1,10) is the semicolon. The text after it is " SELECT 2",
+        // which synthesizes a SELECT clause — so the cursor is treated as being
+        // in the second statement.
         let ctx = analyse_context("SELECT 1; SELECT 2", 1, 10);
-        assert_eq!(ctx.statement_index, None);
+        assert!(ctx.statement_index.is_some());
+        let idx = ctx.statement_index.unwrap();
+        let clauses = ctx.statement_clauses.get(idx).expect("clauses");
+        let names: Vec<&str> = clauses.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"SELECT"), "expected SELECT in {names:?}");
     }
 
     #[test]
@@ -503,6 +631,19 @@ mod tests {
         assert!(names.contains(&"SELECT"));
         assert!(names.contains(&"FROM"));
         assert!(names.contains(&"WHERE"));
+    }
+
+    #[test]
+    fn clause_detection_after_from_keyword() {
+        // Cursor right after "FROM " on line 2 — should be detected as in FROM.
+        // The second statement is incomplete so the parser may fail; we
+        // synthesize clauses from the text after the last semicolon.
+        let ctx = analyse_context("SELECT * FROM DimProduct;\nSELECT * FROM ", 2, 16);
+        assert!(ctx.statement_index.is_some());
+        let idx = ctx.statement_index.unwrap();
+        let clauses = ctx.statement_clauses.get(idx).expect("clauses");
+        let names: Vec<&str> = clauses.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"FROM"), "FROM not found in {names:?}");
     }
 
     #[test]

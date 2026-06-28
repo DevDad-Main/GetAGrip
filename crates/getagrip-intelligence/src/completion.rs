@@ -94,7 +94,7 @@ pub fn request_completion(
         || is_after_clause(&ctx, "JOIN");
 
     if in_from {
-        let cols = complete_tables(cache, connection_id, &word_lower);
+        let cols = complete_tables(cache, connection_id, &word_lower, &referenced_table_names(&ctx));
         return bucket_truncate(cols, vec![], vec![], vec![]);
     }
 
@@ -110,7 +110,7 @@ pub fn request_completion(
 
     if in_clause {
         let cols = complete_columns_all(cache, connection_id, &word_lower, ctx.cursor_table.as_deref());
-        let tables = complete_tables(cache, connection_id, &word_lower);
+        let tables = complete_tables(cache, connection_id, &word_lower, &referenced_table_names(&ctx));
         let functions = complete_functions(&word_upper);
         let keywords = complete_keywords(&word_upper);
         return bucket_truncate(cols, tables, functions, keywords);
@@ -118,7 +118,7 @@ pub fn request_completion(
 
     // Generic
     let keywords = complete_keywords(&word_upper);
-    let cols = complete_tables(cache, connection_id, &word_lower);
+    let cols = complete_tables(cache, connection_id, &word_lower, &referenced_table_names(&ctx));
     let functions = complete_functions(&word_upper);
     bucket_truncate(cols, vec![], functions, keywords)
 }
@@ -338,6 +338,7 @@ fn complete_tables(
     cache: &MetadataCache,
     connection_id: &str,
     prefix: &str,
+    referenced_tables: &[String],
 ) -> Vec<CompletionItem> {
     let tables = cache.get_tables(connection_id);
     tables
@@ -346,6 +347,10 @@ fn complete_tables(
             let score = match_score(&t.name, prefix);
             if score > 0 || prefix.is_empty() {
                 let doc = format!("schema: {}  |  columns: {}", t.schema_name, t.columns.len());
+                // Tables already referenced in the SQL (e.g. in a prior FROM/JOIN)
+                // get a boost so they rank above alphabetical ties when the prefix
+                // is empty — you're likely re-using the same table.
+                let ref_boost = if referenced_tables.contains(&t.name) { 8 } else { 0 };
                 Some(CompletionItem {
                     label: t.name.clone(),
                     kind: CompletionKind::Table,
@@ -355,13 +360,19 @@ fn complete_tables(
                     source_schema: Some(t.schema_name.clone()),
                     data_type: None,
                     insert_text: Some(t.name.clone()),
-                    score: TABLE_BASE + score as u32 * 2,
+                    score: TABLE_BASE + score as u32 * 2 + ref_boost,
                 })
             } else {
                 None
             }
         })
         .collect()
+}
+
+/// Names of tables referenced anywhere in the SQL (FROM/JOIN/INSERT/UPDATE).
+/// Used to boost tables the user is already working with.
+fn referenced_table_names(ctx: &crate::context::SqlContext) -> Vec<String> {
+    ctx.tables.iter().map(|t| t.name.clone()).collect()
 }
 
 /// Explicit column completion (resolved table/alias, dot context).
@@ -767,8 +778,8 @@ mod tests {
         // When cursor_table is resolved (e.g., FROM DimProduct), columns from
         // that table should outrank identically-named columns from other tables.
         let cache = cache_with_two_tables();
-        let sql = "SELECT * FROM DimProduct WHERE ";
-        let items = request_completion(sql, 1, 28, "conn1", &cache);
+        let sql = "SELECT * FROM DimProduct WHERE "; // 31 chars, cursor at 31
+        let items = request_completion(sql, 1, 31, "conn1", &cache);
         assert!(!items.is_empty());
         // ProductKey from DimProduct should appear before ProductKey_bak from
         // DimProduct_bak.
@@ -782,6 +793,22 @@ mod tests {
             (Some(a), Some(b)) => assert!(a < b, "DimProduct columns should rank above DimProduct_bak"),
             _ => {} // acceptable if one is missing
         }
+    }
+
+    #[test]
+    fn from_context_referenced_table_ranks_first() {
+        // When the prefix is empty (cursor right after "FROM "), tables already
+        // referenced in the SQL should rank above alphabetical ties.
+        let cache = cache_with_dimproduct();
+        // SQL references DimProduct on line 1; cursor on line 2 after FROM.
+        let sql = "SELECT * FROM DimProduct;\nSELECT * FROM ";
+        let items = request_completion(sql, 2, 16, "conn1", &cache);
+        assert!(!items.is_empty());
+        // DimProduct should be the first table.
+        assert_eq!(
+            items[0].label, "DimProduct",
+            "referenced table should rank first in FROM context, got {items:?}"
+        );
     }
 
     fn cache_with_two_tables() -> MetadataCache {
