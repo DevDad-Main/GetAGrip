@@ -231,7 +231,9 @@ fn match_score(label: &str, query: &str) -> i32 {
     let tokens = word_tokens(label);
     let initials: String = tokens.iter().map(|(t, _)| t.chars().next().unwrap()).collect();
     if initials == q { return 16; }
-    if initials.starts_with(&q) { return 14; }
+    // Query is a prefix of the initials ("dp" matches "DimProduct" initials "dp"),
+    // OR the initials are a prefix of the query ("frm" matches "FROM" initial "f").
+    if initials.starts_with(&q) || q.starts_with(&initials) { return 14; }
 
     // Prefix of any word token: "pr" matches the "Product" token in "DimProduct"
     for (tok, _) in &tokens {
@@ -612,6 +614,18 @@ mod tests {
         // "pm" is a subsequence but not a token prefix
         let subseq = match_score("DimProduct", "pm");
         assert!(prefix > subseq);
+    }
+
+    #[test]
+    fn frm_prefers_from_over_delete_from() {
+        // "frm" should match "FROM" (initials-prefix: f) higher than
+        // "DELETE FROM" (subsequence match on "from").
+        let from_score = match_score("FROM", "frm");
+        let delete_from_score = match_score("DELETE FROM", "frm");
+        assert!(
+            from_score > delete_from_score,
+            "FROM ({from_score}) should outrank DELETE FROM ({delete_from_score})"
+        );
     }
 
     #[test]

@@ -131,9 +131,14 @@
   function updateSuggestPosition(pos: monaco.Position) {
     if (!editor || !containerEl) return;
     const coords = editor.getScrolledVisiblePosition(pos);
+    if (!coords) return;
     const containerRect = containerEl.getBoundingClientRect();
     const widgetHeight = 480; // approximate max height
-    const below = containerRect.top + coords.top + 20;
+    // Place the widget just below the cursor line. coords.top is the top of
+    // the cursor line relative to the editor viewport; add one line height so
+    // the widget doesn't overlap the text the user is typing.
+    const lineHeight = editor.getOption(monaco.editor.EditorOption.lineHeight);
+    const below = containerRect.top + coords.top + lineHeight + 4;
     // If would overflow viewport, flip above cursor
     const top = (below + widgetHeight > window.innerHeight)
       ? containerRect.top + coords.top - widgetHeight - 8
@@ -168,7 +173,6 @@
     updateSuggestPosition(pos);
     suggestVisible = true;
     lastCompletionPos = pos;
-    completionGenerationAtFetch = completionGeneration;
     // Reset widget to keyboard-ownership mode so a passive mouse doesn't hijack selection
     customSuggestRef?.resetInteraction?.();
   }
@@ -188,11 +192,6 @@
   let completionReqId = 0;
   let completionTimer: ReturnType<typeof setTimeout> | null = null;
   const COMPLETION_DEBOUNCE_MS = 150;
-  // Incremented every time the user types (resetting the debounce). If this
-  // changes between when the suggestion was fetched and when Enter/Tab is
-  // pressed, the suggestion is stale and must not be accepted.
-  let completionGeneration = 0;
-  let completionGenerationAtFetch = 0;
 
   function runDiagnostics() {
     if (!editor) return;
@@ -249,7 +248,6 @@
     if (!position) return;
 
     // Debounce: rapid typing should not fire a request per char
-    completionGeneration++;
     if (completionTimer) {
       clearTimeout(completionTimer);
       completionTimer = null;
@@ -305,6 +303,13 @@
         cursor_line: position.lineNumber,
         cursor_column: position.column,
       });
+      console.log('[completion] response', JSON.stringify({
+        sql: text,
+        reqPos: { line: position.lineNumber, col: position.column },
+        cursorWord: resp.cursor_word,
+        cursorWordStartCol: resp.cursor_word_start_col,
+        topSuggestion: resp.suggestions[0]?.label,
+      }));
       if (reqId === completionReqId) {
         showSuggest(resp.suggestions, position, resp.cursor_word_start_col);
       }
@@ -318,20 +323,37 @@
   function handleSuggestSelect(item: CompletionItem) {
     if (!editor || !lastCompletionPos) return;
     const insertText = item.insert_text ?? item.label;
-    const pos = lastCompletionPos;
+    // Use the CURRENT cursor position (which may have advanced since the
+    // suggestion was fetched — the user can type more chars while the widget
+    // is visible without it re-fetching). The startColumn from the engine is
+    // still valid because it's the absolute column where the word starts;
+    // only the endColumn needs to track the live cursor.
+    const curPos = editor.getPosition();
+    if (!curPos) return;
+    const line = curPos.lineNumber;
+    const endCol = curPos.column;
+    const model = editor.getModel();
+    const lineContent = model?.getLineContent(line) ?? '';
+    console.log('[completion] select', JSON.stringify({
+      label: item.label,
+      insertText,
+      curPos: { line, col: endCol },
+      lastPos: { line: lastCompletionPos.lineNumber, col: lastCompletionPos.column },
+      cursorWordStartCol: completionCursorWordStartCol,
+      lineContent,
+    }));
     // Use the engine-reported cursor-word start column for the replacement
     // range. This keeps the replacement in sync with what the engine matched
     // against, instead of Monaco's word segmentation which can pick a
-    // different span and corrupt the text (e.g. replace "SE" with the wrong
-    // characters, yielding "ELECT" instead of "SELECT").
-    if (completionCursorWordStartCol !== null) {
+    // different span and corrupt the text.
+    if (completionCursorWordStartCol !== null && line === lastCompletionPos.lineNumber) {
       const startCol = completionCursorWordStartCol;
       editor.executeEdits('completion', [{
         range: {
-          startLineNumber: pos.lineNumber,
-          endLineNumber: pos.lineNumber,
+          startLineNumber: line,
+          endLineNumber: line,
           startColumn: startCol,
-          endColumn: pos.column,
+          endColumn: endCol,
         },
         text: insertText,
       }]);
@@ -339,10 +361,10 @@
       // No cursor word (empty query): insert at the cursor position.
       editor.executeEdits('completion', [{
         range: {
-          startLineNumber: pos.lineNumber,
-          endLineNumber: pos.lineNumber,
-          startColumn: pos.column,
-          endColumn: pos.column,
+          startLineNumber: line,
+          endLineNumber: line,
+          startColumn: endCol,
+          endColumn: endCol,
         },
         text: insertText,
       }]);
@@ -380,11 +402,9 @@
       return true;
     }
     if (e.keyCode === monaco.KeyCode.Enter || e.keyCode === monaco.KeyCode.Tab) {
-      // If the user typed since the suggestion was fetched (debounce pending
-      // or in-flight), the widget is stale — accepting it would replace the
-      // wrong text. Hide the widget and let the key insert a newline/tab as
-      // usual; the next keystroke will trigger a fresh completion.
-      if (completionGeneration !== completionGenerationAtFetch) {
+      // Only accept if the cursor is still on the same line as the suggestion.
+      const curPos = editor?.getPosition();
+      if (curPos && lastCompletionPos && curPos.lineNumber !== lastCompletionPos.lineNumber) {
         hideSuggest();
         return false;
       }
