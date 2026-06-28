@@ -1,13 +1,5 @@
-/**
- * Svelte stores — multi-datasource model (Phase 2).
- *
- * Replaces the Phase 1 single-connection stores with a DataGrip-style
- * multi-datasource model. Each editor tab carries a datasourceId + schema,
- * results are tabbed, and history is tracked.
- */
-
 import { writable, derived } from 'svelte/store';
-import type { ConnectionProfile, ExplorerNode, HistoryEntry } from './tauri';
+import type { ConnectionProfile, ExplorerNode, Folder, HistoryEntry } from './tauri';
 import * as tauri from './tauri';
 
 // ---- Datasources -----------------------------------------------------------
@@ -29,6 +21,7 @@ export const datasources = writable<ConnectionProfile[]>([]);
 export const activeDatasourceId = writable<string | null>(null);
 export const datasourceStates = writable<Record<string, DatasourceInfo>>({});
 export const datasourceTrees = writable<Record<string, ExplorerNode[]>>({});
+export const folders = writable<Folder[]>([]);
 
 export const activeDatasource = derived(
   [datasources, activeDatasourceId],
@@ -53,7 +46,7 @@ export const activeTab = derived(
   ([$tabs, $id]) => $tabs.find((t) => t.id === $id) ?? null,
 );
 
-// ---- Query results (multiple result sets) ----------------------------------
+// ---- Query results ---------------------------------------------------------
 
 export interface ResultSet {
   id: string;
@@ -90,7 +83,7 @@ export type ModalKind = 'connect' | 'datasource' | 'none';
 export const activeModal = writable<ModalKind>('none');
 export const modalPayload = writable<unknown>(null);
 
-// ---- Schema cache (for autocomplete) ---------------------------------------
+// ---- Schema cache ----------------------------------------------------------
 
 export type SchemaCache = {
   tablesByDb: Record<string, string[]>;
@@ -122,6 +115,114 @@ export async function loadDatasources(): Promise<void> {
   }
 }
 
+export async function loadFolders(): Promise<void> {
+  try {
+    const f = await tauri.listFolders();
+    f.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    folders.set(f);
+  } catch (e) {
+    console.error('Failed to load folders:', e);
+  }
+}
+
+export interface NavNode {
+  id: string;
+  kind: 'folder' | 'datasource';
+  label: string;
+  children: NavNode[];
+  profile?: ConnectionProfile;
+  folder?: Folder;
+  // Pseudo-folder flag
+  pseudo?: boolean;
+}
+
+export const FAVORITES_ID = '__favorites__';
+
+export function buildNavTree(
+  dsList: ConnectionProfile[],
+  folderList: Folder[],
+  collapsed: Set<string>,
+): NavNode[] {
+  const byParent = new Map<string | null, Folder[]>();
+  for (const f of folderList) {
+    const key = f.parent_id;
+    const arr = byParent.get(key) ?? [];
+    arr.push(f);
+    byParent.set(key, arr);
+  }
+
+  const out: NavNode[] = [];
+
+  // Favorites pseudo-folder (only if any datasources are favorited)
+  const favorites = dsList.filter((ds) => ds.favorite);
+  if (favorites.length > 0) {
+    out.push({
+      id: FAVORITES_ID,
+      kind: 'folder',
+      label: 'Favorites',
+      pseudo: true,
+      children: favorites.map(dsNode),
+    });
+  }
+
+  // Root folders
+  for (const f of byParent.get(null) ?? []) {
+    out.push(buildFolderNode(f, byParent, dsList, collapsed));
+  }
+
+  // Root datasources (no folder)
+  for (const ds of dsList) {
+    if (!ds.folder_id && !ds.favorite) out.push(dsNode(ds));
+  }
+  // Also include root favorites that are not in a folder (already handled above)
+  // Non-favorite non-folder datasources are above; favorites are already in the Favorites folder.
+
+  return out;
+}
+
+function buildFolderNode(
+  folder: Folder,
+  byParent: Map<string | null, Folder[]>,
+  dsList: ConnectionProfile[],
+  collapsed: Set<string>,
+): NavNode {
+  const node: NavNode = {
+    id: folder.id,
+    kind: 'folder',
+    label: folder.name,
+    folder,
+    children: [],
+  };
+
+  if (collapsed.has(folder.id)) {
+    node.children = [];
+    return node;
+  }
+
+  for (const child of byParent.get(folder.id) ?? []) {
+    node.children.push(buildFolderNode(child, byParent, dsList, collapsed));
+  }
+  for (const ds of dsList) {
+    if (ds.folder_id === folder.id && !ds.favorite) node.children.push(dsNode(ds));
+  }
+  // Also add favorited datasources in this folder
+  // (they will also appear in the Favorites section — that's by design)
+  for (const ds of dsList) {
+    if (ds.folder_id === folder.id && ds.favorite) node.children.push(dsNode(ds));
+  }
+  return node;
+}
+
+function dsNode(ds: ConnectionProfile): NavNode {
+  return {
+    id: ds.id,
+    kind: 'datasource',
+    label: ds.name,
+    profile: ds,
+    children: [],
+  };
+}
+
 export function addDatasource(profile: ConnectionProfile): void {
   datasources.update((ds) => [...ds, profile]);
 }
@@ -135,6 +236,7 @@ export function resetAll(): void {
   activeDatasourceId.set(null);
   datasourceStates.set({});
   datasourceTrees.set({});
+  folders.set([]);
   tabs.set([{ id: 'q1', title: 'Query 1', sql: '', datasourceId: null, schema: null }]);
   activeTabId.set('q1');
   resultSets.set([]);

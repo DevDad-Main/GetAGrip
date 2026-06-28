@@ -1,5 +1,6 @@
+import { get } from 'svelte/store';
 import { datasources, activeDatasourceId, datasourceStates, datasourceTrees, schemaCache, metadataRefreshed } from './stores';
-import { connectDatasource, disconnectDatasource, deleteDatasource, introspectNode, refreshMetadata, type ConnectionProfile, type ManagedConnectionDto } from './tauri';
+import { connectDatasource, disconnectDatasource, deleteDatasource, testDatasource, toggleFavorite, introspectNode, refreshMetadata, type ConnectionProfile, type ManagedConnectionDto } from './tauri';
 import { notify } from '../components/Toast.svelte';
 
 async function loadAllTableNames(profileId: string) {
@@ -71,9 +72,7 @@ export async function handleConnect(profile: ConnectionProfile) {
       try {
         const nodes = await introspectNode(profile.id, null, null, null);
         datasourceTrees.update((t) => ({ ...t, [profile.id]: nodes }));
-        // Background: load table names for autocomplete
         loadAllTableNames(profile.id);
-        // Populate Rust metadata cache for intelligence engine
         refreshMetadata({ connection_id: profile.id })
           .then(() => {
             notify('Metadata loaded for autocomplete', 'info');
@@ -131,5 +130,48 @@ export async function handleDeleteDatasource(profileId: string) {
     notify('Data source deleted', 'info');
   } catch (e) {
     console.error('delete failed:', e);
+  }
+}
+
+export async function handleConnectAll() {
+  const dsList = get(datasources);
+  let connected = 0;
+  let failed = 0;
+
+  for (const ds of dsList) {
+    const state = get(datasourceStates)[ds.id]?.state;
+    if (state === 'connected' || state === 'connecting') continue;
+    try {
+      await handleConnect(ds);
+      connected++;
+    } catch {
+      failed++;
+    }
+  }
+
+  if (connected > 0) {
+    notify(`Connected to ${connected} data source${connected > 1 ? 's' : ''}`, 'success');
+  }
+  if (failed > 0) {
+    notify(`${failed} connection${failed > 1 ? 's' : ''} failed`, 'error');
+  }
+}
+
+export async function handleTestConnection(profile: ConnectionProfile) {
+  try {
+    const result = await testDatasource(profile.id);
+    notify(result, 'success', 8000);
+  } catch (e) {
+    notify(`Test failed: ${e}`, 'error', 8000);
+  }
+}
+
+export async function handleToggleFavorite(profileId: string) {
+  try {
+    await toggleFavorite(profileId);
+    const { loadDatasources } = await import('./stores');
+    await loadDatasources();
+  } catch (e) {
+    console.error('toggle favorite failed:', e);
   }
 }

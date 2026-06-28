@@ -1,23 +1,63 @@
 <script lang="ts">
-  import { sidebarVisible, datasources, activeDatasourceId, datasourceTrees, datasourceStates, activeModal, modalPayload } from '$lib/stores';
+  import { sidebarVisible, datasources, activeDatasourceId, datasourceTrees, datasourceStates, activeModal, modalPayload, loadFolders } from '$lib/stores';
   import type { ConnectionProfile } from '$lib/tauri';
-  import DataSourceList from './DataSourceList.svelte';
+  import { handleConnect, handleDisconnect, handleConnectAll } from '$lib/connection';
+  import { saveFolder } from '$lib/tauri';
+  import DataSourceTree from './DataSourceTree.svelte';
   import ExplorerTree from './ExplorerTree.svelte';
-  import { Plus, Database, ChevronDown, ChevronRight, RefreshCw } from 'lucide-svelte';
-  import { handleConnect } from '$lib/connection';
+  import {
+    Plus, ChevronDown, ChevronRight, RefreshCw, Database,
+    FolderPlus, Unplug, Link,
+  } from 'lucide-svelte';
 
   let dsCollapsed = false;
   let explorerCollapsed = false;
   let dsHeight = 200;
+  let plusMenuOpen = false;
+  let connectingAll = false;
 
   function openNewDatasource() {
+    plusMenuOpen = false;
     modalPayload.set(null);
     activeModal.set('datasource');
+  }
+
+  async function openNewFolder() {
+    plusMenuOpen = false;
+    await saveFolder('New Folder', null);
+    await loadFolders();
   }
 
   function openEditDatasource(profile: ConnectionProfile) {
     modalPayload.set(profile);
     activeModal.set('datasource');
+  }
+
+  async function disconnectAll() {
+    const ids = Object.entries($datasourceStates)
+      .filter(([, v]) => v?.state === 'connected')
+      .map(([id]) => id);
+    for (const id of ids) {
+      await handleDisconnect(id);
+    }
+  }
+
+  async function connectAll() {
+    connectingAll = true;
+    try {
+      await handleConnectAll();
+    } finally {
+      connectingAll = false;
+    }
+  }
+
+  $: connectedCount = Object.values($datasourceStates).filter((s) => s?.state === 'connected').length;
+  $: totalCount = $datasources.length;
+  $: hasConnections = connectedCount > 0;
+  $: hasDisconnected = totalCount > connectedCount;
+
+  function onGlobalClick() {
+    if (plusMenuOpen) plusMenuOpen = false;
   }
 
   let _containerH = 600;
@@ -58,7 +98,7 @@
   $: activeTrees = $datasourceTrees[$activeDatasourceId ?? ''] ?? [];
 </script>
 
-<aside class="sidebar" class:hidden={!$sidebarVisible} bind:clientHeight={_containerH}>
+<aside class="sidebar" class:hidden={!$sidebarVisible} bind:clientHeight={_containerH} on:click={onGlobalClick}>
   <!-- Data Sources Section -->
   <div class="section-header" class:collapsed={dsCollapsed}>
     <button class="section-toggle" on:click={() => { dsCollapsed = !dsCollapsed; if (dsCollapsed) dsHeight = 28; else dsHeight = 200; }}>
@@ -69,14 +109,44 @@
       {/if}
       <span>DATA SOURCES</span>
     </button>
-    <button class="sidebar-connect" on:click={openNewDatasource} title="New data source">
-      <Plus size="14" />
-    </button>
+    <div class="ds-toolbar" on:click|stopPropagation>
+      <div class="ds-plus-wrap">
+        <button class="ds-tool-btn" on:click={() => plusMenuOpen = !plusMenuOpen} title="New…">
+          <Plus size="13" />
+          <ChevronDown size="10" class="ds-plus-caret" />
+        </button>
+        {#if plusMenuOpen}
+          <div class="ds-plus-menu" on:click|stopPropagation>
+            <button class="ds-plus-item" on:click={openNewDatasource}>
+              <Plus size="12" />
+              <span>New Connection</span>
+            </button>
+            <button class="ds-plus-item" on:click={openNewFolder}>
+              <FolderPlus size="12" />
+              <span>New Folder</span>
+            </button>
+          </div>
+        {/if}
+      </div>
+      {#if hasConnections}
+        <button class="ds-tool-btn" on:click={disconnectAll} title="Disconnect all">
+          <Unplug size="13" />
+        </button>
+      {:else if hasDisconnected}
+        <button class="ds-tool-btn" on:click={connectAll} disabled={connectingAll} title="Connect all">
+          {#if connectingAll}
+            <RefreshCw size="13" class="spin" />
+          {:else}
+            <Link size="13" />
+          {/if}
+        </button>
+      {/if}
+    </div>
   </div>
 
   {#if !dsCollapsed}
     <div class="ds-section" style="height: {dsHeight - 28}px">
-      <DataSourceList onEdit={openEditDatasource} />
+      <DataSourceTree onEdit={openEditDatasource} onNewFolder={openNewFolder} />
     </div>
   {/if}
 
@@ -164,9 +234,7 @@
     min-height: 28px;
     cursor: default;
   }
-  .section-header.collapsed {
-    border-bottom: none;
-  }
+  .section-header.collapsed { border-bottom: none; }
   .section-toggle {
     display: flex;
     align-items: center;
@@ -183,21 +251,72 @@
   }
   .section-toggle:hover { color: var(--text); }
 
-  .sidebar-connect {
+  .ds-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    flex-shrink: 0;
+    margin-right: -4px;
+  }
+  .ds-tool-btn {
+    position: relative;
     border: none;
     background: transparent;
-    font-size: 16px;
     color: var(--text-muted);
-    padding: 0 2px;
+    padding: 3px;
     cursor: pointer;
-    flex-shrink: 0;
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
   }
-  .sidebar-connect:hover { color: var(--accent); }
+  .ds-tool-btn:hover { background: var(--bg-hover); color: var(--text); }
+  .ds-tool-btn:disabled { opacity: 0.5; cursor: default; }
+  .ds-plus-caret { margin-left: -1px; }
+
+  .ds-plus-wrap { position: relative; display: inline-flex; }
+  .ds-plus-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 1000;
+    min-width: 150px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px;
+    margin-top: 3px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    animation: ctx-in 0.08s ease-out;
+  }
+  .ds-plus-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    text-align: left;
+    width: 100%;
+  }
+  .ds-plus-item:hover { background: var(--accent-soft); }
+  @keyframes ctx-in {
+    from { opacity: 0; transform: scale(0.97); }
+    to { opacity: 1; transform: scale(1); }
+  }
 
   .ds-section {
     flex-shrink: 0;
     overflow: hidden;
     display: flex;
+    flex-direction: column;
     border-bottom: 1px solid var(--border);
   }
 
@@ -258,4 +377,7 @@
     margin-top: 40px;
     padding: 0 16px;
   }
+
+  .spin { animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
