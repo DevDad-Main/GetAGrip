@@ -17,7 +17,7 @@ use tauri::Manager;
 
 use getagrip_core::{ConnectionProfiles, EventBus, SecretsVault};
 use getagrip_database::ConnectionManager;
-use getagrip_intelligence::MetadataCache;
+use getagrip_intelligence::{LspManager, MetadataCache};
 use getagrip_query_engine::QueryHistory;
 
 use commands::connect::{connect, disconnect, test_connection};
@@ -102,6 +102,7 @@ fn main() {
                 history,
                 event_bus: Arc::new(EventBus::new()),
                 metadata_cache: MetadataCache::new(),
+                lsp_manager: Arc::new(parking_lot::Mutex::new(LspManager::new())),
                 profiles_path,
                 history_path,
             };

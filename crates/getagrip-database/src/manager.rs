@@ -59,6 +59,11 @@ impl ConnectionManager {
         }
     }
 
+    /// Look up a managed connection by its profile ID string.
+    pub fn get_by_id_str(&self, id: &str) -> Option<ManagedConnection> {
+        self.connections.get(id).map(|entry| entry.value().clone())
+    }
+
     /// Connect using a profile. Returns the managed connection handle.
     ///
     /// If a connection for this profile already exists, it is returned

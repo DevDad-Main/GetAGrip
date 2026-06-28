@@ -13,6 +13,7 @@ pub mod lsp_client;
 pub mod metadata;
 pub mod types;
 
+pub use lsp_client::LspManager;
 pub use metadata::MetadataCache;
 pub use types::{
     CompletionItem, CompletionKind, CompletionRequest, CompletionResponse,

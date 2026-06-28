@@ -289,7 +289,7 @@ impl ConnectionProfile {
         }
     }
 
-    fn driver_name(&self) -> &'static str {
+    pub fn driver_name(&self) -> &'static str {
         match self.driver {
             ConnectionDriver::Postgres => "postgres",
             ConnectionDriver::Mysql => "mysql",

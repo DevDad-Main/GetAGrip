@@ -26,13 +26,33 @@ pub async fn request_completion_cmd(
         table_count,
     );
 
-    let suggestions = request_completion(
+    // Engine completions (always available, schema-aware).
+    let engine_suggestions = request_completion(
         &request.sql,
         request.cursor_line,
         request.cursor_column,
         &request.connection_id,
         &state.metadata_cache,
     );
+
+    // LSP completions (only when an LSP server is registered for this driver).
+    let driver = state
+        .manager
+        .get_by_id_str(&request.connection_id)
+        .map(|c| c.profile.driver_name().to_string());
+    let lsp_suggestions = match driver {
+        Some(d) => state
+            .lsp_manager
+            .lock()
+            .complete(&request.connection_id, &d, &request.sql, request.cursor_line, request.cursor_column),
+        None => Vec::new(),
+    };
+
+    let suggestions = if lsp_suggestions.is_empty() {
+        engine_suggestions
+    } else {
+        getagrip_intelligence::lsp_client::merge_completions(&engine_suggestions, &lsp_suggestions)
+    };
 
     Ok(CompletionResponse {
         suggestions,
