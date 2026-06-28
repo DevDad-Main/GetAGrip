@@ -454,8 +454,14 @@ fn is_after_clause(sql: &str, cursor_line: u32, cursor_column: u32, clause: &str
     if let Some(pos) = prefix.rfind(&clause_upper) {
         let after_raw = &prefix[pos + clause.len()..];
         let after = after_raw.trim();
-        // Single token after clause (e.g., "FROM DimP") — still in FROM context
-        if !after.contains(' ') {
+        // A semicolon ends the statement — anything after it is a new statement,
+        // not a continuation of the clause.
+        if after.contains(';') {
+            return false;
+        }
+        // Single token after clause (e.g., "FROM DimP") — still in FROM context.
+        // Check any whitespace (space, newline, tab) — not just the space char.
+        if !after.chars().any(char::is_whitespace) {
             return true;
         }
         // Multiple tokens but the cursor is on the first one (e.g., "FROM DimProduct J")
@@ -690,6 +696,24 @@ mod tests {
         let table_idx = items.iter().position(|i| i.label == "DimProduct");
         if let Some(tidx) = table_idx {
             assert!(select_idx < tidx, "SELECT should rank above tables");
+        }
+    }
+
+    #[test]
+    fn select_keyword_on_new_line_after_existing_query() {
+        // User has "SELECT * FROM DimProduct;" on line 1, types "SELEC" on line 2.
+        // SELECT keyword must appear above tables.
+        let cache = cache_with_dimproduct();
+        let sql = "SELECT * FROM DimProduct;\nSELEC";
+        let items = request_completion(sql, 2, 5, "conn1", &cache);
+        assert!(
+            items.iter().any(|i| i.label == "SELECT"),
+            "expected SELECT in suggestions, got {items:?}"
+        );
+        let select_idx = items.iter().position(|i| i.label == "SELECT").unwrap();
+        let table_idx = items.iter().position(|i| i.label == "DimProduct");
+        if let Some(tidx) = table_idx {
+            assert!(select_idx < tidx, "SELECT should rank above tables on new line");
         }
     }
 
