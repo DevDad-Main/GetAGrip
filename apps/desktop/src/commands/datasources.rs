@@ -181,19 +181,21 @@ pub async fn delete_datasource(
     let pid = Id::<ConnectionProfileId>::parse(&profile_id)
         .ok_or_else(|| format!("invalid profile id: {profile_id}"))?;
 
-    state.manager.disconnect(pid).await;
-    let _ = state.vault.delete(&profile_id);
-
     let mut profiles = state.profiles.write();
     profiles.remove(pid);
+    state.vault.delete(&profile_id);
     persist_profiles(&profiles, &state.profiles_path)?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn list_datasources(state: State<'_, AppState>) -> Result<Vec<ConnectionProfile>, String> {
+pub async fn list_datasources(
+    state: State<'_, AppState>,
+) -> Result<Vec<ConnectionProfile>, String> {
     let profiles = state.profiles.read();
-    Ok(profiles.sorted().into_iter().cloned().collect())
+    let mut list: Vec<ConnectionProfile> = profiles.iter().map(|(_, p)| p.clone()).collect();
+    list.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(list)
 }
 
 #[tauri::command]
@@ -204,54 +206,26 @@ pub async fn connect_datasource(
     let pid = Id::<ConnectionProfileId>::parse(&profile_id)
         .ok_or_else(|| format!("invalid profile id: {profile_id}"))?;
 
-    let profile = {
+    let (profile, username, password) = {
         let profiles = state.profiles.read();
-        profiles.get(pid).cloned().ok_or_else(|| format!("profile not found: {profile_id}"))?
+        let profile = profiles.get(pid).ok_or_else(|| format!("profile not found: {profile_id}"))?.clone();
+        let (username, password) = resolve_credentials(&profile, &state.vault)?;
+        (profile, username, password)
     };
 
-    let driver = driver_for(&profile)?;
+    let url = build_url(&profile, username.as_deref(), password.as_deref());
+    let result = state.manager.connect(profile_id.clone(), &url).await.map_err(|e| format!("{e}"))?;
 
-    // Resolve credentials from vault
-    let (username, password) = resolve_credential(&profile, &state.vault);
-    tracing::info!(
-        "connect_datasource: profile={}, host={}:{}, has_username={}, has_password={}",
-        profile.name,
-        profile.host,
-        profile.port,
-        username.is_some(),
-        password.is_some(),
-    );
-
-    let managed = state
-        .manager
-        .connect(
-            &profile,
-            driver,
-            getagrip_database::PoolConfig::default(),
-            username.as_deref(),
-            password.as_deref(),
-        )
-        .await
-        .map_err(|e| format!("{e}"))?;
-
-    {
+    // Update last_connected_at on success
+    if result.state == "Connected" {
         let mut profiles = state.profiles.write();
         if let Some(p) = profiles.get_mut(pid) {
-            p.mark_connected();
-            let _ = persist_profiles(&profiles, &state.profiles_path);
+            p.last_connected_at = Some(Utc::now());
+            persist_profiles(&profiles, &state.profiles_path)?;
         }
     }
 
-    Ok(ManagedConnectionDto {
-        profile_id: managed.profile.id.to_string(),
-        name: managed.profile.name.clone(),
-        driver: managed.profile.driver.display_name().to_string(),
-        state: format!("{:?}", managed.state),
-        host: managed.profile.host.clone(),
-        port: managed.profile.port,
-        database: managed.profile.database.clone(),
-        last_error: managed.last_error.clone(),
-    })
+    Ok(result)
 }
 
 #[tauri::command]
@@ -259,9 +233,7 @@ pub async fn disconnect_datasource(
     profile_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let pid = Id::<ConnectionProfileId>::parse(&profile_id)
-        .ok_or_else(|| format!("invalid profile id: {profile_id}"))?;
-    state.manager.disconnect(pid).await;
+    state.manager.disconnect(&profile_id).await;
     Ok(())
 }
 
@@ -273,49 +245,151 @@ pub async fn test_datasource(
     let pid = Id::<ConnectionProfileId>::parse(&profile_id)
         .ok_or_else(|| format!("invalid profile id: {profile_id}"))?;
 
-    let profile = {
+    let (profile, username, password) = {
         let profiles = state.profiles.read();
-        profiles.get(pid).cloned().ok_or_else(|| format!("profile not found: {profile_id}"))?
+        let profile = profiles.get(pid).ok_or_else(|| format!("profile not found: {profile_id}"))?.clone();
+        let (username, password) = resolve_credentials(&profile, &state.vault)?;
+        (profile, username, password)
     };
 
-    let driver = driver_for(&profile)?;
-    let (username, password) = resolve_credential(&profile, &state.vault);
     let url = build_test_url(&profile, username.as_deref(), password.as_deref());
-
-    driver.test_connection(&url).await.map(|_| {
-        format!("Connection to {} successful", profile.name)
-    }).map_err(|e| format!("Connection failed: {e}"))
+    let driver = driver_for(&profile.driver);
+    match driver.test_connection(&url).await {
+        Ok(_) => Ok(format!("Connection to {} successful", profile.name)),
+        Err(e) => Err(format!("Connection failed: {e}")),
+    }
 }
 
-fn resolve_credential(
-    profile: &ConnectionProfile,
-    vault: &SecretsVault,
-) -> (Option<String>, Option<String>) {
-    let username = profile.credential.username().map(|s| s.to_string());
-    let password = match &profile.credential {
-        getagrip_core::Credential::Password { vault_key, .. } => {
-            let pw = vault.get(vault_key).ok().flatten();
-            tracing::info!(
-                "resolve_credential: vault_key={}, has_password={}",
-                vault_key,
-                pw.is_some()
-            );
-            pw
+#[tauri::command]
+pub async fn toggle_favorite(
+    profile_id: String,
+    state: State<'_, AppState>,
+) -> Result<ConnectionProfile, String> {
+    let pid = Id::<ConnectionProfileId>::parse(&profile_id)
+        .ok_or_else(|| format!("invalid profile id: {profile_id}"))?;
+
+    let mut profiles = state.profiles.write();
+    let existing = profiles.get_mut(pid)
+        .ok_or_else(|| format!("profile not found: {profile_id}"))?;
+    existing.toggle_favorite();
+    let result = existing.clone();
+    persist_profiles(&profiles, &state.profiles_path)?;
+    Ok(result)
+}
+
+// ---- Folders -----------------------------------------------------------------
+
+#[tauri::command]
+pub async fn list_folders(
+    state: State<'_, AppState>,
+) -> Result<Vec<getagrip_core::session::Folder>, String> {
+    let profiles = state.profiles.read();
+    Ok(profiles.folders().cloned().collect())
+}
+
+#[tauri::command]
+pub async fn save_folder(
+    name: String,
+    parent_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<getagrip_core::session::Folder, String> {
+    let mut profiles = state.profiles.write();
+    let parent = match &parent_id {
+        Some(id) if !id.is_empty() => {
+            let pid = Id::<getagrip_core::session::FolderId>::parse(id)
+                .ok_or_else(|| format!("invalid folder id: {id}"))?;
+            Some(pid)
         }
-        _ => {
-            tracing::warn!("resolve_credential: credential is not Password variant");
-            None
-        }
+        _ => None,
     };
-    tracing::info!(
-        "resolve_credential: username={:?}, password_present={}",
-        username,
-        password.is_some()
-    );
-    (username, password)
+    let folder = profiles.add_folder(&name, parent);
+    persist_profiles(&profiles, &state.profiles_path)?;
+    Ok(folder)
 }
 
-fn build_test_url(profile: &ConnectionProfile, username: Option<&str>, password: Option<&str>) -> String {
+#[tauri::command]
+pub async fn update_folder(
+    folder_id: String,
+    name: Option<String>,
+    parent_id: Option<String>,
+    collapsed: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<getagrip_core::session::Folder, String> {
+    let fid = Id::<getagrip_core::session::FolderId>::parse(&folder_id)
+        .ok_or_else(|| format!("invalid folder id: {folder_id}"))?;
+
+    let mut profiles = state.profiles.write();
+    let folder = profiles.folders_mut()
+        .find(|f| f.id == fid)
+        .ok_or_else(|| format!("folder not found: {folder_id}"))?;
+
+    if let Some(n) = name { folder.name = n; }
+    if let Some(c) = collapsed { folder.collapsed = c; }
+    folder.parent_id = match parent_id {
+        Some(id) if id.is_empty() => None,
+        Some(id) => Some(Id::parse(&id).map_err(|_| format!("invalid parent id: {id}"))?),
+        None => folder.parent_id,
+    };
+
+    persist_profiles(&profiles, &state.profiles_path)?;
+    Ok(folder.clone())
+}
+
+#[tauri::command]
+pub async fn delete_folder(
+    folder_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let fid = Id::<getagrip_core::session::FolderId>::parse(&folder_id)
+        .ok_or_else(|| format!("invalid folder id: {folder_id}"))?;
+
+    let mut profiles = state.profiles.write();
+    profiles.remove_folder(fid);
+    persist_profiles(&profiles, &state.profiles_path)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn move_datasource_to_folder(
+    profile_id: String,
+    folder_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let pid = Id::<ConnectionProfileId>::parse(&profile_id)
+        .ok_or_else(|| format!("invalid profile id: {profile_id}"))?;
+
+    let mut profiles = state.profiles.write();
+    let profile = profiles
+        .get_mut(pid)
+        .ok_or_else(|| format!("profile not found: {profile_id}"))?;
+
+    profile.folder_id = match folder_id {
+        Some(id) if id.is_empty() => None,
+        Some(id) => Some(
+            Id::<getagrip_core::session::FolderId>::parse(&id)
+                .ok_or_else(|| format!("invalid folder id: {id}"))?,
+        ),
+        None => None,
+    };
+    persist_profiles(&profiles, &state.profiles_path)?;
+    Ok(())
+}
+
+// ---- Helpers -----------------------------------------------------------------
+
+fn resolve_credentials(profile: &ConnectionProfile, vault: &SecretsVault) -> Result<(Option<String>, Option<String>), String> {
+    match profile.credential {
+        getagrip_core::Credential::None => Ok((None, None)),
+        getagrip_core::Credential::Password { ref username, ref vault_key } => {
+            let password = vault.get(vault_key, SecretKind::Password)
+                .map_err(|e| format!("failed to read password from vault: {e}"))?;
+            Ok((Some(username.clone()), password))
+        }
+        getagrip_core::Credential::Integrated => Ok((None, None)),
+    }
+}
+
+fn build_url(profile: &ConnectionProfile, username: Option<&str>, password: Option<&str>) -> String {
     let user_pass = if let (Some(u), Some(p)) = (username, password) {
         format!("{}:{}@", u, p)
     } else if let Some(u) = username {
@@ -330,5 +404,23 @@ fn build_test_url(profile: &ConnectionProfile, username: Option<&str>, password:
         ConnectionDriver::Mssql => format!("mssql://{}{}:{}/{}", user_pass, profile.host, profile.port, db),
         ConnectionDriver::Sqlite => format!("sqlite://{}", profile.host),
         other => format!("{}://{}{}:{}/{}", other.display_name().to_lowercase(), user_pass, profile.host, profile.port, db),
+    }
+}
+
+fn build_test_url(profile: &ConnectionProfile, username: Option<&str>, password: Option<&str>) -> String {
+    let user_pass = if let (Some(u), Some(p)) = (username, password) {
+        format!("{}:{}@", u, p)
+    } else if let Some(u) = username {
+        format!("{}@", u)
+    } else {
+        String::new()
+    };
+    let db = profile.database.as_deref().unwrap_or("");
+    match profile.driver {
+        ConnectionDriver::Postgres => format!("postgres://{}{}:{}/{}?connect_timeout=5", user_pass, profile.host, profile.port, db),
+        ConnectionDriver::Mysql => format!("mysql://{}{}:{}/{}?connect_timeout=5", user_pass, profile.host, profile.port, db),
+        ConnectionDriver::Mssql => format!("mssql://{}{}:{}/{}?connect_timeout=5", user_pass, profile.host, profile.port, db),
+        ConnectionDriver::Sqlite => format!("sqlite://{}", profile.host),
+        other => format!("{}://{}{}:{}/{}?connect_timeout=5", other.display_name().to_lowercase(), user_pass, profile.host, profile.port, db),
     }
 }

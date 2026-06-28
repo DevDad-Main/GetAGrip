@@ -1,8 +1,3 @@
-//! GetAGrip — Tauri entrypoint.
-//!
-//! The frontend is a Svelte app in `frontend/`, built by Vite and embedded
-//! by Tauri. All Rust-driven functionality is exposed via Tauri commands.
-
 #![allow(unused_braces, clippy::needless_return)]
 
 mod commands;
@@ -22,8 +17,9 @@ use getagrip_query_engine::QueryHistory;
 
 use commands::connect::{connect, disconnect, test_connection};
 use commands::datasources::{
-    connect_datasource, delete_datasource, disconnect_datasource, list_datasources,
-    save_datasource, test_datasource, update_datasource,
+    connect_datasource, delete_datasource, delete_folder, disconnect_datasource,
+    list_datasources, list_folders, move_datasource_to_folder, save_datasource,
+    save_folder, test_datasource, toggle_favorite, update_datasource, update_folder,
 };
 use commands::explorer::introspect_node;
 use commands::export::{export_result, save_export};
@@ -84,7 +80,6 @@ fn main() {
             let history_path = history_path(&app_data);
             let history = Arc::new(QueryHistory::new());
 
-            // Load persisted history
             if history_path.exists() {
                 if let Ok(data) = fs::read_to_string(&history_path) {
                     if let Ok(entries) = serde_json::from_str::<Vec<getagrip_query_engine::HistoryEntry>>(&data) {
@@ -129,6 +124,12 @@ fn main() {
             connect_datasource,
             disconnect_datasource,
             test_datasource,
+            toggle_favorite,
+            list_folders,
+            save_folder,
+            update_folder,
+            delete_folder,
+            move_datasource_to_folder,
             export_result,
             save_export,
             list_history,

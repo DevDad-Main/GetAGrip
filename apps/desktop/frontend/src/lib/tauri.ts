@@ -1,13 +1,4 @@
-/**
- * Typed wrapper around Tauri's `invoke`.
- *
- * Each function maps 1:1 to a Rust `#[tauri::command]`. Phase 2 adds
- * multi-datasource commands, history, and export.
- */
-
 import { invoke } from '@tauri-apps/api/core';
-
-// ---- Types mirrored from Rust ----------------------------------------------
 
 export type ExplorerNodeKind =
   | 'Server' | 'Database' | 'Schema' | 'Folder' | 'Table' | 'View'
@@ -53,8 +44,6 @@ export interface ConnectResult {
   nodes: ExplorerNode[];
 }
 
-// ---- Phase 2 types ---------------------------------------------------------
-
 export type ConnectionDriver =
   | 'postgres' | 'mysql' | 'sqlite' | 'mssql'
   | 'oracle' | 'mongodb' | 'redis' | 'generic';
@@ -96,6 +85,14 @@ export interface DatasourceInput {
   notes: string | null;
 }
 
+export interface Folder {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  sort_order: number;
+  collapsed: boolean;
+}
+
 export interface ManagedConnectionDto {
   profile_id: string;
   name: string;
@@ -134,7 +131,7 @@ export interface ExportColumn {
   ordinal: number;
 }
 
-// ---- Phase 1 commands (kept for backward compat) ---------------------------
+// ---- Phase 1 commands -------------------------------------------------------
 
 export async function ping(): Promise<string> {
   return invoke<string>('ping');
@@ -200,6 +197,43 @@ export async function disconnectDatasource(profileId: string): Promise<void> {
 
 export async function testDatasource(profileId: string): Promise<string> {
   return invoke<string>('test_datasource', { profileId });
+}
+
+export async function toggleFavorite(profileId: string): Promise<ConnectionProfile> {
+  return invoke<ConnectionProfile>('toggle_favorite', { profileId });
+}
+
+// ---- Folder commands --------------------------------------------------------
+
+export async function listFolders(): Promise<Folder[]> {
+  return invoke<Folder[]>('list_folders');
+}
+
+export async function saveFolder(
+  name: string,
+  parentId: string | null,
+): Promise<Folder> {
+  return invoke<Folder>('save_folder', { name, parentId });
+}
+
+export async function updateFolder(
+  folderId: string,
+  name: string | null,
+  parentId: string | null,
+  collapsed: boolean | null,
+): Promise<Folder> {
+  return invoke<Folder>('update_folder', { folderId, name, parentId, collapsed });
+}
+
+export async function deleteFolder(folderId: string): Promise<void> {
+  invoke<void>('delete_folder', { folderId });
+}
+
+export async function moveDatasourceToFolder(
+  profileId: string,
+  folderId: string | null,
+): Promise<void> {
+  invoke<void>('move_datasource_to_folder', { profileId, folderId });
 }
 
 // ---- Phase 2 introspect command --------------------------------------------
