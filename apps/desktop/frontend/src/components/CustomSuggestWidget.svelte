@@ -9,6 +9,10 @@
   export let activeIndex = 0;
   export let matchWord = '';
 
+  // Track whether the user has physically moved the mouse inside the widget.
+  // Until they do, keyboard navigation owns the activeIndex; mouse hover is ignored.
+  let mouseActive = false;
+
   const dispatch = createEventDispatcher<{
     select: CompletionItem;
     close: void;
@@ -73,6 +77,11 @@
     }
   }
 
+  /** Reset to keyboard-ownership mode — call when the widget re-shows. */
+  export function resetInteraction() {
+    mouseActive = false;
+  }
+
 
 
 </script>
@@ -92,7 +101,19 @@
           class="cs-row"
           class:active={i === capped && capped >= 0}
           on:click={() => dispatch('select', item)}
-          on:mouseenter={() => activeIndex = i}
+          on:mouseenter={() => {
+            // Only take over selection once the user has moved the mouse.
+            // This prevents the widget from hijacking the active row when it
+            // happens to render under the cursor.
+            if (mouseActive) activeIndex = i;
+          }}
+          on:mousemove={() => {
+            // First real mouse movement inside the row → switch to mouse-ownership mode
+            if (!mouseActive) {
+              mouseActive = true;
+              activeIndex = i;
+            }
+          }}
         >
           <span class="cs-icon" class:ik-table={item.kind === 'table'} class:ik-column={item.kind === 'column'} class:ik-function={item.kind === 'function'} class:ik-keyword={item.kind === 'keyword'} class:ik-schema={item.kind === 'schema'} title={kindLabels[item.kind]}>
             <svelte:component this={kindIcons[item.kind] ?? CaseSensitive} size="14" />

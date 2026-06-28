@@ -8,6 +8,8 @@
     metadataRefreshed, jumpToPosition,
   } from '$lib/stores';
   import CustomSuggestWidget from './CustomSuggestWidget.svelte';
+
+  let customSuggestRef: CustomSuggestWidget | null = null;
   import HoverWidget from './HoverWidget.svelte';
 
   export let sql = '';
@@ -154,10 +156,13 @@
     suggestMatchWord = word?.word ?? '';
 
     suggestItems = items;
-    suggestActive = -1;
+    // Pre-select the top item so Tab/Enter accepts immediately (DataGrip behavior).
+    suggestActive = 0;
     updateSuggestPosition(pos);
     suggestVisible = true;
     lastCompletionPos = pos;
+    // Reset widget to keyboard-ownership mode so a passive mouse doesn't hijack selection
+    customSuggestRef?.resetInteraction?.();
   }
 
   function hideSuggest() {
@@ -343,9 +348,7 @@
       return true;
     }
     if (e.keyCode === monaco.KeyCode.UpArrow) {
-      if (suggestActive <= 0) {
-        suggestActive = -1;
-      } else {
+      if (suggestActive > 0) {
         suggestActive--;
       }
       e.preventDefault();
@@ -647,6 +650,7 @@
 <div class="monaco-container" bind:this={containerEl} on:click={() => editor?.focus()}></div>
 
 <CustomSuggestWidget
+  bind:this={customSuggestRef}
   items={suggestItems}
   visible={suggestVisible}
   position={suggestPos}
