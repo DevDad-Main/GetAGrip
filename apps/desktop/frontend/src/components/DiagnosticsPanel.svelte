@@ -61,17 +61,20 @@
 <style>
   .dp-overlay {
     position: fixed; inset: 0; z-index: 9000;
-    display: flex; align-items: flex-end; justify-content: center;
     pointer-events: all;
   }
   .dp-panel {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
     background: var(--bg-elev);
     border: 1px solid var(--border-strong);
     border-bottom: none;
     border-radius: 8px 8px 0 0;
     box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
-    width: min(800px, 100vw - 40px);
-    max-height: 360px;
+    width: min(700px, calc(100vw - 60px));
+    max-height: 400px;
     display: flex; flex-direction: column;
     font-size: 12px;
   }
