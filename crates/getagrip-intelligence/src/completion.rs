@@ -238,7 +238,13 @@ fn match_score(label: &str, query: &str) -> i32 {
     if initials == q { return 16; }
     // Query is a prefix of the initials ("dp" matches "DimProduct" initials "dp"),
     // OR the initials are a prefix of the query ("frm" matches "FROM" initial "f").
-    if initials.starts_with(&q) || q.starts_with(&initials) { return 14; }
+    // Guard the second direction: only when the query is not longer than the
+    // label itself. Otherwise every column whose first letter matches the start
+    // of a long query (e.g. "prodcutkey" vs "Phone" initial "p") scores 14,
+    // swamping real matches.
+    if initials.starts_with(&q) || (q.len() <= lower.len() && q.starts_with(&initials)) {
+        return 14;
+    }
 
     // Prefix of any word token: "pr" matches the "Product" token in "DimProduct"
     for (tok, _) in &tokens {
@@ -825,17 +831,37 @@ mod tests {
     fn unresolved_dot_prefix_boosts_matching_table_columns() {
         // "dp." is not a defined alias, but "dp" matches DimProduct initials.
         // "ProdcutKey" is a transposition typo of "ProductKey". DimProduct's
-        // ProductKey should rank above DimCustomer's Phone.
+        // ProductKey should rank first; unrelated columns like Phone (whose
+        // only link is sharing the first letter) must NOT outrank it.
         let cache = cache_with_multi_table();
         let items = request_completion("SELECT dp.ProdcutKey", 1, 22, "conn1", &cache);
-        let pk_idx = items.iter().position(|i| i.label == "ProductKey");
-        let phone_idx = items.iter().position(|i| i.label == "Phone");
-        assert!(pk_idx.is_some(), "ProductKey should appear in results: {items:?}");
-        assert!(phone_idx.is_some(), "Phone should appear in results: {items:?}");
         assert!(
-            pk_idx.unwrap() < phone_idx.unwrap(),
-            "ProductKey (DimProduct, matched by 'dp') should rank above Phone (DimCustomer), got {items:?}"
+            items.first().map(|i| i.label.as_str()) == Some("ProductKey"),
+            "ProductKey (DimProduct, matched by 'dp') should rank first, got {items:?}"
         );
+        // Phone shares only the initial 'p' with the query — it should not
+        // appear at all, or if it does, must rank below ProductKey.
+        if let Some(phone_idx) = items.iter().position(|i| i.label == "Phone") {
+            assert!(
+                phone_idx > 0,
+                "Phone must not outrank ProductKey, got {items:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn long_query_does_not_match_single_initial() {
+        // "prodcutkey" (10 chars) vs "Phone" (initial "p", 5 chars): the query
+        // is longer than the label, so the initials-prefix tier must NOT fire.
+        // Otherwise Phone would score 14 and swamp real matches.
+        let phone = match_score("Phone", "prodcutkey");
+        assert!(
+            phone == 0 || phone <= 8,
+            "Phone should not score highly against 'prodcutkey', got {phone}"
+        );
+        // But "frm" (3 chars) vs "FROM" (4 chars) still matches via initials.
+        let from = match_score("FROM", "frm");
+        assert!(from >= 14, "frm should still match FROM, got {from}");
     }
 
     #[test]
