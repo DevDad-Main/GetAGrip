@@ -72,8 +72,11 @@ pub fn request_completion(
             let cols = complete_columns_explicit(cache, connection_id, prefix, &word_lower);
             return bucket_truncate(cols, vec![], functions, keywords);
         }
-        // Unresolved dot: all columns + penalized keywords
-        let cols = complete_columns_all(cache, connection_id, &word_lower, None);
+        // Unresolved dot: all columns + penalized keywords. Try to guess the
+        // intended table from the prefix (e.g. "dp" → "DimProduct") so its
+        // columns get the in-scope boost even without a defined alias.
+        let scope = resolve_prefix_to_table(cache, connection_id, prefix);
+        let cols = complete_columns_all(cache, connection_id, &word_lower, scope.as_deref());
         return bucket_truncate(cols, vec![], functions, keywords);
     }
 
@@ -249,28 +252,51 @@ fn match_score(label: &str, query: &str) -> i32 {
         return (10 - (pos as i32).min(4)).max(6);
     }
 
-    // Subsequence match — walk label chars collecting query chars in order
+    // Subsequence match — walk label chars collecting query chars in order.
+    // Tolerant of a single adjacent transposition (the most common typo):
+    // if the strict walk fails, try the walk against a copy of the query with
+    // each adjacent pair swapped. "prodcutkey" then matches "productkey"
+    // (swapped c/u at index 4).
     let label_chars: Vec<char> = lower.chars().collect();
     let query_chars: Vec<char> = q.chars().collect();
+    if let Some(run) = subsequence_run(&label_chars, &query_chars) {
+        return if run >= 2 { (6 + run as i32).min(8) } else { 6 };
+    }
+    for i in 0..query_chars.len().saturating_sub(1) {
+        let mut swapped = query_chars.clone();
+        swapped.swap(i, i + 1);
+        if let Some(run) = subsequence_run(&label_chars, &swapped) {
+            // Penalise transposition matches one tier below a clean match.
+            let base = if run >= 2 { (6 + run as i32).min(8) } else { 6 };
+            return base.saturating_sub(1).max(4);
+        }
+    }
+    0
+}
+
+/// Longest consecutive run length while matching `query` as a subsequence of
+/// `label`. Returns Some(run) if all query chars appear in order, else None.
+fn subsequence_run(label: &[char], query: &[char]) -> Option<u32> {
     let mut qi = 0;
-    let mut consecutive = 0;
-    let mut best_consecutive = 0;
-    for &lc in &label_chars {
-        if qi < query_chars.len() && lc == query_chars[qi] {
+    let mut consecutive = 0u32;
+    let mut best = 0u32;
+    for &lc in label {
+        if qi >= query.len() {
+            break;
+        }
+        if lc == query[qi] {
             qi += 1;
             consecutive += 1;
-            best_consecutive = best_consecutive.max(consecutive);
+            best = best.max(consecutive);
         } else {
             consecutive = 0;
         }
     }
-    if qi < query_chars.len() {
-        return 0; // didn't match all query chars
+    if qi >= query.len() {
+        Some(best)
+    } else {
+        None
     }
-    if best_consecutive >= 2 {
-        return (6 + best_consecutive as i32).min(8);
-    }
-    6
 }
 
 // ── completion helpers ───────────────────────────────────────────────────
@@ -471,6 +497,31 @@ fn complete_columns_all(
 fn table_in_cache(cache: &MetadataCache, connection_id: &str, name: &str) -> bool {
     let tables = cache.get_tables(connection_id);
     tables.iter().any(|t| t.name == name)
+}
+
+/// Resolve a dot-prefix (e.g. "dp") to the best-matching table name using fuzzy
+/// scoring against table names. Returns the table whose name scores highest,
+/// or None if nothing matches. This handles the unresolved-dot case where the
+/// alias isn't defined in the current statement — "dp" still strongly implies
+/// "DimProduct" via initials, so we boost that table's columns.
+fn resolve_prefix_to_table(
+    cache: &MetadataCache,
+    connection_id: &str,
+    prefix: &str,
+) -> Option<String> {
+    if prefix.is_empty() {
+        return None;
+    }
+    let tables = cache.get_tables(connection_id);
+    if tables.is_empty() {
+        return None;
+    }
+    tables
+        .iter()
+        .map(|t| (t.name.clone(), match_score(&t.name, prefix)))
+        .filter(|(_, score)| *score > 0)
+        .max_by_key(|(_, score)| *score)
+        .map(|(name, _)| name)
 }
 
 /// True if the cursor is positioned after `clause` within its own statement.
@@ -713,6 +764,88 @@ mod tests {
             pk_idx.unwrap() < other_idx.unwrap(),
             "ProductKey (PK) should rank above EnglishProductName, got {items:?}"
         );
+    }
+
+    fn cache_with_multi_table() -> MetadataCache {
+        let cache = MetadataCache::new();
+        let mut schema = getagrip_schema::DatabaseSchema::new("testdb");
+        schema.tables.push(TableSchema {
+            name: "DimProduct".into(),
+            schema: "dbo".into(),
+            columns: vec![
+                ColumnSchema {
+                    name: "ProductKey".into(),
+                    col_type: ColumnType::Integer,
+                    db_type: "int".into(),
+                    nullable: false,
+                    default_value: None,
+                    is_primary_key: true,
+                    ordinal: 0,
+                    comment: None,
+                },
+                ColumnSchema {
+                    name: "EnglishProductName".into(),
+                    col_type: ColumnType::String,
+                    db_type: "nvarchar(50)".into(),
+                    nullable: true,
+                    default_value: None,
+                    is_primary_key: false,
+                    ordinal: 1,
+                    comment: None,
+                },
+            ],
+            constraints: vec![],
+            indexes: vec![],
+            comment: None,
+            row_count_estimate: None,
+        });
+        schema.tables.push(TableSchema {
+            name: "DimCustomer".into(),
+            schema: "dbo".into(),
+            columns: vec![ColumnSchema {
+                name: "Phone".into(),
+                col_type: ColumnType::String,
+                db_type: "nvarchar(20)".into(),
+                nullable: true,
+                default_value: None,
+                is_primary_key: false,
+                ordinal: 0,
+                comment: None,
+            }],
+            constraints: vec![],
+            indexes: vec![],
+            comment: None,
+            row_count_estimate: None,
+        });
+        cache.store("conn1", schema);
+        cache
+    }
+
+    #[test]
+    fn unresolved_dot_prefix_boosts_matching_table_columns() {
+        // "dp." is not a defined alias, but "dp" matches DimProduct initials.
+        // "ProdcutKey" is a transposition typo of "ProductKey". DimProduct's
+        // ProductKey should rank above DimCustomer's Phone.
+        let cache = cache_with_multi_table();
+        let items = request_completion("SELECT dp.ProdcutKey", 1, 22, "conn1", &cache);
+        let pk_idx = items.iter().position(|i| i.label == "ProductKey");
+        let phone_idx = items.iter().position(|i| i.label == "Phone");
+        assert!(pk_idx.is_some(), "ProductKey should appear in results: {items:?}");
+        assert!(phone_idx.is_some(), "Phone should appear in results: {items:?}");
+        assert!(
+            pk_idx.unwrap() < phone_idx.unwrap(),
+            "ProductKey (DimProduct, matched by 'dp') should rank above Phone (DimCustomer), got {items:?}"
+        );
+    }
+
+    #[test]
+    fn transposition_typo_matches_column() {
+        // "ProdcutKey" (swapped c/u) should still match "ProductKey".
+        let score = match_score("ProductKey", "ProdcutKey");
+        assert!(score > 0, "transposed typo should match, got score {score}");
+        // And score below a clean prefix match.
+        let clean = match_score("ProductKey", "Prod");
+        assert!(clean > score, "clean prefix ({clean}) should beat transposed ({score})");
     }
 
     #[test]
