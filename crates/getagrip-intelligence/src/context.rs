@@ -12,6 +12,26 @@ pub struct SqlContext {
     pub cursor_table: Option<String>,
     pub cursor_prefix: Option<String>,
     pub cursor_word: String,
+    /// The cursor position (1-based) within the original SQL.
+    pub cursor_line: u32,
+    pub cursor_col: u32,
+    /// Which parsed statement (0-based) the cursor is inside, if any.
+    pub statement_index: Option<usize>,
+    /// Per-statement clause boundaries, indexed by statement_index. Each entry
+    /// is the clauses in that statement in source order, with the (line, col)
+    /// of the clause keyword's end. Used by completion to decide which clause
+    /// the cursor is in — scoped to the cursor's own statement.
+    pub statement_clauses: Vec<Vec<ClauseSpan>>,
+}
+
+/// A clause keyword's position within a statement. `end_line`/`end_col` point
+/// at the character *after* the last char of the keyword, so a cursor at or
+/// past this position is "after" the clause.
+#[derive(Debug, Clone)]
+pub struct ClauseSpan {
+    pub name: String,
+    pub end_line: u32,
+    pub end_col: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -54,9 +74,19 @@ pub fn analyse_context(sql: &str, cursor_line: u32, cursor_column: u32) -> SqlCo
     let mut ctx = SqlContext::default();
 
     ctx.cursor_word = extract_word_at_cursor(&prefix);
+    ctx.cursor_line = cursor_line;
+    ctx.cursor_col = cursor_column;
 
     match parsed {
         Ok(statements) => {
+            // Find which statement the cursor sits inside (if any).
+            ctx.statement_index =
+                find_statement_at_cursor(&statements, cursor_line, cursor_column);
+            // Build per-statement clause boundary maps.
+            ctx.statement_clauses = statements
+                .iter()
+                .map(|stmt| extract_clauses(sql, stmt))
+                .collect();
             for stmt in &statements {
                 extract_from_statement(stmt, &mut ctx);
             }
@@ -67,6 +97,140 @@ pub fn analyse_context(sql: &str, cursor_line: u32, cursor_column: u32) -> SqlCo
     detect_cursor_scope(&prefix, &mut ctx);
 
     ctx
+}
+
+/// Find the index of the parsed statement that contains the cursor position.
+/// Returns None if the cursor is in a gap between statements or the SQL
+/// couldn't be parsed.
+fn find_statement_at_cursor(
+    statements: &[Statement],
+    cursor_line: u32,
+    cursor_column: u32,
+) -> Option<usize> {
+    use sqlparser::ast::Spanned;
+    for (i, stmt) in statements.iter().enumerate() {
+        let span = stmt.span();
+        let (sl, sc) = (span.start.line as u32, span.start.column as u32);
+        let (el, ec) = (span.end.line as u32, span.end.column as u32);
+        let after_start = cursor_line > sl || (cursor_line == sl && cursor_column >= sc);
+        let before_end = cursor_line < el || (cursor_line == el && cursor_column <= ec);
+        if after_start && before_end {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Extract clause boundaries from a single statement. Scans the statement's
+/// text for known clause keywords and records their end positions. Coarse but
+/// sufficient for completion dispatch — the AST already handled top-level
+/// structure, we just need rough clause positions within one statement.
+fn extract_clauses(sql: &str, stmt: &Statement) -> Vec<ClauseSpan> {
+    use sqlparser::ast::Spanned;
+    let span = stmt.span();
+    let (sl, sc) = (span.start.line as u32, span.start.column as u32);
+    let (el, ec) = (span.end.line as u32, span.end.column as u32);
+
+    // Slice the statement's text out of the full SQL.
+    let stmt_text = slice_text(sql, sl, sc, el, ec);
+
+    // Multi-word clauses first so they match before their single-word prefix.
+    const CLAUSE_KEYWORDS: &[&str] = &[
+        "ORDER BY", "GROUP BY", "LEFT JOIN", "RIGHT JOIN", "INNER JOIN",
+        "FULL JOIN", "INSERT INTO", "DELETE FROM", "CREATE TABLE",
+        "ALTER TABLE", "DROP TABLE", "CREATE INDEX", "DROP INDEX",
+        "CREATE VIEW", "DROP VIEW", "SELECT", "FROM", "WHERE", "JOIN",
+        "ON", "AND", "OR", "SET", "VALUES", "HAVING", "UPDATE",
+    ];
+
+    let mut spans: Vec<ClauseSpan> = Vec::new();
+    let mut search_start = 0usize;
+    while search_start < stmt_text.len() {
+        let best = CLAUSE_KEYWORDS
+            .iter()
+            .filter_map(|kw| {
+                stmt_text[search_start..]
+                    .find(*kw)
+                    .map(|p| (*kw, search_start + p))
+            })
+            .min_by_key(|(_, p)| *p);
+        match best {
+            Some((kw, pos)) => {
+                let after_kw = pos + kw.len();
+                // Convert keyword end position to (line, col) within the SQL.
+                let (el_pos, ec_pos) = offset_to_line_col(&stmt_text, after_kw);
+                let end_line = sl + el_pos - 1;
+                let end_col = if el_pos == 1 { sc + ec_pos - 1 } else { ec_pos };
+                spans.push(ClauseSpan {
+                    name: kw.to_string(),
+                    end_line,
+                    end_col,
+                });
+                search_start = after_kw;
+            }
+            None => break,
+        }
+    }
+    spans
+}
+
+/// Slice text from (start_line, start_col) to (end_line, end_col) out of `sql`.
+/// Line/col are 1-based.
+fn slice_text(sql: &str, sl: u32, sc: u32, el: u32, ec: u32) -> String {
+    let mut lines = Vec::new();
+    for (i, line) in sql.lines().enumerate() {
+        let line_no = (i + 1) as u32;
+        if line_no >= sl && line_no <= el {
+            lines.push(line);
+        }
+    }
+    if lines.is_empty() {
+        return String::new();
+    }
+    if lines.len() == 1 {
+        let line = lines[0];
+        let start = (sc as usize).saturating_sub(1).min(line.len());
+        let end = (ec as usize).saturating_sub(1).min(line.len());
+        return line[start..end].to_string();
+    }
+    let mut out = String::new();
+    for (i, line) in lines.iter().enumerate() {
+        let line_no = sl + i as u32;
+        let start = if line_no == sl { (sc as usize).saturating_sub(1) } else { 0 };
+        let end = if line_no == el {
+            (ec as usize).saturating_sub(1)
+        } else {
+            line.len()
+        };
+        let start = start.min(line.len());
+        let end = end.min(line.len());
+        if start < end {
+            out.push_str(&line[start..end]);
+        }
+        if line_no != el {
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// Convert a byte offset within a (possibly multi-line) string to a 1-based
+/// (line_within_string, col) pair.
+fn offset_to_line_col(s: &str, offset: usize) -> (u32, u32) {
+    let mut line = 1u32;
+    let mut col = 1u32;
+    for (i, ch) in s.char_indices() {
+        if i >= offset {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+    }
+    (line, col)
 }
 
 fn extract_from_statement(stmt: &Statement, ctx: &mut SqlContext) {
@@ -304,5 +468,50 @@ mod tests {
         let ctx = analyse_context("SELECT dp.ProductKey FROM DimProduct dp WHERE dp.", 1, 55);
         assert_eq!(ctx.cursor_prefix.as_deref(), Some("dp"));
         assert_eq!(ctx.cursor_table.as_deref(), Some("DimProduct"));
+    }
+
+    #[test]
+    fn cursor_in_first_statement_of_two() {
+        let ctx = analyse_context("SELECT 1; SELECT 2", 1, 1);
+        assert_eq!(ctx.statement_index, Some(0));
+    }
+
+    #[test]
+    fn cursor_in_second_statement_of_two() {
+        let ctx = analyse_context("SELECT 1; SELECT 2", 1, 12);
+        assert_eq!(ctx.statement_index, Some(1));
+    }
+
+    #[test]
+    fn cursor_in_gap_between_statements() {
+        // Position (1,10) is the semicolon — between statements.
+        let ctx = analyse_context("SELECT 1; SELECT 2", 1, 10);
+        assert_eq!(ctx.statement_index, None);
+    }
+
+    #[test]
+    fn cursor_on_second_line_after_newline() {
+        let ctx = analyse_context("SELECT * FROM foo;\nSELECT bar", 2, 4);
+        assert_eq!(ctx.statement_index, Some(1));
+    }
+
+    #[test]
+    fn statement_clauses_populated_for_select() {
+        let ctx = analyse_context("SELECT a FROM tbl WHERE b = 1", 1, 1);
+        let clauses = ctx.statement_clauses.first().expect("clauses");
+        let names: Vec<&str> = clauses.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"SELECT"));
+        assert!(names.contains(&"FROM"));
+        assert!(names.contains(&"WHERE"));
+    }
+
+    #[test]
+    fn statement_clauses_across_two_statements() {
+        let ctx = analyse_context("SELECT 1; SELECT 2 FROM tbl", 1, 12);
+        assert_eq!(ctx.statement_clauses.len(), 2);
+        // Second statement should have SELECT and FROM.
+        let names: Vec<&str> = ctx.statement_clauses[1].iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"SELECT"));
+        assert!(names.contains(&"FROM"));
     }
 }

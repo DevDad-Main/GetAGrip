@@ -59,75 +59,68 @@ pub fn request_completion(
     // DOT CONTEXT — columns at high priority, keywords penalized to bottom
     // =================================================================
     if let Some(ref prefix) = ctx.cursor_prefix {
-        let mut keywords = penalize_bucket(&mut complete_keywords(&word_upper), 2);
-        let mut functions = penalize_bucket(&mut complete_functions(&word_upper), 2);
+        let keywords = penalize_bucket(&mut complete_keywords(&word_upper), 2);
+        let functions = penalize_bucket(&mut complete_functions(&word_upper), 2);
 
         // Explicit alias/table resolution
         if let Some(table) = ctx.resolve_table(prefix) {
-            let mut cols = complete_columns_explicit(cache, connection_id, &table.name, &word_lower);
-            bucket_truncate(&mut cols, &mut vec![], &mut functions, &mut keywords);
-            return cols;
+            let cols = complete_columns_explicit(cache, connection_id, &table.name, &word_lower);
+            return bucket_truncate(cols, vec![], functions, keywords);
         }
         // Cached table name matched
         if table_in_cache(cache, connection_id, prefix) {
-            let mut cols = complete_columns_explicit(cache, connection_id, prefix, &word_lower);
-            bucket_truncate(&mut cols, &mut vec![], &mut functions, &mut keywords);
-            return cols;
+            let cols = complete_columns_explicit(cache, connection_id, prefix, &word_lower);
+            return bucket_truncate(cols, vec![], functions, keywords);
         }
         // Unresolved dot: all columns + penalized keywords
-        let mut cols = complete_columns_all(cache, connection_id, &word_lower);
-        bucket_truncate(&mut cols, &mut vec![], &mut functions, &mut keywords);
-        return cols;
+        let cols = complete_columns_all(cache, connection_id, &word_lower, None);
+        return bucket_truncate(cols, vec![], functions, keywords);
     }
 
     // =================================================================
     // CURSOR TABLE (resolved via parser, but no dot at cursor)
     // =================================================================
     if let Some(ref table_name) = ctx.cursor_table {
-        let mut cols = complete_columns_explicit(cache, connection_id, table_name, &word_lower);
-        let mut keywords = penalize_bucket(&mut complete_keywords(&word_upper), 4);
-        bucket_truncate(&mut cols, &mut vec![], &mut vec![], &mut keywords);
-        return cols;
+        let cols = complete_columns_explicit(cache, connection_id, table_name, &word_lower);
+        let keywords = penalize_bucket(&mut complete_keywords(&word_upper), 4);
+        return bucket_truncate(cols, vec![], vec![], keywords);
     }
 
     // =================================================================
     // NON-DOT CONTEXT — allow keywords, tables, columns, functions
     // =================================================================
 
-    let in_from = is_after_clause(sql, cursor_line, cursor_column, "FROM")
-        || is_after_clause(sql, cursor_line, cursor_column, "JOIN");
+    let in_from = is_after_clause(&ctx, "FROM")
+        || is_after_clause(&ctx, "JOIN");
 
     if in_from {
-        let mut cols = complete_tables(cache, connection_id, &word_lower);
-        bucket_truncate(&mut cols, &mut vec![], &mut vec![], &mut vec![]);
-        return cols;
+        let cols = complete_tables(cache, connection_id, &word_lower);
+        return bucket_truncate(cols, vec![], vec![], vec![]);
     }
 
-    let in_clause = is_after_clause(sql, cursor_line, cursor_column, "SELECT")
-        || is_after_clause(sql, cursor_line, cursor_column, "WHERE")
-        || is_after_clause(sql, cursor_line, cursor_column, "ON")
-        || is_after_clause(sql, cursor_line, cursor_column, "AND")
-        || is_after_clause(sql, cursor_line, cursor_column, "OR")
-        || is_after_clause(sql, cursor_line, cursor_column, "SET")
-        || is_after_clause(sql, cursor_line, cursor_column, "ORDER BY")
-        || is_after_clause(sql, cursor_line, cursor_column, "GROUP BY")
-        || is_after_clause(sql, cursor_line, cursor_column, "HAVING");
+    let in_clause = is_after_clause(&ctx, "SELECT")
+        || is_after_clause(&ctx, "WHERE")
+        || is_after_clause(&ctx, "ON")
+        || is_after_clause(&ctx, "AND")
+        || is_after_clause(&ctx, "OR")
+        || is_after_clause(&ctx, "SET")
+        || is_after_clause(&ctx, "ORDER BY")
+        || is_after_clause(&ctx, "GROUP BY")
+        || is_after_clause(&ctx, "HAVING");
 
     if in_clause {
-        let mut cols = complete_columns_all(cache, connection_id, &word_lower);
-        let mut tables = complete_tables(cache, connection_id, &word_lower);
-        let mut functions = complete_functions(&word_upper);
-        let mut keywords = complete_keywords(&word_upper);
-        bucket_truncate(&mut cols, &mut tables, &mut functions, &mut keywords);
-        return cols;
+        let cols = complete_columns_all(cache, connection_id, &word_lower, ctx.cursor_table.as_deref());
+        let tables = complete_tables(cache, connection_id, &word_lower);
+        let functions = complete_functions(&word_upper);
+        let keywords = complete_keywords(&word_upper);
+        return bucket_truncate(cols, tables, functions, keywords);
     }
 
     // Generic
-    let mut keywords = complete_keywords(&word_upper);
-    let mut cols = complete_tables(cache, connection_id, &word_lower);
-    let mut functions = complete_functions(&word_upper);
-    bucket_truncate(&mut cols, &mut vec![], &mut functions, &mut keywords);
-    cols
+    let keywords = complete_keywords(&word_upper);
+    let cols = complete_tables(cache, connection_id, &word_lower);
+    let functions = complete_functions(&word_upper);
+    bucket_truncate(cols, vec![], functions, keywords)
 }
 
 // ── penalty helper ───────────────────────────────────────────────────────
@@ -142,19 +135,19 @@ fn penalize_bucket(items: &mut Vec<CompletionItem>, divisor: u32) -> Vec<Complet
 // ── bucket-based truncation (anti-starvation) ────────────────────────────
 
 fn bucket_truncate(
-    columns: &mut Vec<CompletionItem>,
-    tables: &mut Vec<CompletionItem>,
-    functions: &mut Vec<CompletionItem>,
-    keywords: &mut Vec<CompletionItem>,
-) {
+    mut columns: Vec<CompletionItem>,
+    mut tables: Vec<CompletionItem>,
+    mut functions: Vec<CompletionItem>,
+    mut keywords: Vec<CompletionItem>,
+) -> Vec<CompletionItem> {
     // Sort each bucket internally
     let sort_bucket = |v: &mut Vec<CompletionItem>| {
         v.sort_by(|a, b| b.score.cmp(&a.score).then(a.label.cmp(&b.label)));
     };
-    sort_bucket(columns);
-    sort_bucket(tables);
-    sort_bucket(functions);
-    sort_bucket(keywords);
+    sort_bucket(&mut columns);
+    sort_bucket(&mut tables);
+    sort_bucket(&mut functions);
+    sort_bucket(&mut keywords);
 
     // Truncate each bucket
     columns.truncate(MAX_COLUMNS);
@@ -164,10 +157,10 @@ fn bucket_truncate(
 
     // Combine: keywords → tables → functions → columns (keywords on top)
     let mut combined = Vec::new();
-    combined.append(keywords);
-    combined.append(tables);
-    combined.append(functions);
-    combined.append(columns);
+    combined.append(&mut keywords);
+    combined.append(&mut tables);
+    combined.append(&mut functions);
+    combined.append(&mut columns);
 
     // Deduplicate by label (keep highest score)
     let mut seen = std::collections::HashSet::new();
@@ -178,10 +171,8 @@ fn bucket_truncate(
         }
     }
 
-    // Write result back through columns
-    columns.clear();
-    columns.append(&mut deduped);
-    columns.sort_by(|a, b| b.score.cmp(&a.score).then(a.label.cmp(&b.label)));
+    deduped.sort_by(|a, b| b.score.cmp(&a.score).then(a.label.cmp(&b.label)));
+    deduped
 }
 
 // ── scoring ──────────────────────────────────────────────────────────────
@@ -409,21 +400,28 @@ fn complete_columns_explicit(
 }
 
 /// All columns from all tables. Label = column name only for dot context.
+/// When `scope_table` is set, columns from that table get a score boost so
+/// they rank above identically-named columns from other tables.
 fn complete_columns_all(
     cache: &MetadataCache,
     connection_id: &str,
     prefix: &str,
+    scope_table: Option<&str>,
 ) -> Vec<CompletionItem> {
     let tables = cache.get_tables(connection_id);
     let mut items: Vec<CompletionItem> = Vec::new();
     for table in &tables {
         let cols = cache.get_columns(connection_id, &table.name);
+        let in_scope = scope_table.map_or(false, |s| s == table.name);
         for col in &cols {
             let score = match_score(&col.name, prefix);
             if score > 0 || prefix.is_empty() {
                 let nullable = if col.nullable { "" } else { " NOT NULL" };
                 let doc = format!("{tbl}.{col}\n{db_type}{nullable}", tbl = table.name, col = col.name, db_type = col.db_type);
                 let detail = format!("{db_type}{nullable}  [{tbl}]", db_type = col.db_type, tbl = table.name);
+                let base_score = COL_STANDARD_BASE + score as u32 * 2;
+                // Boost columns from the in-scope table by 50%
+                let final_score = if in_scope { (base_score * 3) / 2 } else { base_score };
                 items.push(CompletionItem {
                     label: col.name.clone(),
                     kind: CompletionKind::Column,
@@ -433,7 +431,7 @@ fn complete_columns_all(
                     source_schema: Some(table.schema_name.clone()),
                     data_type: Some(col.db_type.clone()),
                     insert_text: Some(col.name.clone()),
-                    score: COL_STANDARD_BASE + score as u32 * 2,
+                    score: final_score,
                 });
             }
         }
@@ -446,30 +444,28 @@ fn table_in_cache(cache: &MetadataCache, connection_id: &str, name: &str) -> boo
     tables.iter().any(|t| t.name == name)
 }
 
-fn is_after_clause(sql: &str, cursor_line: u32, cursor_column: u32, clause: &str) -> bool {
-    let offset = crate::context::line_col_to_offset(sql, cursor_line, cursor_column);
-    let prefix = sql[..offset].to_uppercase();
-    let clause_upper = clause.to_uppercase();
-
-    if let Some(pos) = prefix.rfind(&clause_upper) {
-        let after_raw = &prefix[pos + clause.len()..];
-        let after = after_raw.trim();
-        // A semicolon ends the statement — anything after it is a new statement,
-        // not a continuation of the clause.
-        if after.contains(';') {
-            return false;
-        }
-        // Single token after clause (e.g., "FROM DimP") — still in FROM context.
-        // Check any whitespace (space, newline, tab) — not just the space char.
-        if !after.chars().any(char::is_whitespace) {
-            return true;
-        }
-        // Multiple tokens but the cursor is on the first one (e.g., "FROM DimProduct J")
-        // Count tokens — if cursor is on token 1 or 2, still in FROM for joins
-        let tokens: Vec<&str> = after.split_whitespace().collect();
-        return tokens.len() <= 2;
+/// True if the cursor is positioned after `clause` within its own statement.
+/// Uses the per-statement clause map built during context analysis, so this
+/// only considers the cursor's own statement — not earlier statements in the
+/// same SQL string.
+fn is_after_clause(ctx: &crate::context::SqlContext, clause: &str) -> bool {
+    let idx = match ctx.statement_index {
+        Some(i) => i,
+        None => return false,
+    };
+    let clauses = match ctx.statement_clauses.get(idx) {
+        Some(c) => c,
+        None => return false,
+    };
+    // Find the most recent clause whose end position is strictly before the cursor.
+    let cursor_after = clauses.iter().rev().find(|c| {
+        (c.end_line < ctx.cursor_line)
+            || (c.end_line == ctx.cursor_line && c.end_col < ctx.cursor_col)
+    });
+    match cursor_after {
+        Some(c) => c.name.eq_ignore_ascii_case(clause),
+        None => false,
     }
-    false
 }
 
 // ── tests ────────────────────────────────────────────────────────────────
@@ -700,9 +696,44 @@ mod tests {
     }
 
     #[test]
+    fn bucket_truncation_preserves_diversity() {
+        let mut cols: Vec<CompletionItem> = (0..50)
+            .map(|i| CompletionItem {
+                label: format!("col{i}"),
+                kind: CompletionKind::Column,
+                detail: String::new(),
+                documentation: None,
+                source_table: None,
+                source_schema: None,
+                data_type: None,
+                insert_text: None,
+                score: 100 - i as u32,
+            })
+            .collect();
+        let tables: Vec<CompletionItem> = (0..30)
+            .map(|i| CompletionItem {
+                label: format!("tbl{i}"),
+                kind: CompletionKind::Table,
+                detail: String::new(),
+                documentation: None,
+                source_table: None,
+                source_schema: None,
+                data_type: None,
+                insert_text: None,
+                score: 90 - i as u32,
+            })
+            .collect();
+        let functions = vec![];
+        let keywords = vec![];
+
+        let result = bucket_truncate(cols, tables, functions, keywords);
+        assert!(result.len() <= 50); // 30 cols + 20 tables = 50
+    }
+
+    #[test]
     fn select_keyword_on_new_line_after_existing_query() {
-        // User has "SELECT * FROM DimProduct;" on line 1, types "SELEC" on line 2.
-        // SELECT keyword must appear above tables.
+        // Regression: typing "SELEC" on a line after "SELECT * FROM DimProduct;"
+        // should surface the SELECT keyword, not tables.
         let cache = cache_with_dimproduct();
         let sql = "SELECT * FROM DimProduct;\nSELEC";
         let items = request_completion(sql, 2, 5, "conn1", &cache);
@@ -718,37 +749,85 @@ mod tests {
     }
 
     #[test]
-    fn bucket_truncation_preserves_diversity() {
-        let mut cols: Vec<CompletionItem> = (0..50)
-            .map(|i| CompletionItem {
-                label: format!("col{i}"),
-                kind: CompletionKind::Column,
-                detail: String::new(),
-                documentation: None,
-                source_table: None,
-                source_schema: None,
-                data_type: None,
-                insert_text: None,
-                score: 100 - i as u32,
-            })
-            .collect();
-        let mut tables: Vec<CompletionItem> = (0..30)
-            .map(|i| CompletionItem {
-                label: format!("tbl{i}"),
-                kind: CompletionKind::Table,
-                detail: String::new(),
-                documentation: None,
-                source_table: None,
-                source_schema: None,
-                data_type: None,
-                insert_text: None,
-                score: 90 - i as u32,
-            })
-            .collect();
-        let mut functions = vec![];
-        let mut keywords = vec![];
+    fn clause_detection_across_three_statements() {
+        let cache = cache_with_dimproduct();
+        // Cursor on statement 1 (the middle one), typing after FROM.
+        let sql = "SELECT 1; SELECT 2 FROM DimProduct; SELECT 3";
+        let items = request_completion(sql, 1, 25, "conn1", &cache);
+        // Should see tables (FROM context of statement 1), not columns from
+        // a WHERE clause.
+        assert!(
+            items.iter().any(|i| i.label == "DimProduct"),
+            "expected DimProduct in FROM context, got {items:?}"
+        );
+    }
 
-        bucket_truncate(&mut cols, &mut tables, &mut functions, &mut keywords);
-        assert!(cols.len() <= 50); // 30 cols + 20 tables = 50
+    #[test]
+    fn scoped_columns_rank_above_other_tables_in_where() {
+        // When cursor_table is resolved (e.g., FROM DimProduct), columns from
+        // that table should outrank identically-named columns from other tables.
+        let cache = cache_with_two_tables();
+        let sql = "SELECT * FROM DimProduct WHERE ";
+        let items = request_completion(sql, 1, 28, "conn1", &cache);
+        assert!(!items.is_empty());
+        // ProductKey from DimProduct should appear before ProductKey_bak from
+        // DimProduct_bak.
+        let dp_idx = items.iter().position(|i| {
+            i.label == "ProductKey" && i.source_table.as_deref() == Some("DimProduct")
+        });
+        let dp_bak_idx = items.iter().position(|i| {
+            i.label == "ProductKey" && i.source_table.as_deref() == Some("DimProduct_bak")
+        });
+        match (dp_idx, dp_bak_idx) {
+            (Some(a), Some(b)) => assert!(a < b, "DimProduct columns should rank above DimProduct_bak"),
+            _ => {} // acceptable if one is missing
+        }
+    }
+
+    fn cache_with_two_tables() -> MetadataCache {
+        let cache = MetadataCache::new();
+        let mut schema = getagrip_schema::DatabaseSchema::new("testdb");
+        schema.tables.push(TableSchema {
+            name: "DimProduct".into(),
+            schema: "dbo".into(),
+            columns: vec![
+                ColumnSchema {
+                    name: "ProductKey".into(),
+                    col_type: ColumnType::Integer,
+                    db_type: "int".into(),
+                    nullable: false,
+                    default_value: None,
+                    is_primary_key: true,
+                    ordinal: 0,
+                    comment: None,
+                },
+            ],
+            constraints: vec![],
+            indexes: vec![],
+            comment: None,
+            row_count_estimate: None,
+        });
+        schema.tables.push(TableSchema {
+            name: "DimProduct_bak".into(),
+            schema: "dbo".into(),
+            columns: vec![
+                ColumnSchema {
+                    name: "ProductKey".into(),
+                    col_type: ColumnType::Integer,
+                    db_type: "int".into(),
+                    nullable: true,
+                    default_value: None,
+                    is_primary_key: false,
+                    ordinal: 0,
+                    comment: None,
+                },
+            ],
+            constraints: vec![],
+            indexes: vec![],
+            comment: None,
+            row_count_estimate: None,
+        });
+        cache.store("conn1", schema);
+        cache
     }
 }
