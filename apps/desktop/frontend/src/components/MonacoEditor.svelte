@@ -168,6 +168,7 @@
     updateSuggestPosition(pos);
     suggestVisible = true;
     lastCompletionPos = pos;
+    completionGenerationAtFetch = completionGeneration;
     // Reset widget to keyboard-ownership mode so a passive mouse doesn't hijack selection
     customSuggestRef?.resetInteraction?.();
   }
@@ -187,6 +188,11 @@
   let completionReqId = 0;
   let completionTimer: ReturnType<typeof setTimeout> | null = null;
   const COMPLETION_DEBOUNCE_MS = 150;
+  // Incremented every time the user types (resetting the debounce). If this
+  // changes between when the suggestion was fetched and when Enter/Tab is
+  // pressed, the suggestion is stale and must not be accepted.
+  let completionGeneration = 0;
+  let completionGenerationAtFetch = 0;
 
   function runDiagnostics() {
     if (!editor) return;
@@ -243,6 +249,7 @@
     if (!position) return;
 
     // Debounce: rapid typing should not fire a request per char
+    completionGeneration++;
     if (completionTimer) {
       clearTimeout(completionTimer);
       completionTimer = null;
@@ -373,6 +380,14 @@
       return true;
     }
     if (e.keyCode === monaco.KeyCode.Enter || e.keyCode === monaco.KeyCode.Tab) {
+      // If the user typed since the suggestion was fetched (debounce pending
+      // or in-flight), the widget is stale — accepting it would replace the
+      // wrong text. Hide the widget and let the key insert a newline/tab as
+      // usual; the next keystroke will trigger a fresh completion.
+      if (completionGeneration !== completionGenerationAtFetch) {
+        hideSuggest();
+        return false;
+      }
       if (suggestActive >= 0 && suggestActive < suggestItems.length) {
         handleSuggestSelect(suggestItems[suggestActive]);
       }
