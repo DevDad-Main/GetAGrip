@@ -216,16 +216,16 @@
               const cssClass = sev === 'error' ? 'inline-diag-err'
                 : sev === 'warning' ? 'inline-diag-warn' : 'inline-diag-hint';
               const short = d.message.length > 80 ? d.message.slice(0, 77) + '\u2026' : d.message;
-              // Get line content to place decoration at end of line
-              const lineLen = (model?.getLineMaxColumn(d.line) ?? 100) + 1;
               inlineDecos.push({
-                range: { startLineNumber: d.line, startColumn: lineLen, endLineNumber: d.line, endColumn: lineLen },
+                range: { startLineNumber: d.line, startColumn: 1, endLineNumber: d.line, endColumn: 1 },
                 options: {
-                  after: { content: `  ${short}`, inlineClassName: cssClass },
+                  isWholeLine: true,
+                  after: { content: short, inlineClassName: cssClass },
                 },
               });
             }
           }
+          console.log('inline decos:', inlineDecos.length, inlineDecos);
           inlineCollection.set(inlineDecos);
         } else if (inlineCollection) {
           inlineCollection.clear();
@@ -398,6 +398,7 @@
     });
 
     inlineCollection = editor.createDecorationsCollection();
+    console.log('inline collection created:', !!inlineCollection);
 
     editor.onDidChangeModelContent(() => {
       const value = editor?.getValue() ?? '';
