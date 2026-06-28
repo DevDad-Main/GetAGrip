@@ -9,6 +9,7 @@
 pub mod completion;
 pub mod context;
 pub mod diagnostics;
+pub mod lsp_client;
 pub mod metadata;
 pub mod types;
 
