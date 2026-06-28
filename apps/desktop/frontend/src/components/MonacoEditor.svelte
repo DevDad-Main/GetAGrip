@@ -171,7 +171,6 @@
 
   let cacheChecked = false;
   let diagTimer: ReturnType<typeof setTimeout> | null = null;
-  let inlineDiags = true; // toggleable via settings
 
   function runDiagnostics() {
     if (!editor) return;
@@ -184,7 +183,6 @@
         const sql = model.getValue();
         if (!sql.trim()) {
           monaco.editor.setModelMarkers(model, 'sql-diagnostics', []);
-          inlineCollection?.clear();
           diagStore.set([]);
           return;
         }
@@ -208,32 +206,6 @@
         }));
         monaco.editor.setModelMarkers(model, 'sql-diagnostics', markers);
 
-        // Inline diagnostics — show issue text on the right of each line
-        console.log('diag: checking inline, collection:', !!inlineCollection, 'inlineDiags:', inlineDiags);
-        if (inlineCollection && inlineDiags) {
-          const inlineDecos: monaco.editor.IModelDeltaDecoration[] = [];
-          const seenLines = new Set<number>();
-          for (const d of resp.diagnostics) {
-            if (!seenLines.has(d.line)) {
-              seenLines.add(d.line);
-              const sev = d.severity;
-              const cssClass = sev === 'error' ? 'inline-diag-err'
-                : sev === 'warning' ? 'inline-diag-warn' : 'inline-diag-hint';
-              const short = d.message.length > 80 ? d.message.slice(0, 77) + '\u2026' : d.message;
-              inlineDecos.push({
-                range: { startLineNumber: d.line, startColumn: 1, endLineNumber: d.line, endColumn: 1 },
-                options: {
-                  isWholeLine: true,
-                  after: { content: short, inlineClassName: cssClass },
-                },
-              });
-            }
-          }
-          console.log('inline decos:', inlineDecos.length, inlineDecos);
-          inlineCollection.set(inlineDecos);
-        } else if (inlineCollection) {
-          inlineCollection.clear();
-        }
       } catch { /* silent */ }
     }, 500);
   }
@@ -362,8 +334,6 @@
   onMount(() => {
     if (!containerEl) return;
 
-    let inlineCollection: monaco.editor.IEditorDecorationsCollection | null = null;
-
     editor = monaco.editor.create(containerEl, {
       value: sql,
       language: 'sql',
@@ -400,8 +370,6 @@
       tabCompletion: 'off',
       automaticLayout: true,
     });
-
-    inlineCollection = editor.createDecorationsCollection();
 
     editor.onDidChangeModelContent(() => {
       const value = editor?.getValue() ?? '';
@@ -654,24 +622,5 @@
     height: 100%;
     min-height: 100px;
     overflow: hidden;
-  }
-
-  :global(.inline-diag-err) {
-    color: #f44747 !important;
-    font-size: 12px !important;
-    font-style: italic !important;
-    margin-left: 16px !important;
-  }
-  :global(.inline-diag-warn) {
-    color: #cca700 !important;
-    font-size: 12px !important;
-    font-style: italic !important;
-    margin-left: 16px !important;
-  }
-  :global(.inline-diag-hint) {
-    color: #999 !important;
-    font-size: 12px !important;
-    font-style: italic !important;
-    margin-left: 16px !important;
   }
 </style>
