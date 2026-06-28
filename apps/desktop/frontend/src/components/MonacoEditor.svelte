@@ -206,12 +206,13 @@
               const sev = d.severity;
               const cssClass = sev === 'error' ? 'inline-diag-err'
                 : sev === 'warning' ? 'inline-diag-warn' : 'inline-diag-hint';
-              const short = d.message.length > 80 ? d.message.slice(0, 77) + '...' : d.message;
+              const short = d.message.length > 80 ? d.message.slice(0, 77) + '\u2026' : d.message;
+              // Get line content to place decoration at end of line
+              const lineLen = (model?.getLineMaxColumn(d.line) ?? 100) + 1;
               inlineDecos.push({
-                range: { startLineNumber: d.line, startColumn: 1, endLineNumber: d.line, endColumn: 1 },
+                range: { startLineNumber: d.line, startColumn: lineLen, endLineNumber: d.line, endColumn: lineLen },
                 options: {
-                  isWholeLine: true,
-                  after: { content: short, inlineClassName: cssClass },
+                  after: { content: `  ${short}`, inlineClassName: cssClass },
                 },
               });
             }
@@ -640,5 +641,24 @@
     height: 100%;
     min-height: 100px;
     overflow: hidden;
+  }
+
+  :global(.inline-diag-err) {
+    color: #f44747 !important;
+    font-size: 12px !important;
+    font-style: italic !important;
+    margin-left: 16px !important;
+  }
+  :global(.inline-diag-warn) {
+    color: #cca700 !important;
+    font-size: 12px !important;
+    font-style: italic !important;
+    margin-left: 16px !important;
+  }
+  :global(.inline-diag-hint) {
+    color: #999 !important;
+    font-size: 12px !important;
+    font-style: italic !important;
+    margin-left: 16px !important;
   }
 </style>
