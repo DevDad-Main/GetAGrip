@@ -23,7 +23,7 @@ pub struct CompletionItem {
     pub score: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CompletionKind {
     Table,

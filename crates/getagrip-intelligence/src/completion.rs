@@ -774,6 +774,20 @@ mod tests {
     }
 
     #[test]
+    fn from_context_shows_only_tables() {
+        let cache = cache_with_dimproduct();
+        let sql = "SELECT * FROM ";
+        let items = request_completion(sql, 1, 16, "conn1", &cache);
+        // No keywords should appear in FROM context.
+        assert!(!items.is_empty());
+        assert!(
+            items.iter().all(|i| i.kind == crate::CompletionKind::Table),
+            "FROM context should only show tables, got {:?}",
+            items.iter().filter(|i| i.kind != crate::CompletionKind::Table).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn scoped_columns_rank_above_other_tables_in_where() {
         // When cursor_table is resolved (e.g., FROM DimProduct), columns from
         // that table should outrank identically-named columns from other tables.
