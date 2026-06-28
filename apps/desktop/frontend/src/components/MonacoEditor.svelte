@@ -191,7 +191,6 @@
           connection_id: profileId ?? '__no_datasource__',
           sql,
         });
-        console.log('diag: got', resp.diagnostics.length, 'diagnostics, inlineCollection:', !!inlineCollection);
         diagStore.set(resp.diagnostics);
         const markers: monaco.editor.IMarkerData[] = resp.diagnostics.map((d) => ({
           severity: d.severity === 'error' ? monaco.MarkerSeverity.Error
@@ -206,7 +205,9 @@
         }));
         monaco.editor.setModelMarkers(model, 'sql-diagnostics', markers);
 
-      } catch { /* silent */ }
+      } catch (e) {
+        console.error('diag error:', e);
+      }
     }, 500);
   }
 
