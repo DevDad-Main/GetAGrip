@@ -35,6 +35,11 @@
   let completionWordStartCol = 0;
   let completionCursorWordStartCol: number | null = null;
   let completionEngineWord = '';
+  // Request id whose response populated the currently-visible suggestions.
+  // If a newer request has been fired since, the visible suggestions are stale
+  // and Enter/Tab must not accept them (accepting a stale suggestion with a
+  // stale cursor-word range is what produces "SelecSELECT" corruption).
+  let visibleCompletionReqId = 0;
 
   // Custom hover state
   let hoverVisible = false;
@@ -159,7 +164,7 @@
 
   // ── suggest widget lifecycle ──────────────────────────────────────────
 
-  function showSuggest(items: CompletionItem[], pos: monaco.Position, cursorWordStartCol: number | null = null, engineWord = '') {
+  function showSuggest(items: CompletionItem[], pos: monaco.Position, cursorWordStartCol: number | null = null, engineWord = '', reqId = 0) {
     if (items.length === 0) {
       hideSuggest();
       return;
@@ -178,6 +183,7 @@
     // "SE" to be replaced with the wrong span and insert "ELECT" instead of
     // "SELECT".
     completionCursorWordStartCol = cursorWordStartCol;
+    visibleCompletionReqId = reqId;
 
     suggestItems = items;
     // Pre-select the top item so Tab/Enter accepts immediately (DataGrip behavior).
@@ -198,6 +204,7 @@
     completionWordStartCol = 0;
     completionCursorWordStartCol = null;
     completionEngineWord = '';
+    visibleCompletionReqId = 0;
   }
 
   let cacheChecked = false;
@@ -295,7 +302,7 @@
           kind: 'keyword',
           detail: '',
           score: 50,
-        })), position, null, '');
+        })), position, null, '', reqId);
       }
       return;
     }
@@ -318,7 +325,7 @@
         cursor_column: position.column,
       });
       if (reqId === completionReqId) {
-        showSuggest(resp.suggestions, position, resp.cursor_word_start_col, resp.cursor_word);
+        showSuggest(resp.suggestions, position, resp.cursor_word_start_col, resp.cursor_word, reqId);
       }
     } catch {
       if (reqId === completionReqId) {
@@ -339,30 +346,39 @@
     if (!curPos) return;
     const line = curPos.lineNumber;
     const endCol = curPos.column;
-    const model = editor.getModel();
-    const lineContent = model?.getLineContent(line) ?? '';
-    // Use the engine-reported cursor-word start column for the replacement
-    // range. This keeps the replacement in sync with what the engine matched
-    // against, instead of Monaco's word segmentation which can pick a
-    // different span and corrupt the text.
-    if (completionCursorWordStartCol !== null && line === lastCompletionPos.lineNumber) {
-      const startCol = completionCursorWordStartCol;
-      editor.executeEdits('completion', [{
-        range: {
-          startLineNumber: line,
-          endLineNumber: line,
-          startColumn: startCol,
-          endColumn: endCol,
-        },
-        text: insertText,
-      }]);
-    } else {
-      // No cursor word (empty query): insert at the cursor position.
+    // Same line as the fetched suggestion: replace the typed word in place.
+    if (line !== lastCompletionPos.lineNumber) {
+      // Cursor moved to a different line since the suggestion was fetched —
+      // the replacement range is meaningless now. Insert at cursor instead of
+      // corrupting distant text.
       editor.executeEdits('completion', [{
         range: {
           startLineNumber: line,
           endLineNumber: line,
           startColumn: endCol,
+          endColumn: endCol,
+        },
+        text: insertText,
+      }]);
+    } else {
+      // Start column: prefer the engine's cursor-word start (it knows exactly
+      // what it matched). Fall back to Monaco's word segmentation. This avoids
+      // the "insert instead of replace" corruption when the engine reports an
+      // empty cursor word but the user has actually typed characters.
+      let startCol = completionCursorWordStartCol;
+      if (startCol == null) {
+        const w = editor.getModel()?.getWordUntilPosition(curPos);
+        startCol = w?.startColumn ?? endCol;
+      }
+      // Guard: never let the replacement range be empty when the cursor has
+      // advanced past the word start — that would insert instead of replace
+      // and duplicate the typed text (e.g. "Selec" → "SelecSELECT").
+      if (startCol >= endCol) startCol = endCol;
+      editor.executeEdits('completion', [{
+        range: {
+          startLineNumber: line,
+          endLineNumber: line,
+          startColumn: startCol,
           endColumn: endCol,
         },
         text: insertText,
@@ -401,6 +417,17 @@
       return true;
     }
     if (e.keyCode === monaco.KeyCode.Enter || e.keyCode === monaco.KeyCode.Tab) {
+      // Reject if the visible suggestions are stale: a newer completion request
+      // has been fired since these were shown (user kept typing while a fetch
+      // was in flight). Accepting a stale suggestion applies a cursor-word range
+      // from an old cursor position onto the current text, which corrupts it
+      // (e.g. "Selec" + accept → "SelecSELECT").
+      if (visibleCompletionReqId !== 0 && visibleCompletionReqId !== completionReqId) {
+        hideSuggest();
+        e.preventDefault();
+        e.stopPropagation();
+        return true;
+      }
       // Only accept if the cursor is still on the same line as the suggestion.
       const curPos = editor?.getPosition();
       if (curPos && lastCompletionPos && curPos.lineNumber !== lastCompletionPos.lineNumber) {
