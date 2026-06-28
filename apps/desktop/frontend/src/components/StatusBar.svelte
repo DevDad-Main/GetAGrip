@@ -3,7 +3,9 @@
   import { Circle, CircleDot, Clock, AlertCircle, AlertTriangle } from 'lucide-svelte';
 
   export let onToggleHistory: () => void;
+  export let onToggleDiagnostics: () => void;
   export let historyVisible = false;
+  export let diagnosticsVisible = false;
 
   $: activeInfo = $activeDatasourceId ? $datasourceStates[$activeDatasourceId] : null;
   $: isConnected = activeInfo?.state === 'connected';
@@ -30,7 +32,7 @@
   <div class="status-right">
     {#if errCount > 0 || warnCount > 0}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <span class="diag-group" on:click={handleDiagClick} title="Click to navigate issues (F8)">
+      <span class="diag-group" class:active={diagnosticsVisible} on:click={onToggleDiagnostics} title="Toggle problems panel">
         {#if errCount > 0}
           <span class="diag-badge diag-err"><AlertCircle size="10" />{errCount}</span>
         {/if}

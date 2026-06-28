@@ -5,7 +5,7 @@
   import {
     resultSets, activeResultSetId, statusText, diagnostics as diagStore,
     nextResultSetId, resultsPanelHeight, activeTheme, type ResultSet,
-    metadataRefreshed,
+    metadataRefreshed, jumpToPosition,
   } from '$lib/stores';
   import CustomSuggestWidget from './CustomSuggestWidget.svelte';
   import HoverWidget from './HoverWidget.svelte';
@@ -112,6 +112,15 @@
 
   $: if (editor && $activeTheme) {
     monaco.editor.setTheme($activeTheme);
+  }
+
+  // Jump to diagnostics position
+  $: if (editor && $jumpToPosition) {
+    const pos = $jumpToPosition;
+    editor.setPosition({ lineNumber: pos.line, column: pos.column });
+    editor.revealLineInCenter(pos.line);
+    editor.focus();
+    jumpToPosition.set(null);
   }
 
   // ── suggest widget position helper ────────────────────────────────────
