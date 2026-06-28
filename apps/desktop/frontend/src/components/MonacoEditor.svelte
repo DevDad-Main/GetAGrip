@@ -180,7 +180,7 @@
     diagTimer = setTimeout(async () => {
       try {
         const model = editor?.getModel();
-        if (!model) return;
+        if (!model) { console.log('diag: no model'); return; }
         const sql = model.getValue();
         if (!sql.trim()) {
           monaco.editor.setModelMarkers(model, 'sql-diagnostics', []);
@@ -191,6 +191,7 @@
         const resp = profileId
           ? await requestDiagnostics({ connection_id: profileId, sql })
           : { diagnostics: [] };
+        console.log('diag: got', resp.diagnostics.length, 'diagnostics, inlineCollection:', !!inlineCollection);
         diagStore.set(resp.diagnostics);
         const markers: monaco.editor.IMarkerData[] = resp.diagnostics.map((d) => ({
           severity: d.severity === 'error' ? monaco.MarkerSeverity.Error
@@ -206,6 +207,7 @@
         monaco.editor.setModelMarkers(model, 'sql-diagnostics', markers);
 
         // Inline diagnostics — show issue text on the right of each line
+        console.log('diag: checking inline, collection:', !!inlineCollection, 'inlineDiags:', inlineDiags);
         if (inlineCollection && inlineDiags) {
           const inlineDecos: monaco.editor.IModelDeltaDecoration[] = [];
           const seenLines = new Set<number>();
