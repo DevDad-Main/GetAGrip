@@ -6,8 +6,10 @@ use tauri::State;
 
 use getagrip_core::id::Id;
 use getagrip_core::secrets::{SecretKind, SecretsVault};
-use getagrip_core::session::{ConnectionDriver, ConnectionProfile, ConnectionProfileId};
-use getagrip_core::{CredentialStore, EnvironmentColor};
+use getagrip_core::session::{ConnectionDriver, ConnectionProfile, ConnectionProfileId, Folder, FolderId};
+use getagrip_core::{EnvironmentColor};
+use getagrip_database::manager::ConnectionState;
+use getagrip_database::pool::PoolConfig;
 
 use crate::commands::util::{driver_for, persist_profiles};
 use crate::state::AppState;
@@ -183,7 +185,7 @@ pub async fn delete_datasource(
 
     let mut profiles = state.profiles.write();
     profiles.remove(pid);
-    state.vault.delete(&profile_id);
+    let _ = state.vault.delete(&profile_id);
     persist_profiles(&profiles, &state.profiles_path)?;
     Ok(())
 }
@@ -193,7 +195,7 @@ pub async fn list_datasources(
     state: State<'_, AppState>,
 ) -> Result<Vec<ConnectionProfile>, String> {
     let profiles = state.profiles.read();
-    let mut list: Vec<ConnectionProfile> = profiles.iter().map(|(_, p)| p.clone()).collect();
+    let mut list: Vec<ConnectionProfile> = profiles.profiles.iter().map(|(_, p)| p.clone()).collect();
     list.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(list)
 }
@@ -213,11 +215,12 @@ pub async fn connect_datasource(
         (profile, username, password)
     };
 
+    let driver = driver_for(&profile)?;
     let url = build_url(&profile, username.as_deref(), password.as_deref());
-    let result = state.manager.connect(profile_id.clone(), &url).await.map_err(|e| format!("{e}"))?;
+    let result = state.manager.connect(&profile, driver, PoolConfig::default(), username.as_deref(), password.as_deref()).await.map_err(|e| format!("{e}"))?;
 
     // Update last_connected_at on success
-    if result.state == "Connected" {
+    if result.state == ConnectionState::Connected {
         let mut profiles = state.profiles.write();
         if let Some(p) = profiles.get_mut(pid) {
             p.last_connected_at = Some(Utc::now());
@@ -225,7 +228,16 @@ pub async fn connect_datasource(
         }
     }
 
-    Ok(result)
+    Ok(ManagedConnectionDto {
+        profile_id: result.profile.id.to_string(),
+        name: result.profile.name,
+        driver: result.profile.driver.display_name().to_string(),
+        state: format!("{:?}", result.state),
+        host: result.profile.host,
+        port: result.profile.port,
+        database: result.profile.database,
+        last_error: result.last_error,
+    })
 }
 
 #[tauri::command]
@@ -233,7 +245,9 @@ pub async fn disconnect_datasource(
     profile_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    state.manager.disconnect(&profile_id).await;
+    let pid = Id::<ConnectionProfileId>::parse(&profile_id)
+        .ok_or_else(|| format!("invalid profile id: {profile_id}"))?;
+    state.manager.disconnect(pid).await;
     Ok(())
 }
 
@@ -253,7 +267,7 @@ pub async fn test_datasource(
     };
 
     let url = build_test_url(&profile, username.as_deref(), password.as_deref());
-    let driver = driver_for(&profile.driver);
+    let driver = driver_for(&profile)?;
     match driver.test_connection(&url).await {
         Ok(_) => Ok(format!("Connection to {} successful", profile.name)),
         Err(e) => Err(format!("Connection failed: {e}")),
@@ -284,7 +298,7 @@ pub async fn list_folders(
     state: State<'_, AppState>,
 ) -> Result<Vec<getagrip_core::session::Folder>, String> {
     let profiles = state.profiles.read();
-    Ok(profiles.folders().cloned().collect())
+    Ok(profiles.folders.values().cloned().collect())
 }
 
 #[tauri::command]
@@ -296,13 +310,14 @@ pub async fn save_folder(
     let mut profiles = state.profiles.write();
     let parent = match &parent_id {
         Some(id) if !id.is_empty() => {
-            let pid = Id::<getagrip_core::session::FolderId>::parse(id)
+            let pid = Id::<FolderId>::parse(id)
                 .ok_or_else(|| format!("invalid folder id: {id}"))?;
             Some(pid)
         }
         _ => None,
     };
-    let folder = profiles.add_folder(&name, parent);
+    let folder = Folder::new(&name, parent);
+    profiles.add_folder(folder.clone());
     persist_profiles(&profiles, &state.profiles_path)?;
     Ok(folder)
 }
@@ -315,24 +330,25 @@ pub async fn update_folder(
     collapsed: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<getagrip_core::session::Folder, String> {
-    let fid = Id::<getagrip_core::session::FolderId>::parse(&folder_id)
+    let fid = Id::<FolderId>::parse(&folder_id)
         .ok_or_else(|| format!("invalid folder id: {folder_id}"))?;
 
     let mut profiles = state.profiles.write();
-    let folder = profiles.folders_mut()
-        .find(|f| f.id == fid)
+    let folder = profiles.folders.get_mut(&folder_id)
         .ok_or_else(|| format!("folder not found: {folder_id}"))?;
 
     if let Some(n) = name { folder.name = n; }
     if let Some(c) = collapsed { folder.collapsed = c; }
     folder.parent_id = match parent_id {
         Some(id) if id.is_empty() => None,
-        Some(id) => Some(Id::parse(&id).map_err(|_| format!("invalid parent id: {id}"))?),
+        Some(id) => Some(Id::<FolderId>::parse(&id).ok_or_else(|| format!("invalid parent id: {id}"))?),
         None => folder.parent_id,
     };
 
+    let result = folder.clone();
+    let _ = folder;
     persist_profiles(&profiles, &state.profiles_path)?;
-    Ok(folder.clone())
+    Ok(result)
 }
 
 #[tauri::command]
@@ -381,11 +397,13 @@ fn resolve_credentials(profile: &ConnectionProfile, vault: &SecretsVault) -> Res
     match profile.credential {
         getagrip_core::Credential::None => Ok((None, None)),
         getagrip_core::Credential::Password { ref username, ref vault_key } => {
-            let password = vault.get(vault_key, SecretKind::Password)
+            let password = vault.get(vault_key)
                 .map_err(|e| format!("failed to read password from vault: {e}"))?;
             Ok((Some(username.clone()), password))
         }
-        getagrip_core::Credential::Integrated => Ok((None, None)),
+        getagrip_core::Credential::TlsCertificate { .. } | getagrip_core::Credential::SshAgent { .. } => {
+            Err("credential type not supported for connect".to_string())
+        }
     }
 }
 
