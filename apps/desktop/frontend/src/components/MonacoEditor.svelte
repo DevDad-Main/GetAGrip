@@ -204,7 +204,7 @@
   let diagTimer: ReturnType<typeof setTimeout> | null = null;
   let completionReqId = 0;
   let completionTimer: ReturnType<typeof setTimeout> | null = null;
-  const COMPLETION_DEBOUNCE_MS = 150;
+  const COMPLETION_DEBOUNCE_MS = 80;
 
   function runDiagnostics() {
     if (!editor) return;
@@ -273,28 +273,29 @@
 
   async function doCompletion(position: monaco.Position) {
     const reqId = ++completionReqId;
+    const model = editor?.getModel();
+    if (!model) return;
 
     // Skip if we're still on the same word (cursor moved but text didn't change)
-    const model = editor?.getModel();
-    const word = model?.getWordUntilPosition(position);
-    if (
-      suggestVisible &&
-      position.lineNumber === lastCompletionPos?.lineNumber &&
-      word?.startColumn === completionWordStartCol &&
-      word?.word === suggestMatchWord
-    ) {
-      return;
+    if (suggestVisible) {
+      const word = model.getWordUntilPosition(position);
+      if (
+        position.lineNumber === lastCompletionPos?.lineNumber &&
+        word?.startColumn === completionWordStartCol &&
+        word?.word === suggestMatchWord
+      ) {
+        return;
+      }
     }
 
     if (!profileId) {
       if (reqId === completionReqId) {
-        const fallback: CompletionItem[] = SQL_KEYWORDS.map((kw) => ({
+        showSuggest(SQL_KEYWORDS.map((kw) => ({
           label: kw,
           kind: 'keyword',
           detail: '',
           score: 50,
-        }));
-        showSuggest(fallback, position, null, '');
+        })), position, null, '');
       }
       return;
     }
@@ -309,20 +310,13 @@
     }
 
     try {
-      const text = editor?.getModel()?.getValue() ?? '';
+      const text = model.getValue();
       const resp = await requestCompletion({
         connection_id: profileId,
         sql: text,
         cursor_line: position.lineNumber,
         cursor_column: position.column,
       });
-      console.log('[completion] response', JSON.stringify({
-        sql: text,
-        reqPos: { line: position.lineNumber, col: position.column },
-        cursorWord: resp.cursor_word,
-        cursorWordStartCol: resp.cursor_word_start_col,
-        topSuggestion: resp.suggestions[0]?.label,
-      }));
       if (reqId === completionReqId) {
         showSuggest(resp.suggestions, position, resp.cursor_word_start_col, resp.cursor_word);
       }
@@ -347,14 +341,6 @@
     const endCol = curPos.column;
     const model = editor.getModel();
     const lineContent = model?.getLineContent(line) ?? '';
-    console.log('[completion] select', JSON.stringify({
-      label: item.label,
-      insertText,
-      curPos: { line, col: endCol },
-      lastPos: { line: lastCompletionPos.lineNumber, col: lastCompletionPos.column },
-      cursorWordStartCol: completionCursorWordStartCol,
-      lineContent,
-    }));
     // Use the engine-reported cursor-word start column for the replacement
     // range. This keeps the replacement in sync with what the engine matched
     // against, instead of Monaco's word segmentation which can pick a

@@ -162,8 +162,10 @@ fn bucket_truncate(
     combined.append(&mut functions);
     combined.append(&mut columns);
 
-    // Deduplicate by label (keep highest score)
-    let mut seen = std::collections::HashSet::new();
+    // Deduplicate by label (keep highest score). Since each bucket is already
+    // sorted by score descending, the first occurrence of a label is the
+    // highest-scoring one — so we keep first-seen and skip later duplicates.
+    let mut seen = std::collections::HashSet::with_capacity(combined.len());
     let mut deduped = Vec::new();
     for item in combined {
         if seen.insert(item.label.clone()) {
@@ -422,31 +424,36 @@ fn complete_columns_all(
     scope_table: Option<&str>,
 ) -> Vec<CompletionItem> {
     let tables = cache.get_tables(connection_id);
-    let mut items: Vec<CompletionItem> = Vec::new();
+    // Pre-allocate: assume ~20 columns per table on average.
+    let mut items: Vec<CompletionItem> = Vec::with_capacity(tables.len() * 20);
+    let scope = scope_table.unwrap_or("");
     for table in &tables {
+        let in_scope = !scope.is_empty() && scope == table.name;
+        // Fast path: when there's a prefix and this table is out of scope, we
+        // still need to scan (a column might match), but we skip the scope boost.
         let cols = cache.get_columns(connection_id, &table.name);
-        let in_scope = scope_table.map_or(false, |s| s == table.name);
         for col in &cols {
             let score = match_score(&col.name, prefix);
-            if score > 0 || prefix.is_empty() {
-                let nullable = if col.nullable { "" } else { " NOT NULL" };
-                let doc = format!("{tbl}.{col}\n{db_type}{nullable}", tbl = table.name, col = col.name, db_type = col.db_type);
-                let detail = format!("{db_type}{nullable}  [{tbl}]", db_type = col.db_type, tbl = table.name);
-                let base_score = COL_STANDARD_BASE + score as u32 * 2;
-                // Boost columns from the in-scope table by 50%
-                let final_score = if in_scope { (base_score * 3) / 2 } else { base_score };
-                items.push(CompletionItem {
-                    label: col.name.clone(),
-                    kind: CompletionKind::Column,
-                    detail,
-                    documentation: Some(doc),
-                    source_table: Some(table.name.clone()),
-                    source_schema: Some(table.schema_name.clone()),
-                    data_type: Some(col.db_type.clone()),
-                    insert_text: Some(col.name.clone()),
-                    score: final_score,
-                });
+            if score == 0 && !prefix.is_empty() {
+                continue;
             }
+            let nullable = if col.nullable { "" } else { " NOT NULL" };
+            let doc = format!("{tbl}.{col}\n{db_type}{nullable}", tbl = table.name, col = col.name, db_type = col.db_type);
+            let detail = format!("{db_type}{nullable}  [{tbl}]", db_type = col.db_type, tbl = table.name);
+            let base_score = COL_STANDARD_BASE + score as u32 * 2;
+            // Boost columns from the in-scope table by 50%
+            let final_score = if in_scope { (base_score * 3) / 2 } else { base_score };
+            items.push(CompletionItem {
+                label: col.name.clone(),
+                kind: CompletionKind::Column,
+                detail,
+                documentation: Some(doc),
+                source_table: Some(table.name.clone()),
+                source_schema: Some(table.schema_name.clone()),
+                data_type: Some(col.db_type.clone()),
+                insert_text: Some(col.name.clone()),
+                score: final_score,
+            });
         }
     }
     items

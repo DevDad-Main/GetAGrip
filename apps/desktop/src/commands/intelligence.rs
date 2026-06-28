@@ -59,11 +59,13 @@ pub async fn request_completion_cmd(
     // replacement range and highlight precisely, without relying on Monaco's
     // word segmentation (which can disagree with the engine on word boundaries).
     let ctx = analyse_context(&request.sql, request.cursor_line, request.cursor_column);
+    let cursor_word = if ctx.cursor_word.is_empty() { None } else { Some(ctx.cursor_word) };
+    let cursor_word_start_col = if cursor_word.is_none() { None } else { Some(ctx.cursor_word_start_col) };
 
     Ok(CompletionResponse {
         suggestions,
-        cursor_word: if ctx.cursor_word.is_empty() { None } else { Some(ctx.cursor_word) },
-        cursor_word_start_col: if ctx.cursor_word.is_empty() { None } else { Some(ctx.cursor_word_start_col) },
+        cursor_word,
+        cursor_word_start_col,
     })
 }
 

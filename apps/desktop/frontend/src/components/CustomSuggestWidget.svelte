@@ -41,8 +41,15 @@
 
   $: capped = Math.max(-1, Math.min(activeIndex, items.length - 1));
 
+  // Memoize highlight results per (text, query) pair — the same items and
+  // match word appear on every keystroke while typing, so recomputing the
+  // HTML strings each time is wasted work.
+  const highlightCache = new Map<string, string>();
   function highlightMatch(text: string, query: string): string {
     if (!query) return text;
+    const key = text + '\x00' + query;
+    const cached = highlightCache.get(key);
+    if (cached) return cached;
     const lower = text.toLowerCase();
     const q = query.toLowerCase();
     let result = '';
@@ -58,6 +65,11 @@
       i++;
     }
     result += text.slice(i);
+    // Bound cache size to avoid unbounded growth across different queries.
+    if (highlightCache.size > 500) {
+      highlightCache.clear();
+    }
+    highlightCache.set(key, result);
     return result;
   }
 
