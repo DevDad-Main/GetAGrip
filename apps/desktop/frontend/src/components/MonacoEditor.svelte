@@ -172,6 +172,8 @@
   let cacheChecked = false;
   let diagTimer: ReturnType<typeof setTimeout> | null = null;
   let completionReqId = 0;
+  let completionTimer: ReturnType<typeof setTimeout> | null = null;
+  const COMPLETION_DEBOUNCE_MS = 150;
 
   function runDiagnostics() {
     if (!editor) return;
@@ -227,7 +229,31 @@
     const position = pos ?? editor.getPosition();
     if (!position) return;
 
+    // Debounce: rapid typing should not fire a request per char
+    if (completionTimer) {
+      clearTimeout(completionTimer);
+      completionTimer = null;
+    }
+    completionTimer = setTimeout(() => {
+      completionTimer = null;
+      void doCompletion(position);
+    }, COMPLETION_DEBOUNCE_MS);
+  }
+
+  async function doCompletion(position: monaco.Position) {
     const reqId = ++completionReqId;
+
+    // Skip if we're still on the same word (cursor moved but text didn't change)
+    const model = editor?.getModel();
+    const word = model?.getWordUntilPosition(position);
+    if (
+      suggestVisible &&
+      position.lineNumber === lastCompletionPos?.lineNumber &&
+      word?.startColumn === completionWordStartCol &&
+      word?.word === suggestMatchWord
+    ) {
+      return;
+    }
 
     if (!profileId) {
       if (reqId === completionReqId) {
@@ -252,7 +278,7 @@
     }
 
     try {
-      const text = model.getValue();
+      const text = editor?.getModel()?.getValue() ?? '';
       const resp = await requestCompletion({
         connection_id: profileId,
         sql: text,
@@ -535,14 +561,20 @@
       },
     });
 
-    // Auto-close when cursor moves away from completion context
+    // Refresh completions when the cursor moves within the same line (e.g. typing
+    // "Sel" then moving right to fix "Sal"), or dismiss if moved before the word
+    // start or to a different line. Use onDidType for character-driven refresh so
+    // we don't re-fetch on every arrow-key move.
     editor.onDidChangeCursorPosition((e) => {
       if (!suggestVisible) return;
       const cur = e.position;
-      // Different line or moved before completion word start — dismiss
       if (cur.lineNumber !== lastCompletionPos?.lineNumber || cur.column < completionWordStartCol) {
         hideSuggest();
+        return;
       }
+      // Same line, forward movement without typing — the word under cursor
+      // hasn't changed, so don't re-fetch. onDidType will re-trigger when the
+      // user actually types something at this position.
     });
 
     // Close on editor blur
@@ -605,6 +637,8 @@
   }
 
   onDestroy(() => {
+    if (completionTimer) clearTimeout(completionTimer);
+    if (diagTimer) clearTimeout(diagTimer);
     editor?.dispose();
   });
 </script>

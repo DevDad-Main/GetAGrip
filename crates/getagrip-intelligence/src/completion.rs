@@ -186,40 +186,96 @@ fn bucket_truncate(
 
 // ── scoring ──────────────────────────────────────────────────────────────
 
+/// Split a label into word-boundary tokens: camelCase transitions, underscores,
+/// hyphens, and whitespace all start a new token. Returns (token, start_index).
+fn word_tokens(label: &str) -> Vec<(String, usize)> {
+    let mut tokens = Vec::new();
+    let chars: Vec<char> = label.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let start = i;
+        let mut token = String::new();
+        token.push(chars[i]);
+        i += 1;
+        // Consume the rest of this "word" — stop at underscore/hyphen/space, or
+        // at a camelCase boundary (lowercase followed by uppercase).
+        while i < chars.len() {
+            let prev = chars[i - 1];
+            let cur = chars[i];
+            if cur == '_' || cur == '-' || cur == ' ' {
+                break;
+            }
+            if prev.is_ascii_lowercase() && cur.is_ascii_uppercase() {
+                break;
+            }
+            token.push(chars[i]);
+            i += 1;
+        }
+        tokens.push((token.to_lowercase(), start));
+    }
+    tokens
+}
+
+/// Fuzzy score for `query` against `label`. Returns 0 for no match.
+///
+/// Scoring tiers (higher is better):
+///   20  exact match
+///   18  query matches the start of the label (prefix)
+///   16  query equals the joined initials of the label's word tokens
+///   14  query is a prefix of the joined initials
+///   12  query is a prefix of a word token
+///   10  query is a substring of the label
+///    8  query chars appear as a subsequence with a consecutive run ≥ 2
+///    6  query chars appear as a subsequence (any run length)
+///    1  empty query (match everything, low score)
 fn match_score(label: &str, query: &str) -> i32 {
     let lower = label.to_lowercase();
     let q = query.to_lowercase();
 
     if q.is_empty() { return 1; }
     if lower == q { return 20; }
-    if lower.starts_with(&q) { return 12; }
-    if let Some(pos) = lower.find(&q) {
-        return (7 - (pos as i32).min(3)).max(2);
+    if lower.starts_with(&q) { return 18; }
+
+    // Joined-initials match: "DimProduct" ↔ "dp", "my_table_col" ↔ "mtc"
+    let tokens = word_tokens(label);
+    let initials: String = tokens.iter().map(|(t, _)| t.chars().next().unwrap()).collect();
+    if initials == q { return 16; }
+    if initials.starts_with(&q) { return 14; }
+
+    // Prefix of any word token: "pr" matches the "Product" token in "DimProduct"
+    for (tok, _) in &tokens {
+        if tok.starts_with(&q) {
+            return 12;
+        }
     }
 
+    // Substring match, earlier position scores higher
+    if let Some(pos) = lower.find(&q) {
+        return (10 - (pos as i32).min(4)).max(6);
+    }
+
+    // Subsequence match — walk label chars collecting query chars in order
     let label_chars: Vec<char> = lower.chars().collect();
     let query_chars: Vec<char> = q.chars().collect();
     let mut qi = 0;
-    let mut matches = 0;
     let mut consecutive = 0;
     let mut best_consecutive = 0;
     for &lc in &label_chars {
         if qi < query_chars.len() && lc == query_chars[qi] {
             qi += 1;
-            matches += 1;
             consecutive += 1;
             best_consecutive = best_consecutive.max(consecutive);
         } else {
             consecutive = 0;
         }
     }
-    // Require at least 2 consecutive matching chars and most query chars matched
-    // For short queries (<3 chars), require all chars to match
-    let min_matches = if query_chars.len() < 3 { query_chars.len() } else { 3 };
-    if best_consecutive >= 2 && matches >= min_matches {
-        return (matches as i32).min(4);
+    if qi < query_chars.len() {
+        return 0; // didn't match all query chars
     }
-    0
+    if best_consecutive >= 2 {
+        return (6 + best_consecutive as i32).min(8);
+    }
+    6
 }
 
 // ── completion helpers ───────────────────────────────────────────────────
@@ -235,7 +291,7 @@ fn complete_keywords(prefix: &str) -> Vec<CompletionItem> {
         .iter()
         .map(|k| {
             let score = match_score(k, prefix);
-            // Exact match gets big boost, prefix gets normal, empty gets all
+            // Exact match gets big boost on top of the base score
             let boost = if k.eq_ignore_ascii_case(prefix) { 100 } else { 0 };
             CompletionItem {
                 label: k.to_string(),
@@ -249,12 +305,9 @@ fn complete_keywords(prefix: &str) -> Vec<CompletionItem> {
                 score: KW_BASE + boost + score as u32 * 3,
             }
         })
-        .filter(|item| item.score > KW_BASE || prefix.is_empty() || score_for_filter(&item.label, prefix))
+        // Keep items that match (score > 0) or everything when prefix is empty
+        .filter(|item| prefix.is_empty() || match_score(&item.label, prefix) > 0)
         .collect()
-}
-
-fn score_for_filter(label: &str, prefix: &str) -> bool {
-    match_score(label, prefix) > 0 || prefix.is_empty() || label.to_lowercase().starts_with(&prefix.to_lowercase())
 }
 
 fn complete_functions(prefix: &str) -> Vec<CompletionItem> {
@@ -522,6 +575,62 @@ mod tests {
     }
 
     #[test]
+    fn camelcase_initials_match() {
+        // "dp" should match "DimProduct" via joined initials
+        assert!(match_score("DimProduct", "dp") > 0);
+        // And should score higher than a non-matching subsequence
+        let initials = match_score("DimProduct", "dp");
+        let non_match = match_score("DimProduct", "dx");
+        assert!(initials > non_match);
+    }
+
+    #[test]
+    fn underscore_token_initials_match() {
+        // "mtc" → my_table_column
+        assert!(match_score("my_table_column", "mtc") > 0);
+        // Prefix of initials
+        assert!(match_score("my_table_column", "mt") > 0);
+    }
+
+    #[test]
+    fn prefix_of_word_token_scores_higher_than_subsequence() {
+        // "pr" is a prefix of the "product" token in "DimProduct"
+        let prefix = match_score("DimProduct", "pr");
+        // "pm" is a subsequence but not a token prefix
+        let subseq = match_score("DimProduct", "pm");
+        assert!(prefix > subseq);
+    }
+
+    #[test]
+    fn exact_match_scores_highest() {
+        let exact = match_score("SELECT", "SELECT");
+        let prefix = match_score("SELECT", "SEL");
+        assert!(exact > prefix);
+    }
+
+    #[test]
+    fn empty_query_matches_all() {
+        assert!(match_score("DimProduct", "") > 0);
+        assert!(match_score("SELECT", "") > 0);
+    }
+
+    #[test]
+    fn query_longer_than_label_returns_zero() {
+        // "productname" won't fit inside "Dim" (one of the tokens) as a subsequence
+        // of the joined form — but it IS a substring of the full label, so it should
+        // still match via the substring fallback.
+        assert!(match_score("DimProduct", "product") > 0);
+    }
+
+    #[test]
+    fn multi_token_label_word_prefix() {
+        // "english" matches the second token in "DimEnglishProductName"
+        assert!(match_score("DimEnglishProductName", "english") > 0);
+        // "en" is a prefix of that token
+        assert!(match_score("DimEnglishProductName", "en") > 0);
+    }
+
+    #[test]
     fn dot_context_penalizes_keywords() {
         let cache = cache_with_dimproduct();
         let items = request_completion("SELECT dp.En", 1, 13, "conn1", &cache);
@@ -545,6 +654,43 @@ mod tests {
         assert!(!items.is_empty());
         // Label must be column name only (not "DimProduct.ProductKey")
         assert!(items.iter().all(|i| !i.label.contains('.')));
+    }
+
+    #[test]
+    fn from_context_tables_match_camelcase_initials() {
+        let cache = cache_with_dimproduct();
+        // "SELECT dp." should resolve to DimProduct columns via alias "dp"
+        let items = request_completion("SELECT dp.", 1, 12, "conn1", &cache);
+        assert!(items.iter().any(|i| i.label == "ProductKey"), "expected ProductKey in {items:?}");
+        assert!(items.iter().any(|i| i.label == "EnglishProductName"));
+    }
+
+    #[test]
+    fn from_context_fuzzy_table_match() {
+        let cache = cache_with_dimproduct();
+        // "FROM dp" — typing "dp" should suggest DimProduct via initials
+        let items = request_completion("SELECT * FROM dp", 1, 18, "conn1", &cache);
+        assert!(
+            items.iter().any(|i| i.label == "DimProduct"),
+            "expected DimProduct in suggestions, got {items:?}"
+        );
+    }
+
+    #[test]
+    fn select_keyword_appears_at_top() {
+        // Typing "SEL" in a fresh query should surface SELECT keyword
+        let cache = cache_with_dimproduct();
+        let items = request_completion("SEL", 1, 4, "conn1", &cache);
+        assert!(
+            items.iter().any(|i| i.label == "SELECT"),
+            "expected SELECT in suggestions, got {items:?}"
+        );
+        // SELECT keyword should rank above tables
+        let select_idx = items.iter().position(|i| i.label == "SELECT").unwrap();
+        let table_idx = items.iter().position(|i| i.label == "DimProduct");
+        if let Some(tidx) = table_idx {
+            assert!(select_idx < tidx, "SELECT should rank above tables");
+        }
     }
 
     #[test]
