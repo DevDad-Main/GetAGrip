@@ -8,6 +8,7 @@ use getagrip_core::session::{ConnectionDriver, ConnectionProfile, ConnectionProf
 use getagrip_database::DatabaseDriver;
 use getagrip_database::driver::{ColumnInfo, QueryResult, Value};
 use getagrip_driver_sqlserver::SqlServerDriver;
+use getagrip_driver_postgres::PostgresDriver;
 
 use crate::commands::query::{QueryColumnDto, QueryResultDto};
 
@@ -20,7 +21,7 @@ pub fn driver() -> SqlServerDriver {
 pub fn driver_for(profile: &ConnectionProfile) -> Result<Arc<dyn DatabaseDriver>, String> {
     match profile.driver {
         ConnectionDriver::Mssql => Ok(Arc::new(SqlServerDriver::new())),
-        ConnectionDriver::Postgres => Err("PostgreSQL driver not yet implemented".into()),
+        ConnectionDriver::Postgres => Ok(Arc::new(PostgresDriver::new())),
         ConnectionDriver::Mysql => Err("MySQL driver not yet implemented".into()),
         ConnectionDriver::Sqlite => Err("SQLite driver not yet implemented".into()),
         ConnectionDriver::Oracle => Err("Oracle driver not yet implemented".into()),

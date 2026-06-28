@@ -1,0 +1,17 @@
+[package]
+name = "getagrip-driver-postgres"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "GetAGrip: PostgreSQL database driver."
+
+[dependencies]
+getagrip-core = { path = "../getagrip-core" }
+getagrip-database = { path = "../getagrip-database" }
+tokio = { workspace = true }
+tokio-postgres = { workspace = true }
+async-trait = "0.1"
+chrono = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }

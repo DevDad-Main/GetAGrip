@@ -65,6 +65,7 @@ crossbeam-channel = "0.5"
 
 # Database drivers
 tiberius = { version = "0.12", default-features = false, features = ["tds73", "rustls", "chrono", "bigdecimal"] }
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 rustls = "0.23"
 rustls-pemfile = "2"

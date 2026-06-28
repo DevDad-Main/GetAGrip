@@ -20,6 +20,7 @@ getagrip-settings = { path = "../../crates/getagrip-settings" }
 getagrip-themes = { path = "../../crates/getagrip-themes" }
 getagrip-query-engine = { path = "../../crates/getagrip-query_engine" }
 getagrip-driver-sqlserver = { path = "../../crates/getagrip-driver-sqlserver" }
+getagrip-driver-postgres = { path = "../../crates/getagrip-driver-postgres" }
 getagrip-intelligence = { path = "../../crates/getagrip-intelligence" }
 getagrip-schema = { path = "../../crates/getagrip-schema" }
 getagrip-telemetry = { path = "../../crates/getagrip-telemetry" }
