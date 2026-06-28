@@ -38,7 +38,11 @@ pub enum CompletionKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompletionResponse {
     pub suggestions: Vec<CompletionItem>,
+    /// The word being typed at the cursor, as the engine sees it.
     pub cursor_word: Option<String>,
+    /// 1-based column where `cursor_word` starts on the cursor line.
+    /// Used by the frontend to compute the replacement range precisely.
+    pub cursor_word_start_col: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

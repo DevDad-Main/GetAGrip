@@ -33,6 +33,7 @@
   let suggestMatchWord = '';
   let lastCompletionPos: monaco.Position | null = null;
   let completionWordStartCol = 0;
+  let completionCursorWordStartCol: number | null = null;
 
   // Custom hover state
   let hoverVisible = false;
@@ -145,7 +146,7 @@
 
   // ── suggest widget lifecycle ──────────────────────────────────────────
 
-  function showSuggest(items: CompletionItem[], pos: monaco.Position) {
+  function showSuggest(items: CompletionItem[], pos: monaco.Position, cursorWordStartCol: number | null = null) {
     if (items.length === 0) {
       hideSuggest();
       return;
@@ -154,6 +155,12 @@
     const word = model?.getWordUntilPosition(pos);
     completionWordStartCol = word?.startColumn ?? pos.column;
     suggestMatchWord = word?.word ?? '';
+    // Prefer the engine's cursor-word start column for the replacement range —
+    // Monaco's getWordUntilPosition can disagree with the engine on word
+    // boundaries (e.g. at line start right after a semicolon), which caused
+    // "SE" to be replaced with the wrong span and insert "ELECT" instead of
+    // "SELECT".
+    completionCursorWordStartCol = cursorWordStartCol;
 
     suggestItems = items;
     // Pre-select the top item so Tab/Enter accepts immediately (DataGrip behavior).
@@ -172,6 +179,7 @@
     suggestMatchWord = '';
     lastCompletionPos = null;
     completionWordStartCol = 0;
+    completionCursorWordStartCol = null;
   }
 
   let cacheChecked = false;
@@ -268,7 +276,7 @@
           detail: '',
           score: 50,
         }));
-        showSuggest(fallback, position);
+        showSuggest(fallback, position, null);
       }
       return;
     }
@@ -291,7 +299,7 @@
         cursor_column: position.column,
       });
       if (reqId === completionReqId) {
-        showSuggest(resp.suggestions, position);
+        showSuggest(resp.suggestions, position, resp.cursor_word_start_col);
       }
     } catch {
       if (reqId === completionReqId) {
@@ -303,22 +311,31 @@
   function handleSuggestSelect(item: CompletionItem) {
     if (!editor || !lastCompletionPos) return;
     const insertText = item.insert_text ?? item.label;
-    const word = editor.getModel()?.getWordUntilPosition(lastCompletionPos);
-    if (word) {
-      const range = {
-        startLineNumber: lastCompletionPos.lineNumber,
-        endLineNumber: lastCompletionPos.lineNumber,
-        startColumn: word.startColumn,
-        endColumn: word.endColumn,
-      };
-      editor.executeEdits('completion', [{ range, text: insertText }]);
-    } else {
+    const pos = lastCompletionPos;
+    // Use the engine-reported cursor-word start column for the replacement
+    // range. This keeps the replacement in sync with what the engine matched
+    // against, instead of Monaco's word segmentation which can pick a
+    // different span and corrupt the text (e.g. replace "SE" with the wrong
+    // characters, yielding "ELECT" instead of "SELECT").
+    if (completionCursorWordStartCol !== null) {
+      const startCol = completionCursorWordStartCol;
       editor.executeEdits('completion', [{
         range: {
-          startLineNumber: lastCompletionPos.lineNumber,
-          endLineNumber: lastCompletionPos.lineNumber,
-          startColumn: lastCompletionPos.column,
-          endColumn: lastCompletionPos.column,
+          startLineNumber: pos.lineNumber,
+          endLineNumber: pos.lineNumber,
+          startColumn: startCol,
+          endColumn: pos.column,
+        },
+        text: insertText,
+      }]);
+    } else {
+      // No cursor word (empty query): insert at the cursor position.
+      editor.executeEdits('completion', [{
+        range: {
+          startLineNumber: pos.lineNumber,
+          endLineNumber: pos.lineNumber,
+          startColumn: pos.column,
+          endColumn: pos.column,
         },
         text: insertText,
       }]);

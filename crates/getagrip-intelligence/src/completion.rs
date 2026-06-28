@@ -760,6 +760,28 @@ mod tests {
     }
 
     #[test]
+    fn se_on_new_line_offers_select_keyword() {
+        // Repro of reported bug: typing "SE" on line 2 after a complete query
+        // should surface the SELECT keyword, not a column like ELECT.
+        let cache = cache_with_dimproduct();
+        let sql = "SELECT * FROM DimProduct;\nSE";
+        let items = request_completion(sql, 2, 3, "conn1", &cache);
+        assert!(
+            items.iter().any(|i| i.label == "SELECT"),
+            "expected SELECT in suggestions, got {items:?}"
+        );
+        assert!(
+            !items.iter().any(|i| i.label == "ELECT"),
+            "ELECT column should not appear, got {items:?}"
+        );
+        let select_idx = items.iter().position(|i| i.label == "SELECT").unwrap();
+        let table_idx = items.iter().position(|i| i.label == "DimProduct");
+        if let Some(tidx) = table_idx {
+            assert!(select_idx < tidx, "SELECT should rank above tables on new line");
+        }
+    }
+
+    #[test]
     fn clause_detection_across_three_statements() {
         let cache = cache_with_dimproduct();
         // Cursor on statement 1 (the middle one), typing after FROM.

@@ -269,6 +269,7 @@ export type CompletionKind = 'table' | 'view' | 'column' | 'function' | 'keyword
 export interface CompletionResponse {
   suggestions: CompletionItem[];
   cursor_word?: string;
+  cursor_word_start_col?: number;
 }
 
 export async function requestCompletion(req: CompletionRequest): Promise<CompletionResponse> {
