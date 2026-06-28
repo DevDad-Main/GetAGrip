@@ -31,6 +31,7 @@ pub fn request_diagnostics(
     // so a syntax error in one doesn't block diagnostics for others
     let stmts = split_sql_statements(sql);
     for (stmt_sql, line_offset) in stmts {
+        let before = diagnostics.len();
         match sqlparser::parser::Parser::parse_sql(&dialect, &stmt_sql) {
             Ok(parsed) => {
                 if !tables.is_empty() {
@@ -52,6 +53,14 @@ pub fn request_diagnostics(
                     end_column: None,
                     hint: None,
                 });
+            }
+        }
+        // Adjust line numbers of semantic diagnostics for multi-statement SQL
+        if line_offset > 0 {
+            for d in diagnostics.iter_mut().skip(before) {
+                if d.line == 1 { // only adjust hardcoded line 1 diagnostics
+                    d.line += line_offset;
+                }
             }
         }
     }
