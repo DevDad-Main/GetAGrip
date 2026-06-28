@@ -15,6 +15,8 @@ pub struct SqlContext {
     /// The cursor position (1-based) within the original SQL.
     pub cursor_line: u32,
     pub cursor_col: u32,
+    /// 1-based column where cursor_word starts on cursor_line.
+    pub cursor_word_start_col: u32,
     /// Which parsed statement (0-based) the cursor is inside, if any.
     pub statement_index: Option<usize>,
     /// Per-statement clause boundaries, indexed by statement_index. Each entry
@@ -76,6 +78,7 @@ pub fn analyse_context(sql: &str, cursor_line: u32, cursor_column: u32) -> SqlCo
     ctx.cursor_word = extract_word_at_cursor(&prefix);
     ctx.cursor_line = cursor_line;
     ctx.cursor_col = cursor_column;
+    ctx.cursor_word_start_col = cursor_word_start_col(sql, cursor_line, cursor_column, &ctx.cursor_word);
 
     match parsed {
         Ok(statements) => {
@@ -541,6 +544,17 @@ pub(crate) fn line_col_to_offset(sql: &str, line: u32, column: u32) -> usize {
     sql.len()
 }
 
+/// Compute the 1-based column where the cursor word starts.
+///
+/// The cursor word ends at `cursor_col - 1` (the character just before the
+/// cursor position). So the start column is `cursor_col - word.len()`.
+fn cursor_word_start_col(_sql: &str, cursor_line: u32, cursor_column: u32, word: &str) -> u32 {
+    if word.is_empty() {
+        return cursor_column;
+    }
+    cursor_column.saturating_sub(word.len() as u32)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -583,6 +597,18 @@ mod tests {
         assert_eq!(ctx.cursor_word, "use");
         let ctx2 = analyse_context("FROM u", 1, 7);
         assert_eq!(ctx2.cursor_word, "u");
+    }
+
+    #[test]
+    fn cursor_word_start_col_is_correct() {
+        // "SELECT use" — cursor at col 11 (after "use"), word "use" starts at col 8.
+        let ctx = analyse_context("SELECT use", 1, 11);
+        assert_eq!(ctx.cursor_word, "use");
+        assert_eq!(ctx.cursor_word_start_col, 8);
+        // "FROM u" — cursor at col 7 (after "u"), word "u" starts at col 6.
+        let ctx2 = analyse_context("FROM u", 1, 7);
+        assert_eq!(ctx2.cursor_word, "u");
+        assert_eq!(ctx2.cursor_word_start_col, 6);
     }
 
     #[test]

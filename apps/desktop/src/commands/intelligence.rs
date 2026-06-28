@@ -56,23 +56,14 @@ pub async fn request_completion_cmd(
     };
 
     // Surface the cursor word + its start column so the frontend can compute the
-    // replacement range precisely, without relying on Monaco's word segmentation
-    // (which can disagree with the engine on word boundaries — e.g. at line start
-    // right after a semicolon, which caused "SE" to be replaced with the wrong
-    // span and insert "ELECT" instead of "SELECT").
+    // replacement range and highlight precisely, without relying on Monaco's
+    // word segmentation (which can disagree with the engine on word boundaries).
     let ctx = analyse_context(&request.sql, request.cursor_line, request.cursor_column);
-    let cursor_word_start_col = if ctx.cursor_word.is_empty() {
-        None
-    } else {
-        // ctx.cursor_col is 1-based; the word ends at cursor_col - 1, so it
-        // starts at cursor_col - word.len().
-        Some(request.cursor_column.saturating_sub(ctx.cursor_word.len() as u32))
-    };
 
     Ok(CompletionResponse {
         suggestions,
         cursor_word: if ctx.cursor_word.is_empty() { None } else { Some(ctx.cursor_word) },
-        cursor_word_start_col,
+        cursor_word_start_col: if ctx.cursor_word.is_empty() { None } else { Some(ctx.cursor_word_start_col) },
     })
 }
 

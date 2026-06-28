@@ -34,6 +34,7 @@
   let lastCompletionPos: monaco.Position | null = null;
   let completionWordStartCol = 0;
   let completionCursorWordStartCol: number | null = null;
+  let completionEngineWord = '';
 
   // Custom hover state
   let hoverVisible = false;
@@ -130,28 +131,35 @@
 
   function updateSuggestPosition(pos: monaco.Position) {
     if (!editor || !containerEl) return;
-    const coords = editor.getScrolledVisiblePosition(pos);
-    if (!coords) return;
+    // Convert the cursor line to an absolute y-coordinate in the editor.
+    // getTopForLineNumber gives the top of the line in the editor's content
+    // area (not scrolled). We add the editor's scroll offset to get the
+    // viewport-relative position, then add the container offset.
+    const lineHeight = editor.getOption(monaco.editor.EditorOption.lineHeight) || 20;
+    const topOfCursorLine = editor.getTopForLineNumber(pos.lineNumber);
+    const scrollTop = editor.getScrollTop();
     const containerRect = containerEl.getBoundingClientRect();
-    const widgetHeight = 480; // approximate max height
-    // Place the widget just below the cursor line. coords.top is the top of
-    // the cursor line relative to the editor viewport; add one line height so
-    // the widget doesn't overlap the text the user is typing.
-    const lineHeight = editor.getOption(monaco.editor.EditorOption.lineHeight);
-    const below = containerRect.top + coords.top + lineHeight + 4;
-    // If would overflow viewport, flip above cursor
-    const top = (below + widgetHeight > window.innerHeight)
-      ? containerRect.top + coords.top - widgetHeight - 8
-      : below;
+    const widgetHeight = 400;
+    // Place widget below the cursor line (topOfCursorLine is 0-based from editor top)
+    const belowLine = containerRect.top + topOfCursorLine - scrollTop + lineHeight + 2;
+    // Flip above if it would overflow the viewport
+    const top = (belowLine + widgetHeight > window.innerHeight)
+      ? containerRect.top + topOfCursorLine - scrollTop - widgetHeight - 4
+      : belowLine;
+    // Horizontal: use the column offset relative to the line start / viewport
+    const coords = editor.getScrolledVisiblePosition(pos);
+    const left = coords
+      ? containerRect.left + coords.left
+      : containerRect.left;
     suggestPos = {
       top: Math.max(4, top),
-      left: Math.min(containerRect.left + coords.left, window.innerWidth - 500),
+      left: Math.min(left, window.innerWidth - 500),
     };
   }
 
   // ── suggest widget lifecycle ──────────────────────────────────────────
 
-  function showSuggest(items: CompletionItem[], pos: monaco.Position, cursorWordStartCol: number | null = null) {
+  function showSuggest(items: CompletionItem[], pos: monaco.Position, cursorWordStartCol: number | null = null, engineWord = '') {
     if (items.length === 0) {
       hideSuggest();
       return;
@@ -159,7 +167,11 @@
     const model = editor?.getModel();
     const word = model?.getWordUntilPosition(pos);
     completionWordStartCol = word?.startColumn ?? pos.column;
-    suggestMatchWord = word?.word ?? '';
+    // Use the engine's cursor word for highlighting — it's what the engine
+    // actually matched against, so the highlight covers exactly the typed
+    // characters. Monaco's getWordUntilPosition can disagree on boundaries.
+    completionEngineWord = engineWord;
+    suggestMatchWord = engineWord || (word?.word ?? '');
     // Prefer the engine's cursor-word start column for the replacement range —
     // Monaco's getWordUntilPosition can disagree with the engine on word
     // boundaries (e.g. at line start right after a semicolon), which caused
@@ -185,6 +197,7 @@
     lastCompletionPos = null;
     completionWordStartCol = 0;
     completionCursorWordStartCol = null;
+    completionEngineWord = '';
   }
 
   let cacheChecked = false;
@@ -281,7 +294,7 @@
           detail: '',
           score: 50,
         }));
-        showSuggest(fallback, position, null);
+        showSuggest(fallback, position, null, '');
       }
       return;
     }
@@ -311,7 +324,7 @@
         topSuggestion: resp.suggestions[0]?.label,
       }));
       if (reqId === completionReqId) {
-        showSuggest(resp.suggestions, position, resp.cursor_word_start_col);
+        showSuggest(resp.suggestions, position, resp.cursor_word_start_col, resp.cursor_word);
       }
     } catch {
       if (reqId === completionReqId) {
