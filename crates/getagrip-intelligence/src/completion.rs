@@ -396,6 +396,11 @@ fn complete_columns_explicit(
                 let pk = if c.is_primary_key { " PK" } else { "" };
                 let doc = format!("{table}.{col}\n{db_type}{nullable}{pk}", col = c.name, db_type = c.db_type);
                 let detail = format!("{db_type}{nullable}{pk}", db_type = c.db_type);
+                // Base score from fuzzy match, then apply small adjustments:
+                //   +20 for primary keys (user likely wants the PK)
+                //   -1 per 8 chars of label length (shorter names are more likely)
+                let pk_boost = if c.is_primary_key { 20 } else { 0 };
+                let length_penalty = (c.name.len() / 8) as u32;
                 Some(CompletionItem {
                     label: c.name.clone(),
                     kind: CompletionKind::Column,
@@ -405,7 +410,7 @@ fn complete_columns_explicit(
                     source_schema: None,
                     data_type: Some(c.db_type.clone()),
                     insert_text: Some(c.name.clone()),
-                    score: COL_EXPLICIT_BASE + score as u32 * 3,
+                    score: COL_EXPLICIT_BASE + score as u32 * 3 + pk_boost - length_penalty,
                 })
             } else {
                 None
@@ -441,8 +446,12 @@ fn complete_columns_all(
             let doc = format!("{tbl}.{col}\n{db_type}{nullable}", tbl = table.name, col = col.name, db_type = col.db_type);
             let detail = format!("{db_type}{nullable}  [{tbl}]", db_type = col.db_type, tbl = table.name);
             let base_score = COL_STANDARD_BASE + score as u32 * 2;
-            // Boost columns from the in-scope table by 50%
-            let final_score = if in_scope { (base_score * 3) / 2 } else { base_score };
+            // Boost columns from the in-scope table by 50%, PKs by 20,
+            // penalize long names by 1 per 8 chars.
+            let in_scope_boost = if in_scope { (base_score + 1) / 2 } else { 0 };
+            let pk_boost = if col.is_primary_key { 20 } else { 0 };
+            let length_penalty = (col.name.len() / 8) as u32;
+            let final_score = base_score + in_scope_boost + pk_boost - length_penalty;
             items.push(CompletionItem {
                 label: col.name.clone(),
                 kind: CompletionKind::Column,
@@ -688,6 +697,22 @@ mod tests {
         assert!(!items.is_empty());
         // Label must be column name only (not "DimProduct.ProductKey")
         assert!(items.iter().all(|i| !i.label.contains('.')));
+    }
+
+    #[test]
+    fn pk_column_ranks_above_non_pk_with_same_match() {
+        // When two columns match the query equally well, the PK should rank first.
+        let cache = cache_with_dimproduct();
+        // "Pr" matches "ProductKey" (PK) and "EnglishProductName" (non-PK) via prefix.
+        let items = complete_columns_explicit(&cache, "conn1", "DimProduct", "Pr");
+        let pk_idx = items.iter().position(|i| i.label == "ProductKey");
+        let other_idx = items.iter().position(|i| i.label == "EnglishProductName");
+        assert!(pk_idx.is_some(), "ProductKey should appear in results");
+        assert!(other_idx.is_some(), "EnglishProductName should appear in results");
+        assert!(
+            pk_idx.unwrap() < other_idx.unwrap(),
+            "ProductKey (PK) should rank above EnglishProductName, got {items:?}"
+        );
     }
 
     #[test]
