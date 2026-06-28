@@ -180,7 +180,7 @@
     diagTimer = setTimeout(async () => {
       try {
         const model = editor?.getModel();
-        if (!model) { console.log('diag: no model'); return; }
+        if (!model) return;
         const sql = model.getValue();
         if (!sql.trim()) {
           monaco.editor.setModelMarkers(model, 'sql-diagnostics', []);
@@ -188,9 +188,11 @@
           diagStore.set([]);
           return;
         }
-        const resp = profileId
-          ? await requestDiagnostics({ connection_id: profileId, sql })
-          : { diagnostics: [] };
+        // Run diagnostics even without datasource (syntax errors still work)
+        const resp = await requestDiagnostics({
+          connection_id: profileId ?? '__no_datasource__',
+          sql,
+        });
         console.log('diag: got', resp.diagnostics.length, 'diagnostics, inlineCollection:', !!inlineCollection);
         diagStore.set(resp.diagnostics);
         const markers: monaco.editor.IMarkerData[] = resp.diagnostics.map((d) => ({
@@ -400,7 +402,6 @@
     });
 
     inlineCollection = editor.createDecorationsCollection();
-    console.log('inline collection created:', !!inlineCollection);
 
     editor.onDidChangeModelContent(() => {
       const value = editor?.getValue() ?? '';
