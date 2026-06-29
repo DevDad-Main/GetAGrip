@@ -4,7 +4,7 @@
   import TabToolbar from './TabToolbar.svelte';
   import MonacoEditor from './MonacoEditor.svelte';
   import { Play, Save } from 'lucide-svelte';
-  import { notify } from './Toast.svelte';
+  import { notify } from '../lib/toast';
 
   let runFn: (() => void) | null = null;
   let saveDialogOpen = false;

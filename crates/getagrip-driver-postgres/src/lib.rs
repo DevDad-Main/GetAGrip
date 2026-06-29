@@ -1,6 +1,9 @@
 use async_trait::async_trait;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio_postgres::{Config, NoTls, Row};
 use tokio_postgres::types::Type;
+use tokio_postgres_rustls::MakeRustlsConnect;
 
 use getagrip_core::AtlasResult;
 use getagrip_database::driver::{
@@ -33,36 +36,73 @@ impl DatabaseDriver for PostgresDriver {
             }
         })?;
 
-        let (client, connection) = config.connect(NoTls).await.map_err(|e| {
-            getagrip_core::AtlasError::Connection { source: url.into(), reason: e.to_string(), cause: None }
-        })?;
+        let use_tls = url.contains("sslmode=require")
+            || url.contains("sslmode=prefer")
+            || url.contains("sslmode=verify-ca")
+            || url.contains("sslmode=verify-full");
 
-        tokio::spawn(async move {
-            if let Err(e) = connection.await {
-                tracing::error!("postgres connection error: {e}");
-            }
-        });
-
-        Ok(Box::new(PostgresConnection { client }))
+        if use_tls {
+            let roots = rustls::RootCertStore::from_iter(
+                webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
+            );
+            let tls_config = rustls::ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth();
+            let tls = MakeRustlsConnect::new(tls_config);
+            let (client, connection) = config.connect(tls).await.map_err(|e| {
+                getagrip_core::AtlasError::Connection { source: url.into(), reason: e.to_string(), cause: None }
+            })?;
+            tokio::spawn(async move {
+                if let Err(e) = connection.await {
+                    tracing::error!("postgres tls connection error: {e}");
+                }
+            });
+            let cancel_token = client.cancel_token();
+            Ok(Box::new(PostgresConnection {
+                client: Arc::new(Mutex::new(client)),
+                cancel_token: Arc::new(Mutex::new(cancel_token)),
+            }))
+        } else {
+            let (client, connection) = config.connect(NoTls).await.map_err(|e| {
+                getagrip_core::AtlasError::Connection { source: url.into(), reason: e.to_string(), cause: None }
+            })?;
+            tokio::spawn(async move {
+                if let Err(e) = connection.await {
+                    tracing::error!("postgres connection error: {e}");
+                }
+            });
+            let cancel_token = client.cancel_token();
+            Ok(Box::new(PostgresConnection {
+                client: Arc::new(Mutex::new(client)),
+                cancel_token: Arc::new(Mutex::new(cancel_token)),
+            }))
+        }
     }
 }
 
 fn map_col_type(typ: &Type) -> ColumnType {
     match *typ {
         Type::BOOL => ColumnType::Boolean,
-        Type::INT2 | Type::INT4 | Type::INT8 => ColumnType::Integer,
-        Type::FLOAT4 | Type::FLOAT8 | Type::NUMERIC => ColumnType::Float,
-        Type::TEXT | Type::VARCHAR | Type::BPCHAR | Type::NAME | Type::JSON | Type::JSONB | Type::XML => ColumnType::String,
+        Type::INT2 | Type::INT4 | Type::INT8
+        | Type::INT2_ARRAY | Type::INT4_ARRAY | Type::INT8_ARRAY => ColumnType::Integer,
+        Type::FLOAT4 | Type::FLOAT8 | Type::NUMERIC
+        | Type::FLOAT4_ARRAY | Type::FLOAT8_ARRAY => ColumnType::Float,
+        Type::TEXT | Type::VARCHAR | Type::BPCHAR | Type::NAME
+        | Type::TEXT_ARRAY | Type::VARCHAR_ARRAY
+        | Type::JSON | Type::JSONB | Type::XML => ColumnType::String,
         Type::BYTEA => ColumnType::Binary,
-        Type::DATE | Type::TIMESTAMP | Type::TIMESTAMPTZ | Type::TIME | Type::TIMETZ | Type::INTERVAL => ColumnType::DateTime,
-        Type::UUID => ColumnType::Uuid,
+        Type::DATE | Type::TIMESTAMP | Type::TIMESTAMPTZ | Type::TIME | Type::TIMETZ | Type::INTERVAL
+        | Type::DATE_ARRAY | Type::TIMESTAMP_ARRAY | Type::TIMESTAMPTZ_ARRAY => ColumnType::DateTime,
+        Type::UUID | Type::UUID_ARRAY => ColumnType::Uuid,
         _ if typ.name() == "json" || typ.name() == "jsonb" => ColumnType::Json,
+        _ if typ.name().ends_with("[]") => ColumnType::String,
         _ => ColumnType::Other(typ.name().to_string()),
     }
 }
 
 struct PostgresConnection {
-    client: tokio_postgres::Client,
+    client: Arc<Mutex<tokio_postgres::Client>>,
+    cancel_token: Arc<Mutex<tokio_postgres::CancelToken>>,
 }
 
 #[async_trait]
@@ -70,10 +110,26 @@ impl DriverConnection for PostgresConnection {
     async fn execute(&mut self, sql: &str) -> AtlasResult<QueryResult> {
         let start = std::time::Instant::now();
 
-        let stmt = match self.client.prepare(sql).await {
-            Ok(s) => s,
+        let stmt = {
+            let client = self.client.lock().await;
+            client.prepare(sql).await
+        };
+
+        let (_stmt, cols) = match stmt {
+            Ok(s) => {
+                let cols: Vec<ColumnInfo> = s.columns().iter().enumerate().map(|(i, c)| ColumnInfo {
+                    name: c.name().to_string(),
+                    col_type: map_col_type(c.type_()),
+                    db_type: c.type_().name().to_string(),
+                    nullable: true,
+                    ordinal: i as u16,
+                    size_hint: None,
+                }).collect();
+                (Some(s), cols)
+            }
             Err(_) => {
-                let rows_affected = self.client.execute(sql, &[]).await.map_err(|e| {
+                let client = self.client.lock().await;
+                let rows_affected = client.execute(sql, &[]).await.map_err(|e| {
                     getagrip_core::AtlasError::Query { code: None, detail: e.to_string() }
                 })?;
                 return Ok(QueryResult {
@@ -86,17 +142,9 @@ impl DriverConnection for PostgresConnection {
             }
         };
 
-        let cols: Vec<ColumnInfo> = stmt.columns().iter().enumerate().map(|(i, c)| ColumnInfo {
-            name: c.name().to_string(),
-            col_type: map_col_type(c.type_()),
-            db_type: c.type_().name().to_string(),
-            nullable: true,
-            ordinal: i as u16,
-            size_hint: None,
-        }).collect();
-
         if cols.is_empty() {
-            let rows_affected = self.client.execute(sql, &[]).await.map_err(|e| {
+            let client = self.client.lock().await;
+            let rows_affected = client.execute(sql, &[]).await.map_err(|e| {
                 getagrip_core::AtlasError::Query { code: None, detail: e.to_string() }
             })?;
             return Ok(QueryResult {
@@ -108,9 +156,12 @@ impl DriverConnection for PostgresConnection {
             });
         }
 
-        let rows = self.client.query(sql, &[]).await.map_err(|e| {
-            getagrip_core::AtlasError::Query { code: None, detail: e.to_string() }
-        })?;
+        let rows = {
+            let client = self.client.lock().await;
+            client.query(sql, &[]).await.map_err(|e| {
+                getagrip_core::AtlasError::Query { code: None, detail: e.to_string() }
+            })?
+        };
 
         let col_info = cols.clone();
         let row_count = rows.len() as u64;
@@ -129,17 +180,23 @@ impl DriverConnection for PostgresConnection {
     }
 
     async fn ping(&mut self) -> AtlasResult<()> {
-        self.client.simple_query("SELECT 1").await.map_err(|e| {
+        let client = self.client.lock().await;
+        client.simple_query("SELECT 1").await.map_err(|e| {
             getagrip_core::AtlasError::Connection { source: "ping".into(), reason: e.to_string(), cause: None }
         })?;
         Ok(())
     }
 
-    async fn info(&self) -> AtlasResult<ConnectionInfo> {
-        let version = self.client.query_one("SELECT version()", &[]).await
-            .map(|r| r.get::<_, String>(0))
-            .unwrap_or_else(|_| "PostgreSQL".into());
+    async fn cancel(&mut self) -> AtlasResult<()> {
+        let token = self.cancel_token.lock().await;
+        token.cancel_query(NoTls).await.map_err(|e| {
+            getagrip_core::AtlasError::Query { code: None, detail: format!("cancel failed: {e}") }
+        })?;
+        Ok(())
+    }
 
+    async fn info(&self) -> AtlasResult<ConnectionInfo> {
+        let version = "PostgreSQL".into();
         Ok(ConnectionInfo {
             product_name: "PostgreSQL".into(),
             version: ServerVersion { major: 0, minor: 0, patch: 0, raw: version },
@@ -152,21 +209,24 @@ impl DriverConnection for PostgresConnection {
     }
 
     async fn begin(&mut self) -> AtlasResult<()> {
-        self.client.simple_query("BEGIN").await.map_err(|e| {
+        let client = self.client.lock().await;
+        client.simple_query("BEGIN").await.map_err(|e| {
             getagrip_core::AtlasError::Query { code: None, detail: e.to_string() }
         })?;
         Ok(())
     }
 
     async fn commit(&mut self) -> AtlasResult<()> {
-        self.client.simple_query("COMMIT").await.map_err(|e| {
+        let client = self.client.lock().await;
+        client.simple_query("COMMIT").await.map_err(|e| {
             getagrip_core::AtlasError::Query { code: None, detail: e.to_string() }
         })?;
         Ok(())
     }
 
     async fn rollback(&mut self) -> AtlasResult<()> {
-        self.client.simple_query("ROLLBACK").await.map_err(|e| {
+        let client = self.client.lock().await;
+        client.simple_query("ROLLBACK").await.map_err(|e| {
             getagrip_core::AtlasError::Query { code: None, detail: e.to_string() }
         })?;
         Ok(())
@@ -210,8 +270,37 @@ fn extract_value(row: &Row, idx: usize) -> Value {
         Type::UUID => {
             row.try_get::<_, uuid::Uuid>(idx).ok().map(Value::Uuid).unwrap_or(Value::Null)
         }
+        Type::INT2_ARRAY => {
+            row.try_get::<_, Vec<i16>>(idx).ok().map(|v| Value::String(format!("{:?}", v))).unwrap_or(Value::Null)
+        }
+        Type::INT4_ARRAY => {
+            row.try_get::<_, Vec<i32>>(idx).ok().map(|v| Value::String(format!("{:?}", v))).unwrap_or(Value::Null)
+        }
+        Type::INT8_ARRAY => {
+            row.try_get::<_, Vec<i64>>(idx).ok().map(|v| Value::String(format!("{:?}", v))).unwrap_or(Value::Null)
+        }
+        Type::FLOAT4_ARRAY => {
+            row.try_get::<_, Vec<f32>>(idx).ok().map(|v| Value::String(format!("{:?}", v))).unwrap_or(Value::Null)
+        }
+        Type::FLOAT8_ARRAY => {
+            row.try_get::<_, Vec<f64>>(idx).ok().map(|v| Value::String(format!("{:?}", v))).unwrap_or(Value::Null)
+        }
+        Type::TEXT_ARRAY | Type::VARCHAR_ARRAY => {
+            row.try_get::<_, Vec<&str>>(idx).ok()
+                .map(|v| Value::String(format!("{:?}", v)))
+                .unwrap_or(Value::Null)
+        }
+        Type::DATE_ARRAY | Type::TIMESTAMP_ARRAY | Type::TIMESTAMPTZ_ARRAY => {
+            row.try_get::<_, Vec<chrono::NaiveDateTime>>(idx).ok()
+                .map(|v| Value::String(format!("{:?}", v)))
+                .unwrap_or(Value::Null)
+        }
+        Type::UUID_ARRAY => {
+            row.try_get::<_, Vec<uuid::Uuid>>(idx).ok()
+                .map(|v| Value::String(format!("{:?}", v)))
+                .unwrap_or(Value::Null)
+        }
         _ => {
-            // Fallback: try as string
             row.try_get::<_, &str>(idx).ok().map(|s| Value::String(s.to_string())).unwrap_or(Value::Null)
         }
     }

@@ -417,7 +417,10 @@ fn build_url(profile: &ConnectionProfile, username: Option<&str>, password: Opti
     };
     let db = profile.database.as_deref().unwrap_or("");
     match profile.driver {
-        ConnectionDriver::Postgres => format!("postgres://{}{}:{}/{}", user_pass, profile.host, profile.port, db),
+        ConnectionDriver::Postgres => {
+            let tls = if profile.use_tls { "?sslmode=require" } else { "" };
+            format!("postgres://{}{}:{}/{}{}", user_pass, profile.host, profile.port, db, tls)
+        }
         ConnectionDriver::Mysql => format!("mysql://{}{}:{}/{}", user_pass, profile.host, profile.port, db),
         ConnectionDriver::Mssql => format!("mssql://{}{}:{}/{}", user_pass, profile.host, profile.port, db),
         ConnectionDriver::Sqlite => format!("sqlite://{}", profile.host),
@@ -435,7 +438,10 @@ fn build_test_url(profile: &ConnectionProfile, username: Option<&str>, password:
     };
     let db = profile.database.as_deref().unwrap_or("");
     match profile.driver {
-        ConnectionDriver::Postgres => format!("postgres://{}{}:{}/{}?connect_timeout=5", user_pass, profile.host, profile.port, db),
+        ConnectionDriver::Postgres => {
+            let tls = if profile.use_tls { "sslmode=require&" } else { "" };
+            format!("postgres://{}{}:{}/{}?{}connect_timeout=5", user_pass, profile.host, profile.port, db, tls)
+        }
         ConnectionDriver::Mysql => format!("mysql://{}{}:{}/{}?connect_timeout=5", user_pass, profile.host, profile.port, db),
         ConnectionDriver::Mssql => format!("mssql://{}{}:{}/{}?connect_timeout=5", user_pass, profile.host, profile.port, db),
         ConnectionDriver::Sqlite => format!("sqlite://{}", profile.host),

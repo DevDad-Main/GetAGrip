@@ -3,7 +3,7 @@
   import { resultSets } from '$lib/stores';
   import { exportResult, saveExport, type ExportInput, type ExportColumn } from '$lib/tauri';
   import { save } from '@tauri-apps/plugin-dialog';
-  import { notify } from './Toast.svelte';
+  import { notify } from '../lib/toast';
   import { Copy, Download, ChevronDown, ArrowUp, ArrowDown } from 'lucide-svelte';
 
   export let result: ResultSet;

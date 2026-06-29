@@ -171,7 +171,7 @@
 <style>
   .app-shell {
     display: grid;
-    grid-template-rows: var(--titlebar-h) 1fr var(--statusbar-h);
+    grid-template-rows: var(--titlebar-h, 36px) 1fr var(--statusbar-h, 24px);
     flex: 1;
     min-height: 0;
     height: 100%;

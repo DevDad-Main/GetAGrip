@@ -1,7 +1,7 @@
 import { get } from 'svelte/store';
 import { datasources, activeDatasourceId, datasourceStates, datasourceTrees, schemaCache, metadataRefreshed } from './stores';
 import { connectDatasource, disconnectDatasource, deleteDatasource, testDatasource, toggleFavorite, introspectNode, refreshMetadata, type ConnectionProfile, type ManagedConnectionDto } from './tauri';
-import { notify } from '../components/Toast.svelte';
+import { notify } from './toast';
 
 async function loadAllTableNames(profileId: string) {
   try {

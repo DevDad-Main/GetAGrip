@@ -4,7 +4,7 @@
   import { THEMES, findTheme, applyAppTheme, type ThemeDef } from '$lib/themes';
   import { onMount } from 'svelte';
   import { X } from 'lucide-svelte';
-  import { notify } from './Toast.svelte';
+  import { notify } from '../lib/toast';
 
   export let open = false;
   export let onClose: () => void;
