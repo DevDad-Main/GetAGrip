@@ -416,6 +416,26 @@ impl LspManager {
         let _ = self.idle_timeout;
     }
 
+    /// Check whether an LSP server is currently running for a connection.
+    pub fn is_attached(&self, connection_id: &str) -> bool {
+        self.servers.contains_key(connection_id)
+    }
+
+    /// Check whether a provider is registered for the given driver.
+    pub fn has_provider(&self, driver: &str) -> bool {
+        self.drivers.iter().any(|p| p.driver() == driver)
+    }
+
+    /// Remove the provider for a given driver, if any.
+    pub fn remove_provider(&mut self, driver: &str) {
+        self.drivers.retain(|p| p.driver() != driver);
+        // Also kill any running server using this provider
+        // (we don't track which server maps to which driver directly,
+        // so we just clear servers — the next complete() call will
+        // re-create if a provider is re-registered)
+        self.servers.clear();
+    }
+
     /// Shut down a specific connection's server.
     pub fn disconnect(&mut self, connection_id: &str) {
         self.servers.remove(connection_id);

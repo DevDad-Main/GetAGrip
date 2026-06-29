@@ -41,12 +41,22 @@ pub async fn request_completion_cmd(
         .manager
         .get_by_id_str(&request.connection_id)
         .map(|c| c.profile.driver_name().to_string());
-    let lsp_suggestions = match driver {
-        Some(d) => state
-            .lsp_manager
-            .lock()
-            .complete(&request.connection_id, &d, &request.sql, request.cursor_line, request.cursor_column),
-        None => Vec::new(),
+    let (lsp_suggestions, lsp_attached, lsp_message) = match driver {
+        Some(ref d) => {
+            let mut mgr = state.lsp_manager.lock();
+            let has_provider = mgr.has_provider(d);
+            let suggestions = mgr.complete(&request.connection_id, d, &request.sql, request.cursor_line, request.cursor_column);
+            let attached = mgr.is_attached(&request.connection_id);
+            let message = if attached {
+                Some("LSP attached".to_string())
+            } else if !has_provider {
+                Some(format!("No LSP server for {d}"))
+            } else {
+                Some(format!("LSP unavailable for {d}"))
+            };
+            (suggestions, attached, message)
+        }
+        None => (Vec::new(), false, None),
     };
 
     let suggestions = if lsp_suggestions.is_empty() {
@@ -66,6 +76,8 @@ pub async fn request_completion_cmd(
         suggestions,
         cursor_word,
         cursor_word_start_col,
+        lsp_attached,
+        lsp_message,
     })
 }
 

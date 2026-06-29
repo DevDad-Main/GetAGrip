@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import * as monaco from 'monaco-editor';
   import { executeQueryV2, requestCompletion, requestDiagnostics, type QueryResultDto, type CompletionItem } from '$lib/tauri';
+  import { notify } from '$lib/toast';
   import {
     resultSets, activeResultSetId, statusText, diagnostics as diagStore,
     nextResultSetId, resultsPanelHeight, activeTheme, type ResultSet,
@@ -40,6 +41,9 @@
   // and Enter/Tab must not accept them (accepting a stale suggestion with a
   // stale cursor-word range is what produces "SelecSELECT" corruption).
   let visibleCompletionReqId = 0;
+
+  // Track which connections we've notified about LSP attachment
+  const lspNotified = new Set<string>();
 
   // Custom hover state
   let hoverVisible = false;
@@ -324,6 +328,10 @@
         cursor_line: position.lineNumber,
         cursor_column: position.column,
       });
+      if (resp.lsp_message && profileId && !lspNotified.has(profileId)) {
+        lspNotified.add(profileId);
+        notify(resp.lsp_message, resp.lsp_attached ? 'success' : 'info');
+      }
       if (reqId === completionReqId) {
         showSuggest(resp.suggestions, position, resp.cursor_word_start_col, resp.cursor_word, reqId);
       }

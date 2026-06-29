@@ -43,6 +43,10 @@ pub struct CompletionResponse {
     /// 1-based column where `cursor_word` starts on the cursor line.
     /// Used by the frontend to compute the replacement range precisely.
     pub cursor_word_start_col: Option<u32>,
+    /// Whether an LSP server was attached and provided completions.
+    pub lsp_attached: bool,
+    /// Human-readable LSP status message, if any.
+    pub lsp_message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

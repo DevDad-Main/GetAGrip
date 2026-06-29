@@ -166,6 +166,28 @@ export async function setSetting(key: string, value: unknown): Promise<void> {
   return invoke<void>('set_setting', { key, value });
 }
 
+// ---- LSP server management -------------------------------------------------
+
+export interface LspServerInfo {
+  driver: string;
+  display_name: string;
+  installed: boolean;
+  path?: string;
+  auto_detected: boolean;
+}
+
+export async function getLspServers(): Promise<LspServerInfo[]> {
+  return invoke<LspServerInfo[]>('get_lsp_servers');
+}
+
+export async function setLspPath(driver: string, path: string | null): Promise<void> {
+  return invoke<void>('set_lsp_path', { driver, path });
+}
+
+export async function installLsp(driver: string): Promise<string[]> {
+  return invoke<string[]>('install_lsp', { driver });
+}
+
 // ---- Phase 2 datasource commands -------------------------------------------
 
 export async function listDatasources(): Promise<ConnectionProfile[]> {
@@ -304,6 +326,8 @@ export interface CompletionResponse {
   suggestions: CompletionItem[];
   cursor_word?: string;
   cursor_word_start_col?: number;
+  lsp_attached: boolean;
+  lsp_message?: string;
 }
 
 export async function requestCompletion(req: CompletionRequest): Promise<CompletionResponse> {

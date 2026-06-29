@@ -5,12 +5,14 @@
   import { onMount } from 'svelte';
   import { X } from 'lucide-svelte';
   import { notify } from '../lib/toast';
+  import LspSettingsModal from './LspSettingsModal.svelte';
 
   export let open = false;
   export let onClose: () => void;
 
   let activeTab = 'editor';
   let loaded = false;
+  let showLspSettings = false;
 
   let fontSize = 13;
   let fontFamily = 'JetBrains Mono, Fira Code, Menlo, Consolas, monospace';
@@ -64,11 +66,13 @@
         <span>Settings</span>
         <button class="settings-close" on:click={onClose}><X size="14" /></button>
       </div>
+      <LspSettingsModal open={showLspSettings} onClose={() => showLspSettings = false} />
       <div class="settings-body">
         <nav class="settings-tabs">
           <button class:active={activeTab === 'editor'} on:click={() => activeTab = 'editor'}>Editor</button>
           <button class:active={activeTab === 'theme'} on:click={() => activeTab = 'theme'}>Theme</button>
           <button class:active={activeTab === 'shortcuts'} on:click={() => activeTab = 'shortcuts'}>Shortcuts</button>
+          <button class:active={activeTab === 'lsp'} on:click={() => activeTab = 'lsp'}>LSP</button>
         </nav>
 
         <div class="settings-content">
@@ -144,6 +148,18 @@
                 <div class="shortcut"><kbd>Ctrl+N</kbd> New query tab</div>
                 <div class="shortcut"><kbd>Ctrl+W</kbd> Close tab</div>
               </div>
+            </div>
+
+          {:else if activeTab === 'lsp'}
+            <div class="setting-group">
+              <h3>Language Servers</h3>
+              <p class="lsp-tab-info">
+                Language servers provide enhanced autocompletion and diagnostics.
+                Configure LSP binaries for each database driver below.
+              </p>
+              <button class="primary lsp-open-btn" on:click={() => showLspSettings = true}>
+                Open LSP Settings
+              </button>
             </div>
           {/if}
         </div>
@@ -229,5 +245,11 @@
     background: var(--bg-input); border: 1px solid var(--border-strong);
     border-radius: 3px; color: var(--text-muted); font-family: var(--font-mono);
     min-width: 130px; text-align: center;
+  }
+  .lsp-tab-info {
+    font-size: 11px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5;
+  }
+  .lsp-open-btn {
+    font-size: 12px; padding: 6px 16px;
   }
 </style>

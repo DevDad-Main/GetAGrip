@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(cargo build *)",
+      "Bash(sudo pacman *)",
+      "Bash(timeout 10 sh *)",
+      "Bash(chown -R oliverm:oliverm /home/oliverm/GetAGrip/target)",
+      "Bash(npm run *)",
+      "Bash(sudo chown *)",
+      "Bash(cargo tauri *)",
+      "Bash(npx ../frontend/node_modules/.bin/tauri dev)",
+      "Bash(../../apps/desktop/frontend/node_modules/.bin/tauri dev *)",
+      "Bash(./tauri-wayland.sh)",
+      "Bash(rustup default *)"
+    ]
+  }
+}

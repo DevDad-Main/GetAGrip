@@ -29,6 +29,7 @@ use commands::intelligence::{
     refresh_metadata_cmd, request_completion_cmd, request_diagnostics_cmd,
 };
 use commands::introspect::introspect;
+use commands::lsp::{get_lsp_servers, install_lsp, set_lsp_path};
 use commands::query::execute_query;
 use commands::settings::{get_settings, set_setting, SettingsState};
 
@@ -103,13 +104,24 @@ fn main() {
                 history_path,
             };
 
+            // Create SettingsState early so LSP discovery can check user paths
+            let settings_state = SettingsState::new();
+
             // Register LSP providers for all supported database drivers
             {
                 use std::env;
                 use std::path::{Path, PathBuf};
 
                 // Helper function to find LSP binary with fallback logic
-                let find_lsp_binary = |default_names: &[&str], env_var: &str| -> Option<PathBuf> {
+                let find_lsp_binary = |default_names: &[&str], env_var: &str, settings_key: &str| -> Option<PathBuf> {
+                    // 0. Check user-configured path from settings
+                    if let Some(custom_path) = settings_state.inner.get::<String>(settings_key) {
+                        let path = PathBuf::from(&custom_path);
+                        if path.exists() && path.is_file() {
+                            return Some(path);
+                        }
+                    }
+
                     // 1. Check environment variable override
                     if let Ok(path) = env::var(env_var) {
                         let path = PathBuf::from(path);
@@ -177,7 +189,7 @@ fn main() {
                 let mut lsp_manager = state.lsp_manager.lock();
 
                 // Register PostgreSQL LSP provider
-                if let Some(pg_path) = find_lsp_binary(&["pglsp", "postgresql-language-server", "pglsp.exe"], "POSTGRES_LSP_PATH") {
+                if let Some(pg_path) = find_lsp_binary(&["pglsp", "postgresql-language-server", "pglsp.exe"], "POSTGRES_LSP_PATH", "lsp.path.postgres") {
                     let provider = Box::new(getagrip_intelligence::lsp_client::PostgresLspProvider::new(pg_path));
                     lsp_manager.register_provider(provider);
                     tracing::info!("Registered PostgreSQL LSP provider");
@@ -186,7 +198,7 @@ fn main() {
                 }
 
                 // Register MySQL LSP provider
-                if let Some(mysql_path) = find_lsp_binary(&["mysql-language-server", "mysql-lsp", "mysql-language-server.exe"], "MYSQL_LSP_PATH") {
+                if let Some(mysql_path) = find_lsp_binary(&["mysql-language-server", "mysql-lsp", "mysql-language-server.exe"], "MYSQL_LSP_PATH", "lsp.path.mysql") {
                     let provider = Box::new(getagrip_intelligence::lsp_client::MysqlLspProvider::new(mysql_path));
                     lsp_manager.register_provider(provider);
                     tracing::info!("Registered MySQL LSP provider");
@@ -195,7 +207,7 @@ fn main() {
                 }
 
                 // Register SQL Server LSP provider
-                if let Some(mssql_path) = find_lsp_binary(&["sql-language-server", "sql-lsp", "sql-language-server.exe"], "MSSQL_LSP_PATH") {
+                if let Some(mssql_path) = find_lsp_binary(&["sql-language-server", "sql-lsp", "sql-language-server.exe"], "MSSQL_LSP_PATH", "lsp.path.sqlserver") {
                     let provider = Box::new(getagrip_intelligence::lsp_client::MssqlLspProvider::new(mssql_path));
                     lsp_manager.register_provider(provider);
                     tracing::info!("Registered SQL Server LSP provider");
@@ -204,7 +216,7 @@ fn main() {
                 }
 
                 // Register SQLite LSP provider
-                if let Some(sqlite_path) = find_lsp_binary(&["sqlite-lsp", "sqlite-language-server", "sqlite-lsp.exe"], "SQLITE_LSP_PATH") {
+                if let Some(sqlite_path) = find_lsp_binary(&["sqlite-lsp", "sqlite-language-server", "sqlite-lsp.exe"], "SQLITE_LSP_PATH", "lsp.path.sqlite") {
                     let provider = Box::new(getagrip_intelligence::lsp_client::SqliteLspProvider::new(sqlite_path));
                     lsp_manager.register_provider(provider);
                     tracing::info!("Registered SQLite LSP provider");
@@ -214,7 +226,7 @@ fn main() {
             }
 
             app.manage(state);
-            app.manage(SettingsState::new());
+            app.manage(settings_state);
 
             Ok(())
         })
@@ -248,6 +260,9 @@ fn main() {
             request_completion_cmd,
             request_diagnostics_cmd,
             refresh_metadata_cmd,
+            get_lsp_servers,
+            set_lsp_path,
+            install_lsp,
         ])
         .run(tauri::generate_context!())
         .expect("error running tauri");

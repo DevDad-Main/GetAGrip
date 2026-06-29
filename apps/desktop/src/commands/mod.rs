@@ -10,6 +10,7 @@ pub mod export;
 pub mod history;
 pub mod intelligence;
 pub mod introspect;
+pub mod lsp;
 pub mod query;
 pub mod settings;
 pub mod util;
