@@ -30,8 +30,8 @@
   let settingsVisible = false;
   let sidebarW = 260;
 
-  // Auto-hide results panel when all result tabs are closed
-  $: if ($resultSets.length === 0 && $resultsPanelHeight > 0) {
+  // Auto-hide results panel when all result tabs are closed (not when terminal is active)
+  $: if ($resultSets.length === 0 && $resultsPanelHeight > 0 && $activeBottomTab !== 'terminal') {
     resultsPanelHeight.set(0);
   }
 
