@@ -3,6 +3,11 @@
   import { Bell, Trash2, CheckCircle, XCircle, AlertTriangle, Info, Clock } from 'lucide-svelte';
 
   export let visible = false;
+  export let onClose: () => void;
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') onClose();
+  }
 
   function icon(type: ToastType) {
     if (type === 'success') return CheckCircle;
@@ -22,7 +27,10 @@
 </script>
 
 {#if visible}
-  <aside class="notif-panel">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="notif-backdrop" on:click={onClose} on:keydown={handleKeydown}></div>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <aside class="notif-panel" on:click|stopPropagation on:keydown={handleKeydown}>
     <div class="notif-header">
       <Bell size="12" />
       <span>Notifications</span>
@@ -51,6 +59,11 @@
 {/if}
 
 <style>
+  .notif-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1499;
+  }
   .notif-panel {
     position: fixed;
     bottom: 32px;

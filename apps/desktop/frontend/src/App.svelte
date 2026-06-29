@@ -158,7 +158,7 @@
     {/if}
   </main>
   <StatusBar onToggleHistory={() => historyVisible = !historyVisible} onToggleNotifications={() => notificationsVisible = !notificationsVisible} onToggleDiagnostics={() => diagnosticsVisible = !diagnosticsVisible} historyVisible={historyVisible} notificationsVisible={notificationsVisible} diagnosticsVisible={diagnosticsVisible} />
-  <NotificationHistory visible={notificationsVisible} />
+  <NotificationHistory visible={notificationsVisible} onClose={() => notificationsVisible = false} />
   <DiagnosticsPanel visible={diagnosticsVisible} onClose={() => diagnosticsVisible = false} />
 </div>
 
