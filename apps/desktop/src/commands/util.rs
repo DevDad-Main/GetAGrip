@@ -1,5 +1,6 @@
 //! Shared helpers for Tauri command handlers.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -97,17 +98,43 @@ pub struct CommandOutput {
     pub exit_code: i32,
 }
 
+/// Determine the shell name from a full path (e.g. `/usr/bin/fish` → `fish`).
+fn shell_name(shell_path: &str) -> &str {
+    Path::new(shell_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("sh")
+}
+
+/// Wrap a command so the shell sources its rc file first (aliases, etc.).
+fn wrap_for_shell(shell: &str, command: &str) -> String {
+    let name = shell_name(shell);
+    match name {
+        "bash" => format!("source ~/.bashrc 2>/dev/null; {}", command),
+        "zsh"  => format!("source ~/.zshrc  2>/dev/null; {}", command),
+        "fish" => format!("source $HOME/.config/fish/config.fish 2>/dev/null; {}", command),
+        _ => command.to_string(),
+    }
+}
+
 /// Run a shell command and return its output. Used by the integrated terminal.
 ///
-/// Detects the user's default shell from `$SHELL` so shell-specific config
-/// (aliases, prompt, etc.) applies.  The command string is passed as-is to
-/// `shell -c "…"`.
+/// The command is run through the user's default shell (`$SHELL`), or through
+/// `shell` if provided.  Bash/zsh rc files are explicitly sourced so aliases
+/// and config apply.
 #[tauri::command]
-pub async fn run_command(command: String) -> Result<CommandOutput, String> {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+pub async fn run_command(
+    command: String,
+    shell: Option<String>,
+) -> Result<CommandOutput, String> {
+    let shell_path = shell
+        .or_else(|| std::env::var("SHELL").ok())
+        .unwrap_or_else(|| "/bin/sh".to_string());
 
-    let output = std::process::Command::new(&shell)
-        .args(["-c", &command])
+    let wrapped = wrap_for_shell(&shell_path, &command);
+
+    let output = std::process::Command::new(&shell_path)
+        .args(["-c", &wrapped])
         .output()
         .map_err(|e| format!("Failed to run '{command}': {e}"))?;
 
@@ -116,6 +143,40 @@ pub async fn run_command(command: String) -> Result<CommandOutput, String> {
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     Ok(CommandOutput { stdout, stderr, exit_code })
+}
+
+/// Detect which shells are available on the system.
+///
+/// Returns a map of shell name → absolute path for every shell found.
+#[tauri::command]
+pub fn detect_available_shells() -> HashMap<String, String> {
+    let mut candidates = vec![
+        ("bash".to_string(), "/bin/bash".to_string()),
+        ("bash".to_string(), "/usr/bin/bash".to_string()),
+        ("zsh".to_string(), "/bin/zsh".to_string()),
+        ("zsh".to_string(), "/usr/bin/zsh".to_string()),
+        ("fish".to_string(), "/usr/bin/fish".to_string()),
+        ("fish".to_string(), "/usr/local/bin/fish".to_string()),
+        ("sh".to_string(), "/bin/sh".to_string()),
+        ("sh".to_string(), "/usr/bin/sh".to_string()),
+    ];
+
+    // Also check the SHELL environment variable
+    if let Ok(shell_path) = std::env::var("SHELL") {
+        let name = shell_name(&shell_path).to_string();
+        // Only add if not already present (by name)
+        if !candidates.iter().any(|(n, _)| n == &name) {
+            candidates.push((name, shell_path));
+        }
+    }
+
+    let mut result = HashMap::new();
+    for (name, path) in &candidates {
+        if !result.contains_key(name) && Path::new(path).exists() {
+            result.insert(name.clone(), path.clone());
+        }
+    }
+    result
 }
 
 /// Turn a database `Value` into a JSON value.

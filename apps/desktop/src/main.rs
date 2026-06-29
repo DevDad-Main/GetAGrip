@@ -32,7 +32,7 @@ use commands::introspect::introspect;
 use commands::lsp::{get_lsp_servers, install_lsp, set_lsp_path};
 use commands::query::execute_query;
 use commands::settings::{get_settings, set_setting, SettingsState};
-use commands::util::run_command;
+use commands::util::{detect_available_shells, run_command};
 
 use state::AppState;
 
@@ -265,6 +265,7 @@ fn main() {
             set_lsp_path,
             install_lsp,
             run_command,
+            detect_available_shells,
         ])
         .run(tauri::generate_context!())
         .expect("error running tauri");

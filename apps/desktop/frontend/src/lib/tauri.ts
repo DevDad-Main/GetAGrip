@@ -194,8 +194,12 @@ export interface CommandOutput {
   exit_code: number;
 }
 
-export async function runCommand(command: string): Promise<CommandOutput> {
-  return invoke<CommandOutput>('run_command', { command });
+export async function runCommand(command: string, shell?: string): Promise<CommandOutput> {
+  return invoke<CommandOutput>('run_command', { command, shell: shell ?? null });
+}
+
+export async function detectAvailableShells(): Promise<Record<string, string>> {
+  return invoke<Record<string, string>>('detect_available_shells');
 }
 
 // ---- Phase 2 datasource commands -------------------------------------------

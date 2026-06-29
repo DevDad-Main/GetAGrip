@@ -80,6 +80,8 @@ export const resultsPanelHeight = writable<number>(0);
 export type BottomTab = 'results' | 'terminal';
 export const activeBottomTab = writable<BottomTab>('results');
 export const pendingTerminalCommand = writable<string | null>(null);
+export const terminalShell = writable<string>('');
+export const availableShells = writable<Record<string, string>>({});
 export const activeTheme = writable<string>('darcula');
 
 export type ModalKind = 'connect' | 'datasource' | 'none';
