@@ -24,6 +24,7 @@ getagrip-driver-postgres = { path = "../../crates/getagrip-driver-postgres" }
 getagrip-intelligence = { path = "../../crates/getagrip-intelligence" }
 getagrip-schema = { path = "../../crates/getagrip-schema" }
 getagrip-telemetry = { path = "../../crates/getagrip-telemetry" }
+which = "8"
 
 # Tauri
 tauri = { workspace = true }

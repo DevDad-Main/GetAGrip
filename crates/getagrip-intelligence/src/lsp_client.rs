@@ -18,7 +18,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::Arc;
 use std::time::Duration;
 
 use parking_lot::Mutex;
@@ -125,7 +124,7 @@ pub struct LspCompletionItem {
     pub lsp_score: u32,
 }
 
-// ---- server handle ──────────────────────────────────────────────────────
+// ---- server handle ──────────────────────────────────────────────────────//
 
 /// Handle to a running LSP server subprocess. Communication is over stdio
 /// using JSON-RPC messages separated by Content-Length headers (LSP spec).
@@ -312,87 +311,6 @@ impl LspProvider for SqliteLspProvider {
     }
     fn server_args(&self) -> Vec<String> {
         // sqlite-lsp typically uses stdio
-        vec!["--stdio".to_string()]
-    }
-    fn is_available(&self) -> bool {
-        self.binary_path.exists()
-    }
-}
-
-/// MySQL LSP provider.
-pub struct MysqlLspProvider {
-    binary_path: PathBuf,
-}
-
-impl MysqlLspProvider {
-    pub fn new(binary_path: PathBuf) -> Self {
-        Self { binary_path }
-    }
-}
-
-impl LspProvider for MysqlLspProvider {
-    fn driver(&self) -> &str {
-        "mysql"
-    }
-    fn server_path(&self) -> PathBuf {
-        self.binary_path.clone()
-    }
-    fn server_args(&self) -> Vec<String> {
-        // Assuming MySQL LSP uses stdio transport
-        vec!["--stdio".to_string()]
-    }
-    fn is_available(&self) -> bool {
-        self.binary_path.exists()
-    }
-}
-
-/// SQL Server LSP provider.
-pub struct MssqlLspProvider {
-    binary_path: PathBuf,
-}
-
-impl MssqlLspProvider {
-    pub fn new(binary_path: PathBuf) -> Self {
-        Self { binary_path }
-    }
-}
-
-impl LspProvider for MssqlLspProvider {
-    fn driver(&self) -> &str {
-        "mssql"
-    }
-    fn server_path(&self) -> PathBuf {
-        self.binary_path.clone()
-    }
-    fn server_args(&self) -> Vec<String> {
-        // Assuming SQL Server LSP uses stdio transport
-        vec!["--stdio".to_string()]
-    }
-    fn is_available(&self) -> bool {
-        self.binary_path.exists()
-    }
-}
-
-/// SQLite LSP provider.
-pub struct SqliteLspProvider {
-    binary_path: PathBuf,
-}
-
-impl SqliteLspProvider {
-    pub fn new(binary_path: PathBuf) -> Self {
-        Self { binary_path }
-    }
-}
-
-impl LspProvider for SqliteLspProvider {
-    fn driver(&self) -> &str {
-        "sqlite"
-    }
-    fn server_path(&self) -> PathBuf {
-        self.binary_path.clone()
-    }
-    fn server_args(&self) -> Vec<String> {
-        // Assuming SQLite LSP uses stdio transport
         vec!["--stdio".to_string()]
     }
     fn is_available(&self) -> bool {

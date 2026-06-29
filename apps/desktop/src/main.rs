@@ -6,6 +6,7 @@ mod state;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use which;
 
 use parking_lot::RwLock;
 use tauri::Manager;
@@ -118,24 +119,26 @@ fn main() {
                     }
 
                     // 2. Check bundled resources (relative to executable)
-                    if let Some(exe_dir) = env::current_exe().ok().and_then(|p| p.parent()) {
-                        for &name in default_names {
-                            let path = exe_dir.join("resources").join("lsp").join(name);
-                            if path.exists() {
-                                return Some(path);
-                            }
-                            // Also try without extension on Unix
-                            #[cfg(not(windows))]
-                            {
+                    if let Ok(exe_path) = env::current_exe() {
+                        if let Some(exe_dir) = exe_path.parent() {
+                            for &name in default_names {
                                 let path = exe_dir.join("resources").join("lsp").join(name);
                                 if path.exists() {
                                     return Some(path);
+                                }
+                                // Also try without extension on Unix
+                                #[cfg(not(windows))]
+                                {
+                                    let path = exe_dir.join("resources").join("lsp").join(name);
+                                    if path.exists() {
+                                        return Some(path);
+                                    }
                                 }
                             }
                         }
                     }
 
-                    // 3. Check system PATH
+                    // 3. Check system PATH using `which` crate
                     for &name in default_names {
                         if let Some(path) = which::which(name).ok() {
                             return Some(path);
@@ -145,17 +148,17 @@ fn main() {
                     // 4. Check common installation locations
                     let common_paths = if cfg!(windows) {
                         vec![
-                            "C:\\Program Files\\LSP",
-                            "C:\\Program Files (x86)\\LSP",
+                            "C:\\Program Files\\LSP".to_string(),
+                            "C:\\Program Files (x86)\\LSP".to_string(),
                             format!("{}\\.local\\share\\lsp", env::var("USERPROFILE").unwrap_or_default())
                         ]
                     } else {
                         vec![
-                            "/usr/local/bin",
-                            "/usr/bin",
-                            "/opt/homebrew/bin",
-                            &format!("{}/.local/bin", env::var("HOME").unwrap_or_default()),
-                            &format!("{}/.asdf/shims", env::var("HOME").unwrap_or_default())
+                            "/usr/local/bin".to_string(),
+                            "/usr/bin".to_string(),
+                            "/opt/homebrew/bin".to_string(),
+                            format!("{}/.local/bin", env::var("HOME").unwrap_or_default()),
+                            format!("{}/.asdf/shims", env::var("HOME").unwrap_or_default())
                         ]
                     };
 
