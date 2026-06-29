@@ -238,6 +238,168 @@ impl LspProvider for PostgresLspProvider {
     }
 }
 
+/// MySQL LSP provider.
+pub struct MysqlLspProvider {
+    binary_path: PathBuf,
+}
+
+impl MysqlLspProvider {
+    pub fn new(binary_path: PathBuf) -> Self {
+        Self { binary_path }
+    }
+}
+
+impl LspProvider for MysqlLspProvider {
+    fn driver(&self) -> &str {
+        "mysql"
+    }
+    fn server_path(&self) -> PathBuf {
+        self.binary_path.clone()
+    }
+    fn server_args(&self) -> Vec<String> {
+        // mysql-language-server typically uses stdio
+        vec!["--stdio".to_string()]
+    }
+    fn is_available(&self) -> bool {
+        self.binary_path.exists()
+    }
+}
+
+/// SQL Server LSP provider.
+pub struct MssqlLspProvider {
+    binary_path: PathBuf,
+}
+
+impl MssqlLspProvider {
+    pub fn new(binary_path: PathBuf) -> Self {
+        Self { binary_path }
+    }
+}
+
+impl LspProvider for MssqlLspProvider {
+    fn driver(&self) -> &str {
+        "sqlserver"
+    }
+    fn server_path(&self) -> PathBuf {
+        self.binary_path.clone()
+    }
+    fn server_args(&self) -> Vec<String> {
+        // sql-language-server typically uses stdio
+        vec!["--stdio".to_string()]
+    }
+    fn is_available(&self) -> bool {
+        self.binary_path.exists()
+    }
+}
+
+/// SQLite LSP provider.
+pub struct SqliteLspProvider {
+    binary_path: PathBuf,
+}
+
+impl SqliteLspProvider {
+    pub fn new(binary_path: PathBuf) -> Self {
+        Self { binary_path }
+    }
+}
+
+impl LspProvider for SqliteLspProvider {
+    fn driver(&self) -> &str {
+        "sqlite"
+    }
+    fn server_path(&self) -> PathBuf {
+        self.binary_path.clone()
+    }
+    fn server_args(&self) -> Vec<String> {
+        // sqlite-lsp typically uses stdio
+        vec!["--stdio".to_string()]
+    }
+    fn is_available(&self) -> bool {
+        self.binary_path.exists()
+    }
+}
+
+/// MySQL LSP provider.
+pub struct MysqlLspProvider {
+    binary_path: PathBuf,
+}
+
+impl MysqlLspProvider {
+    pub fn new(binary_path: PathBuf) -> Self {
+        Self { binary_path }
+    }
+}
+
+impl LspProvider for MysqlLspProvider {
+    fn driver(&self) -> &str {
+        "mysql"
+    }
+    fn server_path(&self) -> PathBuf {
+        self.binary_path.clone()
+    }
+    fn server_args(&self) -> Vec<String> {
+        // Assuming MySQL LSP uses stdio transport
+        vec!["--stdio".to_string()]
+    }
+    fn is_available(&self) -> bool {
+        self.binary_path.exists()
+    }
+}
+
+/// SQL Server LSP provider.
+pub struct MssqlLspProvider {
+    binary_path: PathBuf,
+}
+
+impl MssqlLspProvider {
+    pub fn new(binary_path: PathBuf) -> Self {
+        Self { binary_path }
+    }
+}
+
+impl LspProvider for MssqlLspProvider {
+    fn driver(&self) -> &str {
+        "mssql"
+    }
+    fn server_path(&self) -> PathBuf {
+        self.binary_path.clone()
+    }
+    fn server_args(&self) -> Vec<String> {
+        // Assuming SQL Server LSP uses stdio transport
+        vec!["--stdio".to_string()]
+    }
+    fn is_available(&self) -> bool {
+        self.binary_path.exists()
+    }
+}
+
+/// SQLite LSP provider.
+pub struct SqliteLspProvider {
+    binary_path: PathBuf,
+}
+
+impl SqliteLspProvider {
+    pub fn new(binary_path: PathBuf) -> Self {
+        Self { binary_path }
+    }
+}
+
+impl LspProvider for SqliteLspProvider {
+    fn driver(&self) -> &str {
+        "sqlite"
+    }
+    fn server_path(&self) -> PathBuf {
+        self.binary_path.clone()
+    }
+    fn server_args(&self) -> Vec<String> {
+        // Assuming SQLite LSP uses stdio transport
+        vec!["--stdio".to_string()]
+    }
+    fn is_available(&self) -> bool {
+        self.binary_path.exists()
+    }
+}
+
 // ---- manager ─────────────────────────────────────────────────────────────
 
 /// Manages LSP server lifecycles, keyed by connection_id. The manager is owned

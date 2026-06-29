@@ -1,9 +1,8 @@
 <script lang="ts">
   import { datasourceStates, activeDatasourceId, statusText, diagnostics } from '$lib/stores';
   import { notificationHistory } from '$lib/toast';
-  import { Circle, CircleDot, Clock, AlertCircle, AlertTriangle, Bell } from 'lucide-svelte';
+  import { Circle, CircleDot, AlertCircle, AlertTriangle, Bell } from 'lucide-svelte';
 
-  export let onToggleHistory: () => void;
   export let onToggleNotifications: () => void;
   export let onToggleDiagnostics: () => void;
   export let historyVisible = false;
@@ -34,7 +33,6 @@
   </div>
   <div class="status-right">
     {#if errCount > 0 || warnCount > 0}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <span class="diag-group" class:active={diagnosticsVisible} on:click={onToggleDiagnostics} title="Toggle problems panel">
         {#if errCount > 0}
           <span class="diag-badge diag-err"><AlertCircle size="10" />{errCount}</span>
@@ -45,14 +43,19 @@
       </span>
     {/if}
     {#if activeInfo}
-      <span class="status-ds">{activeInfo.name}</span>
-      <span class="status-driver">{activeInfo.driver}</span>
+      <span class="datasource-info" title="Datasource info">
+        <CircleDot size="9" class:active={isConnected} />
+        <span class="datasource-name">{activeInfo.name}</span>
+        <span class="datasource-env" class:env-red={activeInfo.env === 'prod'} class:env-orange={activeInfo.env === 'stag'} class:env-yellow={activeInfo.env === 'dev'} class:env-blue={activeInfo.env === 'test'} class:env-purple={activeInfo.env === 'local'} class:env-none={activeInfo.env === ''}>
+          {activeInfo.env}
+        </span>
+      </span>
     {/if}
-    <button class="status-btn" class:active={historyVisible} on:click={onToggleHistory} title="Toggle history (Ctrl+H)">
+    <button class="status-btn" on:click={onToggleHistory} title="Toggle history (Ctrl+H)" aria-label="Toggle history">
       <Clock size="12" />
     </button>
-    <button class="status-btn notif-btn" class:active={notificationsVisible} on:click={onToggleNotifications} title="Notifications">
-      <Bell size="12" />
+    <button class="status-btn notif-btn" on:click={onToggleNotifications} title="Notifications" aria-label="Toggle notifications" aria-expanded={notificationsVisible}>
+      <Bell size="16" />
       {#if $notificationHistory.length > 0}
         <span class="notif-badge">{Math.min($notificationHistory.length, 99)}</span>
       {/if}

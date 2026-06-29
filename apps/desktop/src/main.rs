@@ -102,6 +102,114 @@ fn main() {
                 history_path,
             };
 
+            // Register LSP providers for all supported database drivers
+            {
+                use std::env;
+                use std::path::{Path, PathBuf};
+
+                // Helper function to find LSP binary with fallback logic
+                let find_lsp_binary = |default_names: &[&str], env_var: &str| -> Option<PathBuf> {
+                    // 1. Check environment variable override
+                    if let Ok(path) = env::var(env_var) {
+                        let path = PathBuf::from(path);
+                        if path.exists() {
+                            return Some(path);
+                        }
+                    }
+
+                    // 2. Check bundled resources (relative to executable)
+                    if let Some(exe_dir) = env::current_exe().ok().and_then(|p| p.parent()) {
+                        for &name in default_names {
+                            let path = exe_dir.join("resources").join("lsp").join(name);
+                            if path.exists() {
+                                return Some(path);
+                            }
+                            // Also try without extension on Unix
+                            #[cfg(not(windows))]
+                            {
+                                let path = exe_dir.join("resources").join("lsp").join(name);
+                                if path.exists() {
+                                    return Some(path);
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. Check system PATH
+                    for &name in default_names {
+                        if let Some(path) = which::which(name).ok() {
+                            return Some(path);
+                        }
+                    }
+
+                    // 4. Check common installation locations
+                    let common_paths = if cfg!(windows) {
+                        vec![
+                            "C:\\Program Files\\LSP",
+                            "C:\\Program Files (x86)\\LSP",
+                            format!("{}\\.local\\share\\lsp", env::var("USERPROFILE").unwrap_or_default())
+                        ]
+                    } else {
+                        vec![
+                            "/usr/local/bin",
+                            "/usr/bin",
+                            "/opt/homebrew/bin",
+                            &format!("{}/.local/bin", env::var("HOME").unwrap_or_default()),
+                            &format!("{}/.asdf/shims", env::var("HOME").unwrap_or_default())
+                        ]
+                    };
+
+                    for base in &common_paths {
+                        for &name in default_names {
+                            let path = Path::new(base).join(name);
+                            if path.exists() {
+                                return Some(path);
+                            }
+                        }
+                    }
+
+                    None
+                };
+
+                let mut lsp_manager = state.lsp_manager.lock();
+
+                // Register PostgreSQL LSP provider
+                if let Some(pg_path) = find_lsp_binary(&["pglsp", "postgresql-language-server", "pglsp.exe"], "POSTGRES_LSP_PATH") {
+                    let provider = Box::new(getagrip_intelligence::lsp_client::PostgresLspProvider::new(pg_path));
+                    lsp_manager.register_provider(provider);
+                    tracing::info!("Registered PostgreSQL LSP provider");
+                } else {
+                    tracing::warn!("PostgreSQL LSP server not found - completions will use built-in intelligence only");
+                }
+
+                // Register MySQL LSP provider
+                if let Some(mysql_path) = find_lsp_binary(&["mysql-language-server", "mysql-lsp", "mysql-language-server.exe"], "MYSQL_LSP_PATH") {
+                    let provider = Box::new(getagrip_intelligence::lsp_client::MysqlLspProvider::new(mysql_path));
+                    lsp_manager.register_provider(provider);
+                    tracing::info!("Registered MySQL LSP provider");
+                } else {
+                    tracing::warn!("MySQL LSP server not found - completions will use built-in intelligence only");
+                }
+
+                // Register SQL Server LSP provider
+                if let Some(mssql_path) = find_lsp_binary(&["sql-language-server", "sql-lsp", "sql-language-server.exe"], "MSSQL_LSP_PATH") {
+                    let provider = Box::new(getagrip_intelligence::lsp_client::MssqlLspProvider::new(mssql_path));
+                    lsp_manager.register_provider(provider);
+                    tracing::info!("Registered SQL Server LSP provider");
+                } else {
+                    tracing::warn!("SQL Server LSP server not found - completions will use built-in intelligence only");
+                }
+
+                // Register SQLite LSP provider
+                if let Some(sqlite_path) = find_lsp_binary(&["sqlite-lsp", "sqlite-language-server", "sqlite-lsp.exe"], "SQLITE_LSP_PATH") {
+                    let provider = Box::new(getagrip_intelligence::lsp_client::SqliteLspProvider::new(sqlite_path));
+                    lsp_manager.register_provider(provider);
+                    tracing::info!("Registered SQLite LSP provider");
+                } else {
+                    tracing::warn!("SQLite LSP server not found - completions will use built-in intelligence only");
+                }
+            }
+
             app.manage(state);
             app.manage(SettingsState::new());
 
