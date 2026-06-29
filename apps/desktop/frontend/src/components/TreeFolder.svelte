@@ -13,6 +13,7 @@
 
   export let node: NavNode;
   export let depth = 0;
+  $: padLeft = 10 + depth * 16;
   export let collapsed: Set<string>;
   export let focusId: string | null;
   export let renamingId: string | null;
@@ -83,6 +84,7 @@
     data-node-id={node.id}
     tabindex="-1"
     draggable={!isFavorites}
+    style="padding-left: {padLeft}px"
     on:dragstart={(e) => { if (!isFavorites) onDragStart(e, 'folder', node.id); }}
     on:dragover={(e) => onDragOver(e, node.id, 'folder')}
     on:dragleave={onDragLeave}
@@ -152,7 +154,7 @@
       {/each}
     </div>
   {:else if !folderCollapsed}
-    <div class="folder-empty">(empty)</div>
+    <div class="folder-empty" style="padding-left: {padLeft + 20}px">(empty)</div>
   {/if}
 {:else}
   <!-- Datasource row -->
@@ -177,6 +179,7 @@
     tabindex="-1"
     data-env={ds.environment ?? 'none'}
     draggable="true"
+    style="padding-left: {padLeft}px"
     on:dragstart={(e) => onDragStart(e, 'datasource', ds.id)}
     on:dragover={(e) => onDragOver(e, ds.id, 'datasource')}
     on:dragleave={onDragLeave}
@@ -224,7 +227,7 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 4px 10px;
+    padding: 4px 10px 4px 10px;
     font-size: 12px;
     color: var(--text);
     cursor: pointer;
@@ -261,8 +264,7 @@
   .ds-row.error .tree-label { color: var(--error); }
 
   .folder-children {
-    padding-left: 4px;
-    margin-left: 11px;
+    margin-left: 20px;
     border-left: 1px solid var(--border);
   }
 
@@ -450,7 +452,5 @@
     color: var(--text-faint);
     font-size: 11px;
     font-style: italic;
-    padding: 3px 8px 3px 36px;
-    margin-left: 0;
   }
 </style>
