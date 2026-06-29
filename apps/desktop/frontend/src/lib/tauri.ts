@@ -194,8 +194,8 @@ export interface CommandOutput {
   exit_code: number;
 }
 
-export async function runCommand(command: string, args: string[]): Promise<CommandOutput> {
-  return invoke<CommandOutput>('run_command', { command, args });
+export async function runCommand(command: string): Promise<CommandOutput> {
+  return invoke<CommandOutput>('run_command', { command });
 }
 
 // ---- Phase 2 datasource commands -------------------------------------------

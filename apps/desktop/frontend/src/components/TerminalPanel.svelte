@@ -26,6 +26,13 @@
     const trimmed = cmd.trim();
     if (!trimmed) return;
 
+    // Handle clear natively — discard all output instead of running the binary
+    if (trimmed === 'clear' || trimmed === 'cls') {
+      entries = [];
+      cmdInput = '';
+      return;
+    }
+
     const id = ++entryId;
     const entry: TermEntry = {
       id,
@@ -38,13 +45,11 @@
     cmdInput = '';
     scrollBottom();
 
-    // Parse the command into program + args
-    const parts = parseCommand(trimmed);
     let output: CommandOutput;
-    if (parts) {
-      output = await runCommand(parts.program, parts.args);
-    } else {
-      output = { stdout: '', stderr: `Unable to parse command: ${trimmed}`, exit_code: -1 };
+    try {
+      output = await runCommand(trimmed);
+    } catch (e) {
+      output = { stdout: '', stderr: `Failed to run: ${e}`, exit_code: -1 };
     }
 
     entries = entries.map((e) =>
@@ -112,10 +117,8 @@
   let unsub: () => void;
 
   onMount(() => {
-    console.log('TerminalPanel mounted, subscribing to pendingTerminalCommand');
     unsub = pendingTerminalCommand.subscribe((cmd) => {
       if (cmd) {
-        console.log('pendingTerminalCommand received:', cmd);
         execute(cmd);
         pendingTerminalCommand.set(null);
       }
@@ -137,32 +140,34 @@
       <div class="term-empty">Type a command and press Enter to run it.</div>
     {:else}
       {#each entries as entry (entry.id)}
-        <div class="term-entry" class:term-error={entry.output && entry.output.exit_code !== 0}>
-          <div class="term-cmd-line">
-            <span class="term-prompt">$</span>
-            <code class="term-cmd">{entry.command}</code>
-            <span class="term-time">{fmtTime(entry.timestamp)}</span>
-            <button class="term-re-run" on:click={() => runAgain(entry.command)} title="Run again"><Play size="10" /></button>
-            <button class="term-close-entry" on:click={() => removeEntry(entry.id)} title="Remove"><X size="10" /></button>
-          </div>
-          {#if entry.running}
-            <div class="term-running">
-              <span class="term-spinner"></span> Running…
+          <div class="term-entry" class:term-error={entry.output && entry.output.exit_code !== 0}>
+            <div class="term-cmd-line">
+              <span class="term-prompt">$</span>
+              <code class="term-cmd">{entry.command}</code>
+              <span class="term-time">{fmtTime(entry.timestamp)}</span>
+              <button class="term-re-run" on:click={() => runAgain(entry.command)} title="Run again"><Play size="10" /></button>
+              <button class="term-close-entry" on:click={() => removeEntry(entry.id)} title="Remove"><X size="10" /></button>
             </div>
-          {:else if entry.output}
-            <div class="term-output-block">
-              {#if entry.output.stdout}
-                <pre class="term-stdout">{entry.output.stdout}</pre>
-              {/if}
-              {#if entry.output.stderr}
-                <pre class="term-stderr">{entry.output.stderr}</pre>
-              {/if}
-              <div class="term-exit-code">
-                Process exited with code {entry.output.exit_code}
+            {#if entry.running}
+              <div class="term-running">
+                <span class="term-spinner"></span> Running…
               </div>
-            </div>
-          {/if}
-        </div>
+            {:else if entry.output}
+              <div class="term-output-block">
+                {#if entry.output.stdout}
+                  <pre class="term-stdout">{entry.output.stdout}</pre>
+                {/if}
+                {#if entry.output.stderr}
+                  <pre class="term-stderr">{entry.output.stderr}</pre>
+                {/if}
+                {#if entry.output.exit_code !== 0}
+                  <div class="term-exit-code">
+                    Process exited with code {entry.output.exit_code}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </div>
       {/each}
     {/if}
   </div>

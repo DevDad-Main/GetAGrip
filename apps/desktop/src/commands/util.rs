@@ -98,13 +98,16 @@ pub struct CommandOutput {
 }
 
 /// Run a shell command and return its output. Used by the integrated terminal.
+///
+/// Detects the user's default shell from `$SHELL` so shell-specific config
+/// (aliases, prompt, etc.) applies.  The command string is passed as-is to
+/// `shell -c "…"`.
 #[tauri::command]
-pub async fn run_command(
-    command: String,
-    args: Vec<String>,
-) -> Result<CommandOutput, String> {
-    let output = std::process::Command::new(&command)
-        .args(&args)
+pub async fn run_command(command: String) -> Result<CommandOutput, String> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+
+    let output = std::process::Command::new(&shell)
+        .args(["-c", &command])
         .output()
         .map_err(|e| format!("Failed to run '{command}': {e}"))?;
 

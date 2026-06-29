@@ -75,7 +75,6 @@
   });
 
   function handleKeydown(e: KeyboardEvent) {
-    console.log('handleKeydown:', e.key, e.code, e.ctrlKey, e.metaKey);
     const ctrl = e.metaKey || e.ctrlKey;
 
     if (ctrl && e.key === 'k') {
