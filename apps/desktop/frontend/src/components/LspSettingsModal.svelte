@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import { X, FolderOpen, Package, RefreshCw, CheckCircle, XCircle, AlertTriangle, Loader, Terminal } from 'lucide-svelte';
   import { notify } from '$lib/toast';
-  import { resultsPanelHeight, activeBottomTab } from '$lib/stores';
+  import { resultsPanelHeight, activeBottomTab, pendingTerminalCommand } from '$lib/stores';
 
   export let open = false;
   export let onClose: () => void;
@@ -67,11 +67,10 @@
   }
 
   function runInTerminal(cmd: string) {
-    resultsPanelHeight.set(200);
-    activeBottomTab.set('terminal');
     onClose();
-    // Dispatch custom event for the terminal panel to pick up
-    window.dispatchEvent(new CustomEvent('terminal-run', { detail: cmd }));
+    pendingTerminalCommand.set(cmd);
+    activeBottomTab.set('terminal');
+    resultsPanelHeight.set(200);
   }
 </script>
 

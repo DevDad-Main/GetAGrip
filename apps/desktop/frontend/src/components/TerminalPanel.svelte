@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { runCommand, type CommandOutput } from '$lib/tauri';
+  import { pendingTerminalCommand } from '$lib/stores';
   import { Trash2, Play, X } from 'lucide-svelte';
 
   interface TermEntry {
@@ -106,14 +107,20 @@
     return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
 
-  // Listen for commands dispatched from LSP settings modal
-  function handleTerminalRun(e: CustomEvent<string>) {
-    execute(e.detail);
-  }
+  // Watch for commands from LSP settings modal
+  let unsub: () => void;
 
   onMount(() => {
-    window.addEventListener('terminal-run', handleTerminalRun as EventListener);
-    return () => window.removeEventListener('terminal-run', handleTerminalRun as EventListener);
+    unsub = pendingTerminalCommand.subscribe((cmd) => {
+      if (cmd) {
+        execute(cmd);
+        pendingTerminalCommand.set(null);
+      }
+    });
+  });
+
+  onDestroy(() => {
+    if (unsub) unsub();
   });
 </script>
 
