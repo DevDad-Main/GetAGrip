@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { runCommand, type CommandOutput } from '$lib/tauri';
   import { pendingTerminalCommand } from '$lib/stores';
+  import { notify } from '$lib/toast';
   import { Trash2, Play, X } from 'lucide-svelte';
 
   interface TermEntry {
@@ -111,8 +112,10 @@
   let unsub: () => void;
 
   onMount(() => {
+    console.log('TerminalPanel mounted, subscribing to pendingTerminalCommand');
     unsub = pendingTerminalCommand.subscribe((cmd) => {
       if (cmd) {
+        console.log('pendingTerminalCommand received:', cmd);
         execute(cmd);
         pendingTerminalCommand.set(null);
       }

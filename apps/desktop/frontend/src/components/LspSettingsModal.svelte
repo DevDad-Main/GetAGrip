@@ -68,6 +68,7 @@
 
   function runInTerminal(cmd: string) {
     onClose();
+    notify(`Running: ${cmd}`, 'info', 3000);
     pendingTerminalCommand.set(cmd);
     activeBottomTab.set('terminal');
     resultsPanelHeight.set(200);
