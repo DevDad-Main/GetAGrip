@@ -1,10 +1,13 @@
 <script lang="ts">
   import { datasourceStates, activeDatasourceId, statusText, diagnostics } from '$lib/stores';
-  import { Circle, CircleDot, Clock, AlertCircle, AlertTriangle } from 'lucide-svelte';
+  import { notificationHistory } from '$lib/toast';
+  import { Circle, CircleDot, Clock, AlertCircle, AlertTriangle, Bell } from 'lucide-svelte';
 
   export let onToggleHistory: () => void;
+  export let onToggleNotifications: () => void;
   export let onToggleDiagnostics: () => void;
   export let historyVisible = false;
+  export let notificationsVisible = false;
   export let diagnosticsVisible = false;
 
   $: activeInfo = $activeDatasourceId ? $datasourceStates[$activeDatasourceId] : null;
@@ -47,6 +50,12 @@
     {/if}
     <button class="status-btn" class:active={historyVisible} on:click={onToggleHistory} title="Toggle history (Ctrl+H)">
       <Clock size="12" />
+    </button>
+    <button class="status-btn notif-btn" class:active={notificationsVisible} on:click={onToggleNotifications} title="Notifications">
+      <Bell size="12" />
+      {#if $notificationHistory.length > 0}
+        <span class="notif-badge">{Math.min($notificationHistory.length, 99)}</span>
+      {/if}
     </button>
   </div>
 </footer>
@@ -134,4 +143,19 @@
     border-radius: 2px;
   }
   .status-btn:hover, .status-btn.active { color: var(--text); background: var(--bg-hover); }
+  .notif-btn { position: relative; }
+  .notif-badge {
+    position: absolute;
+    top: 0;
+    right: -2px;
+    background: var(--accent, #0078d4);
+    color: #fff;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 1px 3px;
+    border-radius: 6px;
+    min-width: 12px;
+    text-align: center;
+  }
 </style>

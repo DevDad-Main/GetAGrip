@@ -8,6 +8,7 @@
   import DataSourceForm from './components/DataSourceForm.svelte';
   import CommandPalette from './components/CommandPalette.svelte';
   import HistoryPanel from './components/HistoryPanel.svelte';
+  import NotificationHistory from './components/NotificationHistory.svelte';
   import DiagnosticsPanel from './components/DiagnosticsPanel.svelte';
   import ResizeHandle from './components/ResizeHandle.svelte';
   import SettingsModal from './components/SettingsModal.svelte';
@@ -23,6 +24,7 @@
   import type { ConnectionProfile } from '$lib/tauri';
 
   let historyVisible = false;
+  let notificationsVisible = false;
   let diagnosticsVisible = false;
   let settingsVisible = false;
   let sidebarW = 260;
@@ -155,7 +157,8 @@
       <HistoryPanel visible={historyVisible} />
     {/if}
   </main>
-  <StatusBar onToggleHistory={() => historyVisible = !historyVisible} onToggleDiagnostics={() => diagnosticsVisible = !diagnosticsVisible} historyVisible={historyVisible} diagnosticsVisible={diagnosticsVisible} />
+  <StatusBar onToggleHistory={() => historyVisible = !historyVisible} onToggleNotifications={() => notificationsVisible = !notificationsVisible} onToggleDiagnostics={() => diagnosticsVisible = !diagnosticsVisible} historyVisible={historyVisible} notificationsVisible={notificationsVisible} diagnosticsVisible={diagnosticsVisible} />
+  <NotificationHistory visible={notificationsVisible} />
   <DiagnosticsPanel visible={diagnosticsVisible} onClose={() => diagnosticsVisible = false} />
 </div>
 
