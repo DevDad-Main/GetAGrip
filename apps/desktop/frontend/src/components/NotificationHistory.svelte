@@ -1,6 +1,6 @@
 <script lang="ts">
   import { notificationHistory, clearNotificationHistory, type ToastType } from '../lib/toast';
-  import { Bell, Trash2, CheckCircle, XCircle, AlertTriangle, Info, Clock } from 'lucide-svelte';
+  import { Bell, Trash2, CheckCircle, XCircle, AlertTriangle, Info } from 'lucide-svelte';
 
   export let visible = false;
   export let onClose: () => void;

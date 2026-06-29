@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { toasts, notify, type ToastType } from '../lib/toast';
+  import { toasts, type ToastType } from '../lib/toast';
   import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-svelte';
 
   function remove(id: number) {

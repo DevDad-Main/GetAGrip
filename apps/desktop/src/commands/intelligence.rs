@@ -102,7 +102,7 @@ pub async fn refresh_metadata_cmd(
 
     let mut conn = pool.acquire().await.map_err(|e| format!("acquire: {e}"))?;
 
-    // Use the actual connected database, not the profile field (may be empty)
+    let driver = managed.profile.driver_name();
     let db = conn
         .connection()
         .info()
@@ -112,65 +112,53 @@ pub async fn refresh_metadata_cmd(
 
     let mut schema = getagrip_schema::DatabaseSchema::new(&db);
 
-    let tables_sql = format!(
-        "SELECT TABLE_SCHEMA, TABLE_NAME FROM {db}.INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_SCHEMA, TABLE_NAME"
-    );
-    if let Ok(result) = conn.connection_mut().execute(&tables_sql).await {
-        for row in &result.rows {
-            let table_schema = row
-                .get_by_name("TABLE_SCHEMA")
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "dbo".into());
-            let table_name = row
-                .get_by_name("TABLE_NAME")
-                .map(|v| v.to_string())
-                .unwrap_or_default();
-
-            let cols_sql = format!(
-                "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, ORDINAL_POSITION FROM {db}.INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{table_schema}' AND TABLE_NAME = '{table_name}' ORDER BY ORDINAL_POSITION"
-            );
-            let mut columns = Vec::new();
-            if let Ok(col_result) = conn.connection_mut().execute(&cols_sql).await {
-                for col_row in &col_result.rows {
-                    let col_name = col_row
-                        .get_by_name("COLUMN_NAME")
-                        .map(|v| v.to_string())
-                        .unwrap_or_default();
-                    let data_type = col_row
-                        .get_by_name("DATA_TYPE")
-                        .map(|v| v.to_string())
-                        .unwrap_or_default();
-                    let nullable = col_row
-                        .get_by_name("IS_NULLABLE")
-                        .map(|v| v.to_string() == "YES")
-                        .unwrap_or(true);
-                    let ordinal = col_row
-                        .get_by_name("ORDINAL_POSITION")
-                        .map(|v| v.to_string().parse::<u16>().unwrap_or(0))
-                        .unwrap_or(0);
-
-                    columns.push(getagrip_schema::ColumnSchema {
-                        name: col_name,
-                        col_type: getagrip_database::driver::ColumnType::String,
-                        db_type: data_type,
-                        nullable,
-                        default_value: None,
-                        is_primary_key: false,
-                        ordinal,
-                        comment: None,
-                    });
+    // Driver-aware information_schema queries
+    let inner = conn.connection_mut();
+    match driver {
+        "postgres" => {
+            let sql = "SELECT TABLE_SCHEMA, TABLE_NAME FROM information_schema.tables WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA NOT IN ('pg_catalog', 'information_schema') ORDER BY TABLE_SCHEMA, TABLE_NAME";
+            if let Ok(result) = inner.execute(sql).await {
+                for row in &result.rows {
+                    let table_schema = row.get_by_name("TABLE_SCHEMA").map(|v| v.to_string()).unwrap_or_default();
+                    let table_name = row.get_by_name("TABLE_NAME").map(|v| v.to_string()).unwrap_or_default();
+                    let cols = fetch_info_schema_cols(inner, &table_schema, &table_name).await;
+                    schema.tables.push(make_table(table_name, table_schema, cols));
                 }
             }
-
-            schema.tables.push(getagrip_schema::TableSchema {
-                name: table_name,
-                schema: table_schema,
-                columns,
-                constraints: vec![],
-                indexes: vec![],
-                comment: None,
-                row_count_estimate: None,
-            });
+        }
+        "mysql" => {
+            let sql = "SELECT TABLE_SCHEMA, TABLE_NAME FROM information_schema.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = DATABASE() ORDER BY TABLE_SCHEMA, TABLE_NAME";
+            if let Ok(result) = inner.execute(sql).await {
+                for row in &result.rows {
+                    let table_schema = row.get_by_name("TABLE_SCHEMA").map(|v| v.to_string()).unwrap_or_default();
+                    let table_name = row.get_by_name("TABLE_NAME").map(|v| v.to_string()).unwrap_or_default();
+                    let cols = fetch_info_schema_cols(inner, &table_schema, &table_name).await;
+                    schema.tables.push(make_table(table_name, table_schema, cols));
+                }
+            }
+        }
+        "mssql" => {
+            let tables_sql = format!("SELECT TABLE_SCHEMA, TABLE_NAME FROM [{db}].INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_SCHEMA, TABLE_NAME");
+            if let Ok(result) = inner.execute(&tables_sql).await {
+                for row in &result.rows {
+                    let table_schema = row.get_by_name("TABLE_SCHEMA").map(|v| v.to_string()).unwrap_or_else(|| "dbo".into());
+                    let table_name = row.get_by_name("TABLE_NAME").map(|v| v.to_string()).unwrap_or_default();
+                    let cols = fetch_mssql_cols(inner, &db, &table_schema, &table_name).await;
+                    schema.tables.push(make_table(table_name, table_schema, cols));
+                }
+            }
+        }
+        "sqlite" => {
+            if let Ok(result) = inner.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").await {
+                for row in &result.rows {
+                    let table_name = row.get_by_name("name").map(|v| v.to_string()).unwrap_or_default();
+                    let cols = fetch_sqlite_cols(inner, &table_name).await;
+                    schema.tables.push(make_table(table_name, "main".into(), cols));
+                }
+            }
+        }
+        other => {
+            tracing::warn!("no metadata refresh impl for driver: {}", other);
         }
     }
 
@@ -184,6 +172,110 @@ pub async fn refresh_metadata_cmd(
     );
 
     Ok(())
+}
+
+fn make_table(name: String, schema: String, columns: Vec<getagrip_schema::ColumnSchema>) -> getagrip_schema::TableSchema {
+    getagrip_schema::TableSchema {
+        name,
+        schema,
+        columns,
+        constraints: vec![],
+        indexes: vec![],
+        comment: None,
+        row_count_estimate: None,
+    }
+}
+
+async fn fetch_info_schema_cols(
+    conn: &mut dyn getagrip_database::driver::DriverConnection,
+    table_schema: &str,
+    table_name: &str,
+) -> Vec<getagrip_schema::ColumnSchema> {
+    let sql = format!(
+        "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, ORDINAL_POSITION FROM information_schema.columns WHERE TABLE_SCHEMA = '{}' AND TABLE_NAME = '{}' ORDER BY ORDINAL_POSITION",
+        table_schema.replace('\'', "''"),
+        table_name.replace('\'', "''"),
+    );
+    let mut columns = Vec::new();
+    if let Ok(col_result) = conn.execute(&sql).await {
+        for col_row in &col_result.rows {
+            let col_name = col_row.get_by_name("COLUMN_NAME").map(|v| v.to_string()).unwrap_or_default();
+            let data_type = col_row.get_by_name("DATA_TYPE").map(|v| v.to_string()).unwrap_or_default();
+            let nullable = col_row.get_by_name("IS_NULLABLE").map(|v| v.to_string() == "YES").unwrap_or(true);
+            let ordinal = col_row.get_by_name("ORDINAL_POSITION").map(|v| v.to_string().parse::<u16>().unwrap_or(0)).unwrap_or(0);
+            columns.push(getagrip_schema::ColumnSchema {
+                name: col_name,
+                col_type: getagrip_database::driver::ColumnType::String,
+                db_type: data_type,
+                nullable,
+                default_value: None,
+                is_primary_key: false,
+                ordinal,
+                comment: None,
+            });
+        }
+    }
+    columns
+}
+
+async fn fetch_mssql_cols(
+    conn: &mut dyn getagrip_database::driver::DriverConnection,
+    db: &str,
+    table_schema: &str,
+    table_name: &str,
+) -> Vec<getagrip_schema::ColumnSchema> {
+    let sql = format!(
+        "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, ORDINAL_POSITION FROM [{db}].INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{name}' ORDER BY ORDINAL_POSITION",
+        schema = table_schema.replace('\'', "''"),
+        name = table_name.replace('\'', "''"),
+    );
+    let mut columns = Vec::new();
+    if let Ok(col_result) = conn.execute(&sql).await {
+        for col_row in &col_result.rows {
+            let col_name = col_row.get_by_name("COLUMN_NAME").map(|v| v.to_string()).unwrap_or_default();
+            let data_type = col_row.get_by_name("DATA_TYPE").map(|v| v.to_string()).unwrap_or_default();
+            let nullable = col_row.get_by_name("IS_NULLABLE").map(|v| v.to_string() == "YES").unwrap_or(true);
+            let ordinal = col_row.get_by_name("ORDINAL_POSITION").map(|v| v.to_string().parse::<u16>().unwrap_or(0)).unwrap_or(0);
+            columns.push(getagrip_schema::ColumnSchema {
+                name: col_name,
+                col_type: getagrip_database::driver::ColumnType::String,
+                db_type: data_type,
+                nullable,
+                default_value: None,
+                is_primary_key: false,
+                ordinal,
+                comment: None,
+            });
+        }
+    }
+    columns
+}
+
+async fn fetch_sqlite_cols(
+    conn: &mut dyn getagrip_database::driver::DriverConnection,
+    table_name: &str,
+) -> Vec<getagrip_schema::ColumnSchema> {
+    let sql = format!("PRAGMA table_info('{}')", table_name.replace('\'', "''"));
+    let mut columns = Vec::new();
+    if let Ok(pragma) = conn.execute(&sql).await {
+        for pr in &pragma.rows {
+            let col_name = pr.get_by_name("name").map(|v| v.to_string()).unwrap_or_default();
+            let data_type = pr.get_by_name("type").map(|v| v.to_string()).unwrap_or_default();
+            let nullable = pr.get_by_name("notnull").map(|v| v.to_string() != "1").unwrap_or(true);
+            let ordinal = pr.get_by_name("cid").map(|v| v.to_string().parse::<u16>().unwrap_or(0)).unwrap_or(0);
+            columns.push(getagrip_schema::ColumnSchema {
+                name: col_name,
+                col_type: getagrip_database::driver::ColumnType::String,
+                db_type: data_type,
+                nullable,
+                default_value: None,
+                is_primary_key: pr.get_by_name("pk").map(|v| v.to_string() == "1").unwrap_or(false),
+                ordinal,
+                comment: None,
+            });
+        }
+    }
+    columns
 }
 
 
