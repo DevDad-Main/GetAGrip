@@ -1,10 +1,11 @@
 <script lang="ts">
   import { datasourceStates, activeDatasourceId, statusText, diagnostics } from '$lib/stores';
   import { notificationHistory } from '$lib/toast';
-  import { Circle, CircleDot, AlertCircle, AlertTriangle, Bell } from 'lucide-svelte';
+  import { Circle, CircleDot, AlertCircle, AlertTriangle, Bell, Clock } from 'lucide-svelte';
 
   export let onToggleNotifications: () => void;
   export let onToggleDiagnostics: () => void;
+  export let onToggleHistory: () => void;
   export let historyVisible = false;
   export let notificationsVisible = false;
   export let diagnosticsVisible = false;
@@ -25,9 +26,9 @@
 <footer class="statusbar">
   <div class="status-left">
     {#if isConnected}
-      <CircleDot size="9" class="status-dot connected" />
+      <span class="status-dot connected"><CircleDot size="9" /></span>
     {:else}
-      <Circle size="9" class="status-dot" />
+      <span class="status-dot"><Circle size="9" /></span>
     {/if}
     <span class="status-text">{$statusText}</span>
   </div>
@@ -44,7 +45,7 @@
     {/if}
     {#if activeInfo}
       <span class="datasource-info" title="Datasource info">
-        <CircleDot size="9" class:active={isConnected} />
+        <span class:active={isConnected}><CircleDot size="9" /></span>
         <span class="datasource-name">{activeInfo.name}</span>
         <span class="datasource-env" class:env-red={activeInfo.env === 'prod'} class:env-orange={activeInfo.env === 'stag'} class:env-yellow={activeInfo.env === 'dev'} class:env-blue={activeInfo.env === 'test'} class:env-purple={activeInfo.env === 'local'} class:env-none={activeInfo.env === ''}>
           {activeInfo.env}
