@@ -77,6 +77,8 @@ export const jumpToPosition = writable<{line: number, column: number} | null>(nu
 export const sidebarVisible = writable<boolean>(true);
 export const commandPaletteOpen = writable<boolean>(false);
 export const resultsPanelHeight = writable<number>(0);
+export type BottomTab = 'results' | 'terminal';
+export const activeBottomTab = writable<BottomTab>('results');
 export const activeTheme = writable<string>('darcula');
 
 export type ModalKind = 'connect' | 'datasource' | 'none';

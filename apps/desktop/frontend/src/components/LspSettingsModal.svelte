@@ -1,11 +1,13 @@
 <script lang="ts">
   import { getLspServers, setLspPath, installLsp, type LspServerInfo } from '$lib/tauri';
   import { onMount } from 'svelte';
-  import { X, FolderOpen, Package, RefreshCw, CheckCircle, XCircle, AlertTriangle, Loader } from 'lucide-svelte';
+  import { X, FolderOpen, Package, RefreshCw, CheckCircle, XCircle, AlertTriangle, Loader, Terminal } from 'lucide-svelte';
   import { notify } from '$lib/toast';
+  import { resultsPanelHeight, activeBottomTab } from '$lib/stores';
 
   export let open = false;
   export let onClose: () => void;
+  export let onOpenTerminal: ((cmd: string) => void) | null = null;
 
   let servers: LspServerInfo[] = [];
   let loading = true;
@@ -62,6 +64,14 @@
       notify(`Install info failed: ${e}`, 'error');
     }
     installing = '';
+  }
+
+  function runInTerminal(cmd: string) {
+    resultsPanelHeight.set(200);
+    activeBottomTab.set('terminal');
+    onClose();
+    // Dispatch custom event for the terminal panel to pick up
+    window.dispatchEvent(new CustomEvent('terminal-run', { detail: cmd }));
   }
 </script>
 
@@ -136,7 +146,12 @@
                 <div class="lsp-install-cmds">
                   <span class="lsp-install-label">Install commands:</span>
                   {#each installCommands as cmd}
-                    <code class="lsp-cmd">{cmd}</code>
+                    <div class="lsp-cmd-row">
+                      <code class="lsp-cmd">{cmd}</code>
+                      <button class="lsp-btn lsp-btn-run" on:click={() => runInTerminal(cmd)} title="Run in terminal">
+                        <Terminal size="10" /> Run
+                      </button>
+                    </div>
                   {/each}
                 </div>
               {/if}
@@ -251,10 +266,19 @@
   .lsp-install-label {
     font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px;
   }
+  .lsp-cmd-row {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .lsp-cmd-row .lsp-cmd {
+    flex: 1;
+  }
   .lsp-cmd {
     font-family: var(--font-mono); font-size: 11px;
     padding: 4px 8px; background: var(--bg-input); border-radius: 3px;
     color: var(--accent); user-select: all;
+  }
+  .lsp-btn-run {
+    color: var(--success); flex-shrink: 0;
   }
   :global(.spin) {
     animation: lsp-spin 1s linear infinite;

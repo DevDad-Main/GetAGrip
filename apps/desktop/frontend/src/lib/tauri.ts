@@ -188,6 +188,16 @@ export async function installLsp(driver: string): Promise<string[]> {
   return invoke<string[]>('install_lsp', { driver });
 }
 
+export interface CommandOutput {
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+}
+
+export async function runCommand(command: string, args: string[]): Promise<CommandOutput> {
+  return invoke<CommandOutput>('run_command', { command, args });
+}
+
 // ---- Phase 2 datasource commands -------------------------------------------
 
 export async function listDatasources(): Promise<ConnectionProfile[]> {

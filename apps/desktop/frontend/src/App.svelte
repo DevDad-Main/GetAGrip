@@ -13,11 +13,12 @@
   import ResizeHandle from './components/ResizeHandle.svelte';
   import SettingsModal from './components/SettingsModal.svelte';
   import Toast from './components/Toast.svelte';
+  import TerminalPanel from './components/TerminalPanel.svelte';
 
   import {
     commandPaletteOpen, activeModal, modalPayload, sidebarVisible,
     loadDatasources, loadFolders, resultsPanelHeight, resultSets, activeResultSetId,
-    activeTheme,
+    activeTheme, activeBottomTab,
   } from '$lib/stores';
   import { findTheme, applyAppTheme } from '$lib/themes';
   import { getSettings } from '$lib/tauri';
@@ -109,6 +110,15 @@
       e.preventDefault();
       settingsVisible = !settingsVisible;
     }
+    if (ctrl && e.key === '`') {
+      e.preventDefault();
+      if ($resultsPanelHeight > 0) {
+        activeBottomTab.set('terminal');
+      } else {
+        resultsPanelHeight.set(200);
+        activeBottomTab.set('terminal');
+      }
+    }
     if (e.key === 'Escape') {
       commandPaletteOpen.update((v) => false);
     }
@@ -143,13 +153,32 @@
       {#if $resultsPanelHeight > 0}
         <ResizeHandle direction="vertical" size={$resultsPanelHeight} onResize={(s) => resultsPanelHeight.set(s)} minSize={80} maxSize={800} onCollapse={() => resultsPanelHeight.set(0)} collapseThreshold={40} />
         <div class="results-col" style="height: {$resultsPanelHeight}px">
-          <ResultsPanel />
+          <div class="bottom-tabs">
+            <button
+              class="bottom-tab"
+              class:active={$activeBottomTab === 'results'}
+              on:click={() => activeBottomTab.set('results')}
+            >Results</button>
+            <button
+              class="bottom-tab"
+              class:active={$activeBottomTab === 'terminal'}
+              on:click={() => activeBottomTab.set('terminal')}
+            >Terminal</button>
+            <button class="bottom-tab-close" on:click={() => resultsPanelHeight.set(0)} title="Close panel (Ctrl+J)">✕</button>
+          </div>
+          {#if $activeBottomTab === 'results'}
+            <ResultsPanel />
+          {:else}
+            <TerminalPanel />
+          {/if}
         </div>
-      {:else if $resultSets.length > 0}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="results-reveal" on:mousedown={(e) => { e.preventDefault(); resultsPanelHeight.set(280); }} title="Click to show results (Ctrl+J)">
-          <div class="reveal-grip-h"></div>
-        </div>
+      {:else}
+        {#if $resultSets.length > 0}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="results-reveal" on:mousedown={(e) => { e.preventDefault(); resultsPanelHeight.set(280); }} title="Click to show results (Ctrl+J)">
+            <div class="reveal-grip-h"></div>
+          </div>
+        {/if}
       {/if}
     </div>
     {#if historyVisible}
@@ -201,7 +230,42 @@
   .results-col {
     flex-shrink: 0;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
+  .bottom-tabs {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    padding: 0 8px;
+  }
+  .bottom-tab {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    padding: 4px 12px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    text-transform: uppercase;
+  }
+  .bottom-tab:hover { color: var(--text); background: var(--bg-hover); }
+  .bottom-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .bottom-tab-close {
+    margin-left: auto;
+    border: none;
+    background: transparent;
+    color: var(--text-faint);
+    cursor: pointer;
+    padding: 2px 6px;
+    font-size: 11px;
+  }
+  .bottom-tab-close:hover { color: var(--text); background: var(--bg-hover); }
   .results-reveal {
     flex-shrink: 0;
     height: 5px;
