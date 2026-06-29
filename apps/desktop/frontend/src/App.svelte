@@ -110,7 +110,7 @@
       e.preventDefault();
       settingsVisible = !settingsVisible;
     }
-    if (ctrl && e.key === '`') {
+    if (ctrl && (e.key === '`' || e.code === 'Backquote')) {
       e.preventDefault();
       if ($resultsPanelHeight > 0) {
         activeBottomTab.set('terminal');

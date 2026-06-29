@@ -66,7 +66,7 @@
         <span>Settings</span>
         <button class="settings-close" on:click={onClose}><X size="14" /></button>
       </div>
-      <LspSettingsModal open={showLspSettings} onClose={() => showLspSettings = false} />
+      <LspSettingsModal open={showLspSettings} onClose={() => { showLspSettings = false; onClose(); }} />
       <div class="settings-body">
         <nav class="settings-tabs">
           <button class:active={activeTab === 'editor'} on:click={() => activeTab = 'editor'}>Editor</button>
