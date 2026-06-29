@@ -202,6 +202,22 @@ export async function detectAvailableShells(): Promise<Record<string, string>> {
   return invoke<Record<string, string>>('detect_available_shells');
 }
 
+export async function startPty(shell: string): Promise<void> {
+  return invoke<void>('start_pty', { shell });
+}
+
+export async function stopPty(): Promise<void> {
+  return invoke<void>('stop_pty');
+}
+
+export async function ptyInput(input: string): Promise<void> {
+  return invoke<void>('pty_input', { input });
+}
+
+export async function ptyResize(rows: number, cols: number): Promise<void> {
+  return invoke<void>('pty_resize', { rows, cols });
+}
+
 // ---- Phase 2 datasource commands -------------------------------------------
 
 export async function listDatasources(): Promise<ConnectionProfile[]> {

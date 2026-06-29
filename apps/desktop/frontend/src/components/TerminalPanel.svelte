@@ -9,6 +9,8 @@
   // XTerm imports
   import { Terminal } from 'xterm';
   import { FitAddon } from 'xterm-addon-fit';
+  import { listen } from '@tauri-apps/api/event';
+  import { startPty as startPtyTauri, stopPty, ptyInput, ptyResize } from '$lib/tauri';
 
   interface TermEntry {
     id: number;
@@ -25,7 +27,8 @@
   let terminal: Terminal | null = null;
   let fitAddon: FitAddon | null = null;
   let isTerminalReady = false;
-  let shellProcess: any = null;
+  let ptyReady = false;
+  let ptyUnsubscribe: () => void = () => {};
 
   // Simple ANSI to HTML converter (fallback for non-xterm rendering)
   function ansiToHtml(text: string): string {
@@ -160,10 +163,15 @@
       // Handle resize
       window.addEventListener('resize', () => {
         fitAddon?.fit();
+        // Also resize the PTY if it's started
+        if (ptyReady && terminal) {
+          const { cols, rows } = terminal.cols ? { cols: terminal.cols, rows: terminal.rows } : { cols: 80, rows: 24 };
+          ptyResize(cols, rows).catch(console.error);
+        }
       });
 
-      // Start shell
-      await startShell();
+      // Start the PTY
+      await startPty();
 
       isTerminalReady = true;
     } catch (error) {
@@ -172,7 +180,7 @@
     }
   }
 
-  async function startShell() {
+  async function startPty() {
     if (!terminal) return;
 
     try {
@@ -182,16 +190,15 @@
       // Clear current output
       terminal.writeln(`\x1b[32m$ ${shell}\x1b[0m`); // Green prompt
 
-      // TODO: In a real implementation, we would use Tauri's process API
-      // to create a pseudo-terminal and hook it up to xterm
-      // For now, we'll simulate with our existing command system
-      terminal.writeln('Note: Full PTY integration coming soon. Using command mode for now.\r\n');
+      // Start the PTY via Tauri
+      await startPty(shell);
 
-      // Listen for data from terminal (this would be replaced with real PTY)
-      terminal.onData(handleTerminalData);
+      // Set ptyReady to true
+      ptyReady = true;
+
     } catch (error) {
-      console.error('Failed to start shell:', error);
-      notify(`Failed to start shell: ${error}`, 'error');
+      console.error('Failed to start PTY:', error);
+      notify(`Failed to start PTY: ${error}`, 'error');
     }
   }
 
@@ -236,33 +243,9 @@
   function executeCommand(command: string) {
     if (!command.trim()) return;
 
-    if (terminal) {
-      // Write command to terminal
-      terminal.write(`\r\n\x1b[32m$ ${command}\x1b[0m\r\n`);
-
-      // Execute via our existing command system
-      runCommand(command, $terminalShell || undefined).then(result => {
-        const output = result.stdout || '';
-        const error = result.stderr || '';
-
-        // Write output to terminal
-        if (output) terminal.write(output);
-        if (error) {
-          // Write error in red
-          terminal.write(`\x1b[31m${error}\x1b[0m`);
-        }
-
-        // Show exit code if non-zero
-        if (result.exit_code !== 0) {
-          terminal.write(`\x1b[33mProcess exited with code ${result.exit_code}\x1b[0m\r\n`);
-        }
-
-        // New prompt
-        terminal.write('\r\n\x1b[32m$ \x1b[0m');
-      }).catch(error => {
-        terminal.write(`\x1b[31mError: ${error}\x1b[0m\r\n`);
-        terminal.write('\r\n\x1b[32m$ \x1b[0m');
-      });
+    if (ptyReady) {
+      // Send input to PTY
+      ptyInput(command + '\r\n');
     } else {
       // Fallback to old method if terminal not ready
       executeLegacy(command);
@@ -360,6 +343,8 @@
         terminal = null;
         fitAddon = null;
         isTerminalReady = false;
+        ptyReady = false;
+        if (ptyUnsubscribe) ptyUnsubscribe();
         await new Promise(resolve => setTimeout(resolve, 100)); // Brief delay
         await initializeTerminal();
       }
@@ -408,6 +393,14 @@
     // Initialize terminal
     await initializeTerminal();
 
+    // Subscribe to PTY output
+    ptyUnsubscribe = await listen('pty-output', (event) => {
+      const payload = event.payload as string;
+      if (terminal) {
+        terminal.write(payload);
+      }
+    });
+
     // Subscribe to pending commands from LSP
     const unsub = pendingTerminalCommand.subscribe((cmd) => {
       if (cmd) {
@@ -419,6 +412,7 @@
     // Cleanup on destroy
     return () => {
       if (unsub) unsub();
+      if (ptyUnsubscribe) ptyUnsubscribe();
       if (terminal) {
         terminal.dispose();
       }
@@ -430,6 +424,9 @@
     if (terminal) {
       terminal.dispose();
     }
+    if (ptyUnsubscribe) ptyUnsubscribe();
+    // Stop PTY
+    stopPty().catch(console.error);
   });
 </script>
 
@@ -491,7 +488,7 @@
       on:keydown={handleKeydown}
       placeholder="Type a command…"
       autofocus
-      {#if isTerminalDisabled}disabled{/if}
+      disabled={!isTerminalReady}
     />
     <button class="term-run-btn" on:click={() => executeCommand(cmdInput)} disabled={!cmdInput.trim()}><Play size="10" /></button>
   </div>

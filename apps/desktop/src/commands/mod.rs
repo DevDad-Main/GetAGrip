@@ -14,3 +14,4 @@ pub mod lsp;
 pub mod query;
 pub mod settings;
 pub mod util;
+pub mod pty;
