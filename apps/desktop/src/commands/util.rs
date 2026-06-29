@@ -12,6 +12,8 @@ use getagrip_driver_postgres::PostgresDriver;
 
 use crate::commands::query::{QueryColumnDto, QueryResultDto};
 
+use serde::Serialize;
+
 /// Build a [`SqlServerDriver`] with default options (trust cert = true).
 pub fn driver() -> SqlServerDriver {
     SqlServerDriver::new()
@@ -86,6 +88,31 @@ pub fn query_result_to_dto(result: QueryResult, elapsed_ms: u64) -> QueryResultD
         elapsed_ms,
         rows_affected: result.rows_affected,
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CommandOutput {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
+}
+
+/// Run a shell command and return its output. Used by the integrated terminal.
+#[tauri::command]
+pub async fn run_command(
+    command: String,
+    args: Vec<String>,
+) -> Result<CommandOutput, String> {
+    let output = std::process::Command::new(&command)
+        .args(&args)
+        .output()
+        .map_err(|e| format!("Failed to run '{command}': {e}"))?;
+
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    Ok(CommandOutput { stdout, stderr, exit_code })
 }
 
 /// Turn a database `Value` into a JSON value.
