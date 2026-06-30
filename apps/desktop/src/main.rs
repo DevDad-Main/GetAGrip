@@ -229,6 +229,7 @@ fn main() {
 
             app.manage(state);
             app.manage(settings_state);
+            app.manage(crate::commands::pty::PtyState::new());
 
             Ok(())
         })

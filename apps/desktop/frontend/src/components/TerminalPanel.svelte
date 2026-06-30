@@ -121,9 +121,18 @@
 
   // Terminal functions
   async function initializeTerminal() {
-    if (!termEl || isTerminalReady) return;
+    console.log('initializeTerminal called');
+    if (!termEl) {
+      console.error('termEl is null');
+      return;
+    }
+    if (isTerminalReady) {
+      console.log('isTerminalAlready true, returning');
+      return;
+    }
 
     try {
+      console.log('Creating terminal instance');
       // Create terminal instance
       terminal = new Terminal({
         cursorBlink: true,
@@ -171,9 +180,11 @@
       });
 
       // Start the PTY
+      console.log('About to call startPty()');
       await startPty();
-
+      console.log('startPty() resolved');
       isTerminalReady = true;
+      console.log('isTerminalReady set to true');
     } catch (error) {
       console.error('Failed to initialize terminal:', error);
       notify(`Failed to initialize terminal: ${error}`, 'error');
@@ -191,7 +202,7 @@
       terminal.writeln(`\x1b[32m$ ${shell}\x1b[0m`); // Green prompt
 
       // Start the PTY via Tauri
-      await startPty(shell);
+      await startPtyTauri(shell);
 
       // Set ptyReady to true
       ptyReady = true;

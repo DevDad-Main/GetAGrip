@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.getagrip.app",
   "build": {
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "pwd && ls -la && cd frontend && npm run build",
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
-    "frontendDist": "../frontend/dist"
+    "frontendDist": "frontend/dist"
   },
   "app": {
     "windows": [

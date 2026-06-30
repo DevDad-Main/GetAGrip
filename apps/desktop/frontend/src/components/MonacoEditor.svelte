@@ -317,7 +317,9 @@
         const { refreshMetadata } = await import('$lib/tauri');
         await refreshMetadata({ connection_id: profileId });
         metadataRefreshed.set(Date.now());
-      } catch { /* silent */ }
+      } catch (e) {
+        console.error('Metadata refresh failed:', e);
+      }
     }
 
     try {

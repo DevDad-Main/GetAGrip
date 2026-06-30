@@ -1,11 +1,10 @@
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::unix::io::{AsRawFd, FromRawFd};
-use std::process::{Command};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::ffi::CString;
 use libc::{ioctl, TIOCSWINSZ, winsize, pid_t, SIGTERM, waitpid};
 use pty::fork::{Fork};
 use tauri::{Emitter, State};
@@ -13,6 +12,20 @@ use tauri::{Emitter, State};
 /// State to hold the PTY process
 pub struct PtyState {
     process: Arc<Mutex<Option<PtyProcess>>>,
+}
+
+impl PtyState {
+    pub fn new() -> Self {
+        Self {
+            process: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
+impl Default for PtyState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 struct PtyProcess {
@@ -31,20 +44,30 @@ pub fn start_pty(
     state: State<'_, PtyState>,
     shell: String,
 ) -> Result<(), String> {
+    eprintln!("PTY: start_pty called with shell: {}", shell);
     let mut lock = state.process.lock().map_err(|e| e.to_string())?;
     if lock.is_some() {
+        eprintln!("PTY: already started");
         return Err("PTY already started".into());
     }
 
     // Create a new PTY pair using fork
     let fork = Fork::from_ptmx().map_err(|e| e.to_string())?;
+    eprintln!("PTY: fork created");
 
     // Match on a reference to the fork to avoid moving it
     match &fork {
         // Parent process: we keep the master PTY
         Fork::Parent(pid, master) => {
-            // Convert the master FD into a File for reading/writing and wrap in Arc<Mutex>
-            let master_file = unsafe { File::from_raw_fd(master.as_raw_fd()) };
+            eprintln!("PTY: in parent process, pid: {}", pid);
+            // Duplicate the master FD so the Fork's Drop can close the original
+            // while File takes ownership of the duplicate
+            let master_raw_fd = master.as_raw_fd();
+            let dup_fd = unsafe { libc::dup(master_raw_fd) };
+            if dup_fd == -1 {
+                return Err(format!("Failed to dup pty fd: {}", io::Error::last_os_error()));
+            }
+            let master_file = unsafe { File::from_raw_fd(dup_fd) };
             let master_file_arc = Arc::new(Mutex::new(master_file));
 
             // Set initial window size (24 rows, 80 cols) - common terminal default
@@ -64,6 +87,7 @@ pub fn start_pty(
                     &init_win_size as *const _ as *mut libc::c_void,
                 )
             };
+            eprintln!("PTY: window size set");
 
             // Clone the app handle for the reader thread
             let app_handle_clone = app_handle.clone();
@@ -75,22 +99,26 @@ pub fn start_pty(
 
             // Spawn a thread to read from the PTY master and emit events
             let reader_handle = thread::spawn(move || {
+                eprintln!("PTY: reader thread started");
                 let mut master_file = master_file_clone.lock().unwrap();
                 let mut buffer = [0; 1024];
                 loop {
                     // Check if we should stop
                     if !should_run_clone.load(Ordering::SeqCst) {
+                        eprintln!("PTY: reader thread stopping");
                         break;
                     }
                     match master_file.read(&mut buffer) {
                         Ok(0) => {
                             // EOF
+                            eprintln!("PTY: reader thread got EOF");
                             break;
                         }
                         Ok(n) => {
                             let data = String::from_utf8_lossy(&buffer[..n]);
                             // Emit event to frontend
                             let _ = app_handle_clone.emit("pty-output", data.as_ref());
+                            eprintln!("PTY: emitted {} bytes", n);
                         }
                         Err(e) => {
                             eprintln!("Error reading from PTY: {}", e);
@@ -98,6 +126,7 @@ pub fn start_pty(
                         }
                     }
                 }
+                eprintln!("PTY: reader thread exited");
             });
 
             // Store the process
@@ -107,33 +136,42 @@ pub fn start_pty(
                 reader_handle: Some(reader_handle),
                 should_run,
             });
-
+            eprintln!("PTY: process stored");
             Ok(())
         }
         // Child process: we set up the slave PTY as stdio and exec the shell
         Fork::Child(slave) => {
-            // Convert the slave FD into Files for stdin, stdout, stderr
-            let slave_file = unsafe { File::from_raw_fd(slave.as_raw_fd()) };
-            let stdin = slave_file
-                .try_clone()
-                .map_err(|e| e.to_string())?;
-            let stdout = slave_file
-                .try_clone()
-                .map_err(|e| e.to_string())?;
-            let stderr = slave_file
-                .try_clone()
-                .map_err(|e| e.to_string())?;
+            eprintln!("PTY: in child process, preparing to exec shell: {}", shell);
+            // Duplicate slave fd to stdin, stdout, stderr
+            let slave_fd = slave.as_raw_fd();
+            if unsafe { libc::dup2(slave_fd, 0) } == -1 {
+                eprintln!("PTY: Failed to dup2 slave to stdin");
+                std::process::exit(1);
+            }
+            if unsafe { libc::dup2(slave_fd, 1) } == -1 {
+                eprintln!("PTY: Failed to dup2 slave to stdout");
+                std::process::exit(1);
+            }
+            if unsafe { libc::dup2(slave_fd, 2) } == -1 {
+                eprintln!("PTY: Failed to dup2 slave to stderr");
+                std::process::exit(1);
+            }
+
+            // Close the original slave fd (not needed anymore since we duped it)
+            let _ = unsafe { libc::close(slave_fd) };
 
             // Execute the shell
-            Command::new(shell)
-                .stdin(stdin)
-                .stdout(stdout)
-                .stderr(stderr)
-                .status()
-                .map_err(|e| e.to_string())?;
+            let shell_cstr = CString::new(shell.as_str()).map_err(|e| e.to_string())?;
+            let argv = [shell_cstr.as_ptr(), std::ptr::null()];
+            unsafe {
+                libc::execvp(
+                    shell_cstr.as_ptr(),
+                    argv.as_ptr(),
+                );
+            }
 
             // If we reach here, the exec failed
-            eprintln!("Failed to execute shell");
+            eprintln!("PTY: Failed to execute shell: {}", shell);
             std::process::exit(1);
         }
     }
@@ -176,7 +214,7 @@ pub fn pty_input(state: State<'_, PtyState>, input: String) -> Result<(), String
 pub fn pty_resize(state: State<'_, PtyState>, rows: u16, cols: u16) -> Result<(), String> {
     let lock = state.process.lock().map_err(|e| e.to_string())?;
     if let Some(process) = lock.as_ref() {
-        let mut master_file = process.master_file.lock().map_err(|e| e.to_string())?;
+        let master_file = process.master_file.lock().map_err(|e| e.to_string())?;
         let fd = master_file.as_raw_fd();
 
         #[cfg(target_os = "linux")]

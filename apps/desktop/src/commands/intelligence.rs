@@ -128,22 +128,22 @@ pub async fn refresh_metadata_cmd(
     let inner = conn.connection_mut();
     match driver {
         "postgres" => {
-            let sql = "SELECT TABLE_SCHEMA, TABLE_NAME FROM information_schema.tables WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA NOT IN ('pg_catalog', 'information_schema') ORDER BY TABLE_SCHEMA, TABLE_NAME";
+            let sql = "SELECT table_schema, table_name FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY table_schema, table_name";
             if let Ok(result) = inner.execute(sql).await {
                 for row in &result.rows {
-                    let table_schema = row.get_by_name("TABLE_SCHEMA").map(|v| v.to_string()).unwrap_or_default();
-                    let table_name = row.get_by_name("TABLE_NAME").map(|v| v.to_string()).unwrap_or_default();
+                    let table_schema = row.get_by_name("table_schema").map(|v| v.to_string()).unwrap_or_default();
+                    let table_name = row.get_by_name("table_name").map(|v| v.to_string()).unwrap_or_default();
                     let cols = fetch_info_schema_cols(inner, &table_schema, &table_name).await;
                     schema.tables.push(make_table(table_name, table_schema, cols));
                 }
             }
         }
         "mysql" => {
-            let sql = "SELECT TABLE_SCHEMA, TABLE_NAME FROM information_schema.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = DATABASE() ORDER BY TABLE_SCHEMA, TABLE_NAME";
+            let sql = "SELECT table_schema, table_name FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema = DATABASE() ORDER BY table_schema, table_name";
             if let Ok(result) = inner.execute(sql).await {
                 for row in &result.rows {
-                    let table_schema = row.get_by_name("TABLE_SCHEMA").map(|v| v.to_string()).unwrap_or_default();
-                    let table_name = row.get_by_name("TABLE_NAME").map(|v| v.to_string()).unwrap_or_default();
+                    let table_schema = row.get_by_name("table_schema").map(|v| v.to_string()).unwrap_or_default();
+                    let table_name = row.get_by_name("table_name").map(|v| v.to_string()).unwrap_or_default();
                     let cols = fetch_info_schema_cols(inner, &table_schema, &table_name).await;
                     schema.tables.push(make_table(table_name, table_schema, cols));
                 }
@@ -204,17 +204,17 @@ async fn fetch_info_schema_cols(
     table_name: &str,
 ) -> Vec<getagrip_schema::ColumnSchema> {
     let sql = format!(
-        "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, ORDINAL_POSITION FROM information_schema.columns WHERE TABLE_SCHEMA = '{}' AND TABLE_NAME = '{}' ORDER BY ORDINAL_POSITION",
+        "SELECT column_name, data_type, is_nullable, ordinal_position FROM information_schema.columns WHERE table_schema = '{}' AND table_name = '{}' ORDER BY ordinal_position",
         table_schema.replace('\'', "''"),
         table_name.replace('\'', "''"),
     );
     let mut columns = Vec::new();
     if let Ok(col_result) = conn.execute(&sql).await {
         for col_row in &col_result.rows {
-            let col_name = col_row.get_by_name("COLUMN_NAME").map(|v| v.to_string()).unwrap_or_default();
-            let data_type = col_row.get_by_name("DATA_TYPE").map(|v| v.to_string()).unwrap_or_default();
-            let nullable = col_row.get_by_name("IS_NULLABLE").map(|v| v.to_string() == "YES").unwrap_or(true);
-            let ordinal = col_row.get_by_name("ORDINAL_POSITION").map(|v| v.to_string().parse::<u16>().unwrap_or(0)).unwrap_or(0);
+            let col_name = col_row.get_by_name("column_name").map(|v| v.to_string()).unwrap_or_default();
+            let data_type = col_row.get_by_name("data_type").map(|v| v.to_string()).unwrap_or_default();
+            let nullable = col_row.get_by_name("is_nullable").map(|v| v.to_string() == "YES").unwrap_or(true);
+            let ordinal = col_row.get_by_name("ordinal_position").map(|v| v.to_string().parse::<u16>().unwrap_or(0)).unwrap_or(0);
             columns.push(getagrip_schema::ColumnSchema {
                 name: col_name,
                 col_type: getagrip_database::driver::ColumnType::String,
