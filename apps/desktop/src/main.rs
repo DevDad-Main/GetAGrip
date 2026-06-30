@@ -33,7 +33,7 @@ use commands::lsp::{get_lsp_servers, install_lsp, set_lsp_path};
 use commands::query::execute_query;
 use commands::settings::{get_settings, set_setting, SettingsState};
 use commands::util::{detect_available_shells, run_command};
-use commands::pty::{start_pty, stop_pty, pty_input, pty_resize};
+use commands::pty::{start_pty, stop_pty, pty_input, pty_resize, read_pty_output, log_debug};
 
 use state::AppState;
 
@@ -272,6 +272,8 @@ fn main() {
             stop_pty,
             pty_input,
             pty_resize,
+            read_pty_output,
+            log_debug,
         ])
         .run(tauri::generate_context!())
         .expect("error running tauri");

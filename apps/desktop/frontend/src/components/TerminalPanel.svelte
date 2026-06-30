@@ -1,147 +1,64 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { runCommand, detectAvailableShells, type CommandOutput } from '$lib/tauri';
+  import { detectAvailableShells } from '$lib/tauri';
   import { pendingTerminalCommand, terminalShell, availableShells } from '$lib/stores';
   import { notify } from '$lib/toast';
   import { getSettings, setSetting } from '$lib/tauri';
-  import { Trash2, Play, X, ChevronDown } from 'lucide-svelte';
 
-  // XTerm imports
   import { Terminal } from 'xterm';
+  import 'xterm/css/xterm.css';
   import { FitAddon } from 'xterm-addon-fit';
-  import { listen } from '@tauri-apps/api/event';
-  import { startPty as startPtyTauri, stopPty, ptyInput, ptyResize } from '$lib/tauri';
+  import { startPty as startPtyTauri, stopPty, ptyInput, ptyResize, readPtyOutput } from '$lib/tauri';
+  import { ChevronDown, Trash2 } from 'lucide-svelte';
 
-  interface TermEntry {
-    id: number;
-    command: string;
-    output: CommandOutput | null;
-    running: boolean;
-    timestamp: number;
-  }
-
-  let entries: TermEntry[] = [];
-  let cmdInput = '';
-  let entryId = 0;
   let termEl: HTMLDivElement;
   let terminal: Terminal | null = null;
   let fitAddon: FitAddon | null = null;
+  let resizeObserver: ResizeObserver | null = null;
   let isTerminalReady = false;
   let ptyReady = false;
-  let ptyUnsubscribe: () => void = () => {};
+  let shellMenuOpen = false;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
 
-  // Simple ANSI to HTML converter (fallback for non-xterm rendering)
-  function ansiToHtml(text: string): string {
-    // Map of ANSI colors to CSS colors
-    const colors: Record<string, string> = {
-      '0': '#ffffff',   // Reset (we'll handle separately)
-      '1': '#ffffff',   // Bold
-      '2': '#ffffff',   // Dim
-      '3': '#ffffff',   // Italic
-      '4': '#ffffff',   // Underline
-      '5': '#ffffff',   // Blink
-      '6': '#ffffff',   // Inverse
-      '7': '#ffffff',   // Hidden
-      '8': '#ffffff',   // Strikethrough
-      '9': '#ffffff',   //
-      '30': '#000000',  // Black
-      '31': '#ff0000',  // Red
-      '32': '#00ff00',  // Green
-      '33': '#ffff00',  // Yellow
-      '34': '#0000ff',  // Blue
-      '35': '#ff00ff',  // Magenta
-      '36': '#00ffff',  // Cyan
-      '37': '#ffffff',  // White
-      '90': '#808080',  // Bright Black
-      '91': '#ff0000',  // Bright Red
-      '92': '#00ff00',  // Bright Green
-      '93': '#ffff00',  // Bright Yellow
-      '94': '#0000ff',  // Blue
-      '95': '#ff00ff',  // Magenta
-      '96': '#00ffff',  // Cyan
-      '97': '#ffffff',  // White
-    };
-
-    // Process ANSI escape codes
-    let result = '';
-    let pos = 0;
-    let match;
-
-    // Regex to find ANSI escape codes: \x1b[...m
-    const ansiRegex = /\x1b\[([0-9;]*?)m/g;
-
-    // We'll build the result by processing chunks
-    let lastIndex = 0;
-    let matchResult;
-
-    while ((matchResult = ansiRegex.exec(text)) !== null) {
-      // Add text before the escape code
-      result += text.slice(lastIndex, matchResult.index);
-
-      // Process the escape code
-      const params = matchResult[1].split(';').filter(p => p !== '');
-
-      // Apply styles (simplified - just handle colors for now)
-      let style = '';
-      let hasBold = false;
-      let hasUnderline = false;
-
-      for (const param of params) {
-        if (param === '1') hasBold = true;
-        if (param === '4') hasUnderline = true;
-        if (colors[param]) {
-          // Set color
-          style += `color: ${colors[param]}; `;
-        }
+  function fitWithGuard() {
+    if (!fitAddon || !terminal || !termEl) return;
+    const h = termEl.clientHeight;
+    if (h < 30) return;
+    try {
+      fitAddon.fit();
+      if (ptyReady && terminal.cols > 1 && terminal.rows > 1) {
+        ptyResize(terminal.cols, terminal.rows);
       }
-
-      if (hasBold) style += 'font-weight: bold; ';
-      if (hasUnderline) style += 'text-decoration: underline; ';
-
-      // Add opening span with styles if any
-      if (style) {
-        result += `<span style="${style.trim()}">`;
-      } else {
-        // Reset styles
-        result += '</span>';
-      }
-
-      lastIndex = ansiRegex.lastIndex;
+    } catch (e) {
+      console.error('fit failed:', e);
     }
-
-    // Add remaining text
-    result += text.slice(lastIndex);
-
-    // Close any open spans (simplified approach)
-    // In a real implementation, we'd need to properly manage the span stack
-    // For now, we'll just wrap everything in a span and reset at end
-
-    return result;
   }
 
-  // Terminal functions
+  async function pollPtyOutput() {
+    if (!terminal || !ptyReady) return;
+    try {
+      const data = await readPtyOutput();
+      if (data && data.length > 0) {
+        terminal.write(data);
+      }
+    } catch (e) {
+      console.error('pollPtyOutput failed:', e);
+    }
+  }
+
   async function initializeTerminal() {
-    console.log('initializeTerminal called');
-    if (!termEl) {
-      console.error('termEl is null');
-      return;
-    }
-    if (isTerminalReady) {
-      console.log('isTerminalAlready true, returning');
-      return;
-    }
+    if (!termEl || isTerminalReady) return;
 
     try {
-      console.log('Creating terminal instance');
-      // Create terminal instance
       terminal = new Terminal({
         cursorBlink: true,
         fontSize: 14,
-        fontFamily: "'Fira Code', 'JetBrains Mono', 'Menlo', 'Consolas', 'Monaco', monospace",
+        fontFamily: "'JetBrainsMono Nerd Font', 'Fira Code', 'JetBrains Mono', 'Menlo', 'Consolas', 'Monaco', monospace",
         theme: {
           background: '#1e1e1e',
           foreground: '#cccccc',
           cursor: '#ffffff',
+          selectionBackground: '#264f78',
           black: '#000000',
           red: '#ff0000',
           green: '#00ff00',
@@ -158,33 +75,33 @@
           brightMagenta: '#ff00ff',
           brightCyan: '#00ffff',
           brightWhite: '#ffffff'
-        }
+        },
+        allowTransparency: false,
+        macOptionIsMeta: true,
       });
 
-      // Add fit addon to resize with container
       fitAddon = new FitAddon();
       terminal.loadAddon(fitAddon);
-
-      // Mount terminal
       terminal.open(termEl);
-      fitAddon.fit();
 
-      // Handle resize
-      window.addEventListener('resize', () => {
-        fitAddon?.fit();
-        // Also resize the PTY if it's started
-        if (ptyReady && terminal) {
-          const { cols, rows } = terminal.cols ? { cols: terminal.cols, rows: terminal.rows } : { cols: 80, rows: 24 };
-          ptyResize(cols, rows).catch(console.error);
+      resizeObserver = new ResizeObserver(() => {
+        fitWithGuard();
+      });
+      resizeObserver.observe(termEl);
+      setTimeout(() => fitWithGuard(), 50);
+
+      terminal.onData((data) => {
+        if (ptyReady) {
+          ptyInput(data);
         }
       });
 
-      // Start the PTY
-      console.log('About to call startPty()');
+      // Start polling for PTY output
+      pollTimer = setInterval(pollPtyOutput, 30);
+
       await startPty();
-      console.log('startPty() resolved');
       isTerminalReady = true;
-      console.log('isTerminalReady set to true');
+      terminal.focus();
     } catch (error) {
       console.error('Failed to initialize terminal:', error);
       notify(`Failed to initialize terminal: ${error}`, 'error');
@@ -195,29 +112,12 @@
     if (!terminal) return;
 
     try {
-      // Get shell to use
       const shell = $terminalShell || (await getDefaultShell());
-
-      // Clear current output
-      terminal.writeln(`\x1b[32m$ ${shell}\x1b[0m`); // Green prompt
-
-      // Start the PTY via Tauri
       await startPtyTauri(shell);
-
-      // Set ptyReady to true
       ptyReady = true;
-
     } catch (error) {
       console.error('Failed to start PTY:', error);
       notify(`Failed to start PTY: ${error}`, 'error');
-    }
-  }
-
-  function handleTerminalData(data: string) {
-    // This would normally be handled by the PTY
-    // For now, we'll just echo it back
-    if (terminal) {
-      terminal.write(data);
     }
   }
 
@@ -228,13 +128,6 @@
       if (saved) return saved;
 
       const shells = await detectAvailableShells();
-      // Prefer user's shell, then bash/zsh/fish, then sh
-      const envShell = process.env.SHELL || '';
-      if (shells[envShell.split('/').pop() || '']) {
-        return envShell;
-      }
-
-      // Return first available shell in preference order
       const prefs = ['fish', 'zsh', 'bash', 'sh'];
       for (const shell of prefs) {
         if (shells[shell]) {
@@ -242,7 +135,6 @@
         }
       }
 
-      // Fallback to first available
       const first = Object.values(shells)[0];
       return first || '/bin/sh';
     } catch (error) {
@@ -251,112 +143,28 @@
     }
   }
 
-  function executeCommand(command: string) {
-    if (!command.trim()) return;
-
-    if (ptyReady) {
-      // Send input to PTY
-      ptyInput(command + '\r\n');
-    } else {
-      // Fallback to old method if terminal not ready
-      executeLegacy(command);
-    }
-  }
-
-  function executeLegacy(cmd: string) {
-    // Existing legacy implementation
-    const trimmed = cmd.trim();
-    if (!trimmed) return;
-
-    // Handle clear natively
-    if (trimmed === 'clear' || trimmed === 'cls') {
-      entries = [];
-      cmdInput = '';
-      return;
-    }
-
-    const id = ++entryId;
-    const entry: TermEntry = {
-      id,
-      command: trimmed,
-      output: null,
-      running: true,
-      timestamp: Date.now(),
-    };
-    entries = [...entries, entry];
-    cmdInput = '';
-    scrollBottom();
-
-    // Execute command
-    (async () => {
-      let output: CommandOutput;
-      try {
-        output = await runCommand(trimmed, $terminalShell || undefined);
-      } catch (e) {
-        output = { stdout: '', stderr: `Failed to run: ${e}`, exit_code: -1 };
-      }
-
-      entries = entries.map(e =>
-        e.id === id ? { ...e, output, running: false } : e
-      );
-      scrollBottom();
-    })();
-  }
-
-  function scrollBottom() {
-    if (termEl) requestAnimationFrame(() => { termEl.scrollTop = termEl.scrollHeight; });
-  }
-
   function clearOutput() {
-    entries = [];
     if (terminal) {
       terminal.clear();
-      terminal.write('\r\n\x1b[32m$ \x1b[0m');
     }
   }
 
-  function removeEntry(id: number) {
-    entries = entries.filter(e => e.id !== id);
-  }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
-      execute(cmdInput);
-    }
-    // Let xterm handle other keys when ready
-    if (terminal && isTerminalReady && e.key !== 'Enter') {
-      // Don't prevent default for most keys when terminal is active
-      return;
-    }
-    // Prevent form submission for Enter in input (when not using terminal)
-    if (e.key === 'Enter' && !isTerminalReady) {
-      e.preventDefault();
-    }
-  }
-
-  function runAgain(cmd: string) {
-    cmdInput = cmd;
-    execute(cmd);
-  }
-
-  function fmtTime(ts: number): string {
-    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  }
-
-  // Shell selection
   async function selectShell(shell: string) {
     terminalShell.set(shell);
     try {
       await setSetting('terminalShell', shell);
-      // Restart terminal with new shell
       if (terminal) {
+        stopPty().catch(() => {});
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
         terminal.dispose();
         terminal = null;
         fitAddon = null;
         isTerminalReady = false;
         ptyReady = false;
-        if (ptyUnsubscribe) ptyUnsubscribe();
-        await new Promise(resolve => setTimeout(resolve, 100)); // Brief delay
+        await new Promise(resolve => setTimeout(resolve, 100));
         await initializeTerminal();
       }
     } catch (error) {
@@ -380,72 +188,54 @@
     }
   }
 
-  let shellMenuOpen = false;
-
   function toggleShellMenu() {
     shellMenuOpen = !shellMenuOpen;
   }
 
-  // Lifecycle
-  onMount(async () => {
-    // Load available shells for dropdown
-    try {
-      const shells = await detectAvailableShells();
-      availableShells.set(shells);
-    } catch { /* ignore */ }
+  onMount(() => {
+    (async () => {
+      try {
+        const shells = await detectAvailableShells();
+        availableShells.set(shells);
+      } catch { /* ignore */ }
 
-    // Load saved shell preference
-    try {
-      const settings = await getSettings();
-      const saved = (settings as any).terminalShell as string | undefined;
-      if (saved) terminalShell.set(saved);
-    } catch { /* ignore */ }
+      try {
+        const settings = await getSettings();
+        const saved = (settings as any).terminalShell as string | undefined;
+        if (saved) terminalShell.set(saved);
+      } catch { /* ignore */ }
 
-    // Initialize terminal
-    await initializeTerminal();
+      await initializeTerminal();
+    })();
 
-    // Subscribe to PTY output
-    ptyUnsubscribe = await listen('pty-output', (event) => {
-      const payload = event.payload as string;
-      if (terminal) {
-        terminal.write(payload);
-      }
-    });
-
-    // Subscribe to pending commands from LSP
     const unsub = pendingTerminalCommand.subscribe((cmd) => {
       if (cmd) {
-        executeCommand(cmd);
+        if (ptyReady && terminal) {
+          ptyInput(cmd + '\n');
+        }
         pendingTerminalCommand.set(null);
       }
     });
 
-    // Cleanup on destroy
     return () => {
       if (unsub) unsub();
-      if (ptyUnsubscribe) ptyUnsubscribe();
-      if (terminal) {
-        terminal.dispose();
-      }
     };
   });
 
-  // Destroy cleanup
   onDestroy(() => {
+    if (pollTimer) clearInterval(pollTimer);
+    if (resizeObserver) resizeObserver.disconnect();
     if (terminal) {
       terminal.dispose();
+      terminal = null;
     }
-    if (ptyUnsubscribe) ptyUnsubscribe();
-    // Stop PTY
-    stopPty().catch(console.error);
+    stopPty().catch(() => {});
   });
 </script>
 
-<!-- Terminal Container -->
 <div class="terminal-panel">
   <div class="term-toolbar">
     <span class="term-label">TERMINAL</span>
-    <!-- Shell picker -->
     <div class="term-shell-picker" on:click={toggleShellMenu} on:keydown role="button" tabindex="0" title="Select shell">
       <span class="term-shell-name">
         {#if $terminalShell}
@@ -477,31 +267,13 @@
     {/if}
 
     <div class="term-toolbar-spacer"></div>
-    <button class="term-btn" on:click={clearOutput} title="Clear all output"><Trash2 size="10" /></button>
+    <button class="term-btn" on:click={clearOutput} title="Clear"><Trash2 size="10" /></button>
   </div>
 
-  <!-- Terminal Output -->
   <div class="term-output" bind:this={termEl}>
     {#if !isTerminalReady}
       <div class="term-loading">Initializing terminal...</div>
-    {:else}
-      <!-- xterm.js will render here -->
     {/if}
-  </div>
-
-  <!-- Input Bar -->
-  <div class="term-input-bar">
-    <span class="term-prompt">$</span>
-    <input
-      type="text"
-      class="term-input"
-      bind:value={cmdInput}
-      on:keydown={handleKeydown}
-      placeholder="Type a command…"
-      autofocus
-      disabled={!isTerminalReady}
-    />
-    <button class="term-run-btn" on:click={() => executeCommand(cmdInput)} disabled={!cmdInput.trim()}><Play size="10" /></button>
   </div>
 </div>
 
@@ -510,50 +282,115 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: var(--bg);
-    font-family: var(--font-mono);
-    font-size: 12px;
+    background: #1e1e1e;
     overflow: hidden;
-    display: flex;
-    flex-direction: column;
   }
 
   .term-toolbar {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 3px 10px;
-    border-bottom: 1px solid var(--border);
+    padding: 2px 10px;
+    border-bottom: 1px solid #333;
     flex-shrink: 0;
-    background: var(--bg-elev);
+    background: #252526;
+    position: relative;
+    z-index: 10;
   }
 
   .term-label {
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 1px;
-    color: var(--text-muted);
+    color: #888;
+  }
+
+  .term-toolbar-spacer {
+    flex: 1;
+  }
+
+  .term-shell-picker {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    color: #aaa;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  .term-shell-picker:hover {
+    background: #333;
+    color: #ccc;
+  }
+
+  .term-shell-name {
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .term-shell-menu {
+    position: absolute;
+    top: 100%;
+    left: 80px;
+    margin-top: 2px;
+    background: #252526;
+    border: 1px solid #444;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    z-index: 1000;
+    width: 220px;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  .term-shell-opt {
+    width: 100%;
+    text-align: left;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #ccc;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .term-shell-opt:hover {
+    background: #333;
+  }
+
+  .term-shell-opt.active {
+    background: #333;
+    border-left: 3px solid #0078d4;
+  }
+
+  .term-shell-path {
+    font-size: 10px;
+    color: #666;
+    display: block;
+    margin-top: 1px;
+    font-family: 'Fira Code', 'JetBrains Mono', monospace;
   }
 
   .term-btn {
-    margin-left: auto;
     border: none;
     background: transparent;
-    color: var(--text-muted);
+    color: #888;
     cursor: pointer;
     padding: 2px;
     display: flex;
   }
 
-  .term-btn:hover { color: var(--text); }
+  .term-btn:hover { color: #ccc; }
 
   .term-output {
     flex: 1;
-    overflow-y: auto;
-    padding: 0;
-    min-height: 0;
+    min-height: 100px;
     position: relative;
-    background: #000000; /* Terminal background */
     overflow: hidden;
   }
 
@@ -562,111 +399,7 @@
     align-items: center;
     justify-content: center;
     height: 100%;
-    color: var(--text-faint);
+    color: #666;
     font-size: 11px;
-  }
-
-  .term-input-bar {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    border-top: 1px solid var(--border);
-    flex-shrink: 0;
-    background: var(--bg-elev);
-  }
-
-  .term-input {
-    flex: 1;
-    border: none;
-    background: transparent;
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    outline: none;
-    padding: 2px 0;
-    background: #000000;
-    color: #ffffff;
-    caret-color: #ffffff;
-  }
-
-  .term-input::placeholder {
-    color: #808080;
-    font-family: var(--font-sans);
-    font-size: 11px;
-  }
-
-  .term-run-btn {
-    border: none;
-    background: transparent;
-    color: var(--accent);
-    cursor: pointer;
-    padding: 2px;
-    display: flex;
-  }
-
-  .term-run-btn:disabled { color: #808080; cursor: default; }
-  .term-run-btn:hover:not(:disabled) { color: var(--accent-emphasis); }
-
-  /* Shell menu */
-  .term-shell-menu {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    margin-top: 4px;
-    background: var(--bg-elev);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-md);
-    z-index: 1000;
-    width: 200px;
-    max-height: 250px;
-    overflow-y: auto;
-  }
-
-  .term-shell-opt {
-    width: 100%;
-    text-align: left;
-    padding: 8px 12px;
-    font-size: 12px;
-    color: var(--text);
-    background: transparent;
-    border: none;
-    cursor: pointer;
-  }
-
-  .term-shell-opt:hover {
-    background: var(--bg-hover);
-  }
-
-  .term-shell-opt.active {
-    background: var(--bg-hover);
-    border-left: 3px solid var(--accent);
-  }
-
-  .term-shell-path {
-    font-size: 10px;
-    color: var(--text-faint);
-    display: block;
-    margin-top: 2px;
-    font-family: var(--font-mono);
-  }
-
-  /* Resize handle */
-  .term-resize-handle {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 4px;
-    background: repeating-linear-gradient(
-      45deg,
-      transparent,
-      transparent 2px,
-      rgba(255,255,255,0.1) 2px,
-      rgba(255,255,255,0.1) 4px
-    );
-    cursor: ns-resize;
-    z-index: 10;
   }
 </style>

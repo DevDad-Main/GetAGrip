@@ -218,6 +218,14 @@ export async function ptyResize(rows: number, cols: number): Promise<void> {
   return invoke<void>('pty_resize', { rows, cols });
 }
 
+export async function logDebug(msg: string): Promise<void> {
+  return invoke<void>('log_debug', { msg });
+}
+
+export async function readPtyOutput(): Promise<string> {
+  return invoke<string>('read_pty_output');
+}
+
 // ---- Phase 2 datasource commands -------------------------------------------
 
 export async function listDatasources(): Promise<ConnectionProfile[]> {

@@ -115,8 +115,8 @@
       if ($resultsPanelHeight > 0) {
         activeBottomTab.set('terminal');
       } else {
-        resultsPanelHeight.set(200);
-        activeBottomTab.set('terminal');
+      resultsPanelHeight.set(300);
+      activeBottomTab.set('terminal');
       }
     }
     if (e.key === 'Escape') {
