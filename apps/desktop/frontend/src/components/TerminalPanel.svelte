@@ -88,13 +88,16 @@
         fitWithGuard();
       });
       resizeObserver.observe(termEl);
-      setTimeout(() => fitWithGuard(), 50);
 
       terminal.onData((data) => {
         if (ptyReady) {
           ptyInput(data);
         }
       });
+
+      // Wait for DOM layout then fit to correct size BEFORE starting PTY
+      await new Promise(resolve => setTimeout(resolve, 100));
+      fitWithGuard();
 
       // Start polling for PTY output
       pollTimer = setInterval(pollPtyOutput, 30);
@@ -223,6 +226,7 @@
   });
 
   onDestroy(() => {
+    ptyReady = false;
     if (pollTimer) clearInterval(pollTimer);
     if (resizeObserver) resizeObserver.disconnect();
     if (terminal) {

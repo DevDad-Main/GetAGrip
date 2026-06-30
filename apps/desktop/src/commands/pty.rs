@@ -163,10 +163,13 @@ pub fn stop_pty(state: State<'_, PtyState>) -> Result<(), String> {
         process.should_run.store(false, Ordering::SeqCst);
         // Kill child first so the PTY slave closes, unblocking the reader thread
         let _ = unsafe { libc::kill(process.child_pid, SIGTERM) };
-        let _ = unsafe { waitpid(process.child_pid, std::ptr::null_mut(), 0) };
-        // Now the reader thread should unblock from read() and exit
+        // Spawn cleanup in background to avoid blocking the IPC handler
+        let child_pid = process.child_pid;
         if let Some(handle) = process.reader_handle.take() {
-            let _ = handle.join();
+            std::thread::spawn(move || {
+                let _ = unsafe { waitpid(child_pid, std::ptr::null_mut(), 0) };
+                let _ = handle.join();
+            });
         }
     }
     Ok(())
