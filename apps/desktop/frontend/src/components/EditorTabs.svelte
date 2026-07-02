@@ -1,133 +1,177 @@
 <script lang="ts">
-  import { tabs, activeTabId, closeTab, closeAllTabs, closeOtherTabs, addTabToPane, reorderTabs, moveTab, activePaneId, splitPanes, splitPane, activeDatasourceId, datasources } from '$lib/stores';
-  import type { EditorTab } from '$lib/stores';
+  import { splitPanes, activePaneId, closeTab, closeAllTabs, closeOtherTabs, addTabToPane, reorderTabs, moveTab, splitPane, activeDatasourceId, datasources, dragState, activeDropZone } from '$lib/stores';
+  import type { EditorTab, SplitPane } from '$lib/stores';
   import { Plus, X, FileText } from 'lucide-svelte';
   import ContextMenu from './ContextMenu.svelte';
   import type { ContextMenuItem } from './ContextMenu.svelte';
 
+  export let paneId: string = '';
+
   let contextMenu: ContextMenu;
   let dragTabId: string | null = null;
   let dragOverIdx: number | null = null;
-  let dragOverPaneId: string | null = null;
 
-  function selectTab(id: string) {
-    activeTabId.set(id);
+  // Mouse-based drag state
+  let dragTab: EditorTab | null = null;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let isDragging = false;
+  const DRAG_THRESHOLD = 4;
+
+  function getDropZone(clientX: number): string | null {
+    const w = window.innerWidth;
+    if (clientX < w * 0.25) return 'left';
+    if (clientX > w * 0.75) return 'right';
+    return 'center';
   }
 
-  function handleMiddleClick(e: MouseEvent, id: string) {
-    if (e.button === 1) {
-      e.preventDefault();
-      let pid = '';
-      activePaneId.subscribe((v) => pid = v)();
-      closeTab(pid, id);
+  // Resolve this pane's tabs and activeTabId from splitPanes
+  $: pane = $splitPanes.find(p => p.id === paneId);
+  $: paneTabs = pane?.tabs ?? [];
+  $: paneActiveTabId = pane?.activeTabId ?? null;
+  $: isActivePane = $activePaneId === paneId;
+
+  function selectTab(id: string) {
+    activePaneId.set(paneId);
+    splitPanes.update((panes) =>
+      panes.map((p) => (p.id === paneId ? { ...p, activeTabId: id } : p)),
+    );
+  }
+
+  function handleMiddleClick(e: MouseEvent) {
+    const target = e.currentTarget as HTMLElement;
+    const tabEl = target.closest('[data-tab-id]') as HTMLElement | null;
+    if (tabEl) {
+      const id = tabEl.dataset.tabId;
+      if (id) closeTab(paneId, id);
     }
   }
 
   function closeClick(e: MouseEvent, id: string) {
     e.stopPropagation();
-    let pid = '';
-    activePaneId.subscribe((v) => pid = v)();
-    closeTab(pid, id);
+    closeTab(paneId, id);
+  }
+
+  function closeToRight(tabId: string) {
+    const idx = paneTabs.findIndex((t) => t.id === tabId);
+    const toClose = paneTabs.slice(idx + 1).map((t) => t.id);
+    for (const id of toClose) closeTab(paneId, id);
   }
 
   function addTab() {
-    let pid = '';
-    activePaneId.subscribe((v) => pid = v)();
-    addTabToPane(pid, { datasourceId: $activeDatasourceId });
+    addTabToPane(paneId, { datasourceId: $activeDatasourceId });
   }
 
   function openTabContext(e: MouseEvent, tab: EditorTab) {
     e.preventDefault();
     e.stopPropagation();
-    let pid = '';
-    activePaneId.subscribe((v) => pid = v)();
+    const paneList = $splitPanes;
+
+    const tabIdx = paneTabs.findIndex((t) => t.id === tab.id);
+    const canMoveLeft = tabIdx > 0;
+    const canMoveRight = tabIdx < paneTabs.length - 1;
+
     const items: ContextMenuItem[] = [
-      { label: 'Close', action: () => closeTab(pid, tab.id) },
-      { label: 'Close Others', action: () => closeOtherTabs(pid, tab.id) },
-      { label: 'Close All', action: () => closeAllTabs(pid) },
+      { label: 'Close', action: () => closeTab(paneId, tab.id) },
+      { label: 'Close Others', action: () => closeOtherTabs(paneId, tab.id) },
+      { label: 'Close to the Right', action: () => closeToRight(tab.id) },
+      { label: 'Close All', action: () => closeAllTabs(paneId) },
+      { separator: true },
+      ...(canMoveLeft ? [{ label: 'Move Tab Left', action: () => reorderTabs(paneId, tabIdx, tabIdx - 1) }] : []),
+      ...(canMoveRight ? [{ label: 'Move Tab Right', action: () => reorderTabs(paneId, tabIdx, tabIdx + 1) }] : []),
+      { separator: true },
+      { label: 'Split Right', action: () => { moveTab(paneId, splitPane(paneId), tab.id); } },
+      { label: 'Split Down', action: () => { moveTab(paneId, splitPane(paneId), tab.id); } },
       { separator: true },
     ];
-    const paneList: SplitPane[] = [];
-    splitPanes.subscribe((v) => paneList.push(...v))();
-    if (paneList.length > 1) {
-      items.push({ separator: true });
-      for (const p of paneList) {
-        if (p.id !== pid) {
-          items.push({
-            label: `Move to ${p.id === 'pane-main' ? 'main pane' : `pane ${p.id.slice(-4)}`}`,
-            action: () => moveTab(pid, p.id, tab.id),
-          });
-        }
+
+    const otherPanes = paneList.filter((p) => p.id !== paneId);
+    if (otherPanes.length > 0) {
+      for (const p of otherPanes) {
+        items.push({
+          label: `Move to ${p.id === 'pane-main' ? 'main pane' : `pane ${p.id.slice(-4)}`}`,
+          action: () => moveTab(paneId, p.id, tab.id),
+        });
       }
     }
     if (paneList.length < 4) {
       items.push({ separator: true });
       items.push({
-        label: 'Split Right',
-        action: () => { moveTab(pid, splitPane(pid), tab.id); },
+        label: 'New Pane with Tab',
+        action: () => { moveTab(paneId, splitPane(paneId), tab.id); },
       });
     }
+
     contextMenu.open(e.clientX, e.clientY, items);
   }
 
-  function onDragStart(e: DragEvent, tabId: string) {
-    if (e.dataTransfer) {
-      dragTabId = tabId;
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', tabId);
-    }
-  }
+  // ----- Mouse-based drag (works reliably on touchpads) -----
 
-  function onDragOver(e: DragEvent, idx: number, pid: string) {
+  function onTabMouseDown(e: MouseEvent, tab: EditorTab) {
+    if (e.button !== 0) return;
     e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-    dragOverIdx = idx;
-    dragOverPaneId = pid;
+    // Clean up any stale listeners from previous drag
+    document.removeEventListener('mousemove', onDocMouseMove);
+    document.removeEventListener('mouseup', onDocMouseUp);
+    dragTab = tab;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    isDragging = false;
+    document.addEventListener('mousemove', onDocMouseMove);
+    document.addEventListener('mouseup', onDocMouseUp);
   }
 
-  function onDragLeave() {
-    dragOverIdx = null;
-    dragOverPaneId = null;
-  }
-
-  function onDrop(e: DragEvent, targetIdx: number, targetPaneId: string) {
-    e.preventDefault();
-    const srcTabId = e.dataTransfer?.getData('text/plain');
-    if (!srcTabId) return;
-    let srcPaneId = '';
-    activePaneId.subscribe((v) => srcPaneId = v)();
-    if (srcPaneId === targetPaneId) {
-      let currentTabs: EditorTab[] = [];
-      tabs.subscribe((v) => currentTabs = v)();
-      const srcIdx = currentTabs.findIndex((t) => t.id === srcTabId);
-      if (srcIdx >= 0 && srcIdx !== targetIdx) {
-        reorderTabs(srcPaneId, srcIdx, targetIdx);
+  function onDocMouseMove(e: MouseEvent) {
+    if (!dragTab) return;
+    if (!isDragging) {
+      const dx = Math.abs(e.clientX - dragStartX);
+      const dy = Math.abs(e.clientY - dragStartY);
+      if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
+        isDragging = true;
+        dragState.set({ type: 'tab', tabId: dragTab.id, paneId, title: dragTab.title });
+        console.log('[drag] started', dragTab.id, 'from pane', paneId);
       }
-    } else {
-      moveTab(srcPaneId, targetPaneId, srcTabId);
+      return;
     }
-    dragTabId = null;
-    dragOverIdx = null;
-    dragOverPaneId = null;
+    const zone = getDropZone(e.clientX);
+    activeDropZone.set(zone as any);
+  }
+
+  function onDocMouseUp(e: MouseEvent) {
+    document.removeEventListener('mousemove', onDocMouseMove);
+    document.removeEventListener('mouseup', onDocMouseUp);
+    if (isDragging && dragTab) {
+      const zone = getDropZone(e.clientX);
+      if (zone === 'left') {
+        const newId = splitPane(paneId, 'before');
+        moveTab(paneId, newId, dragTab.id);
+      } else if (zone === 'right') {
+        const newId = splitPane(paneId, 'after');
+        moveTab(paneId, newId, dragTab.id);
+      }
+      // center = no-op (context menu has move-to-pane)
+    }
+    dragTab = null;
+    dragStartX = 0;
+    dragStartY = 0;
+    isDragging = false;
+    dragState.set(null);
+    activeDropZone.set(null);
   }
 </script>
 
-<div class="tab-bar">
+<div class="tab-bar" on:auxclick={handleMiddleClick}>
   <div class="tab-scroll">
-    {#each $tabs as tab, i (tab.id)}
+    {#each paneTabs as tab, i (tab.id)}
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
       <div
         class="tab"
-        class:active={tab.id === $activeTabId}
+        class:active={tab.id === paneActiveTabId}
         class:drag-over={dragOverIdx === i}
+        data-tab-id={tab.id}
         on:click={() => selectTab(tab.id)}
-        on:mousedown={(e) => handleMiddleClick(e, tab.id)}
         on:contextmenu={(e) => openTabContext(e, tab)}
-        draggable="true"
-        on:dragstart={(e) => onDragStart(e, tab.id)}
-        on:dragover={(e) => onDragOver(e, i, $activePaneId)}
-        on:dragleave={onDragLeave}
-        on:drop={(e) => onDrop(e, i, $activePaneId)}
+        on:mousedown={(e) => onTabMouseDown(e, tab)}
       >
         <span class="tab-icon"><FileText size="12" /></span>
         {#if tab.datasourceId}
@@ -141,7 +185,7 @@
           <span class="tab-dirty" title="Unsaved changes">●</span>
         {:else}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <button class="tab-close" on:click={(e) => closeClick(e, tab.id)} tabindex="-1"><X size="12" /></button>
+          <button class="tab-close" on:click={(e) => closeClick(e, tab.id)} on:auxclick|preventDefault={(e) => e.button === 1 && closeTab(paneId, tab.id)} tabindex="-1"><X size="12" /></button>
         {/if}
       </div>
     {/each}
@@ -182,7 +226,10 @@
     position: relative;
     white-space: nowrap;
     flex-shrink: 0;
+    -webkit-user-drag: element;
     user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
     min-width: 0;
     transition: background 0.1s;
   }
@@ -227,16 +274,14 @@
     border: none;
     background: transparent;
     color: var(--text-muted);
-    padding: 1px;
+    padding: 2px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 2px;
-    opacity: 0;
     flex-shrink: 0;
   }
-  .tab:hover .tab-close { opacity: 1; }
   .tab-close:hover {
     color: var(--text);
     background: rgba(255,255,255,0.08);

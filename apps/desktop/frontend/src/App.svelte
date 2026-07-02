@@ -22,15 +22,17 @@
     activeTheme, activeBottomTab, isFullscreen, databaseExplorerVisible,
     addTabToPane, activePaneId, addRecentProject, sidebarWidth,
     restorePersistedState, persistState, initPersistence,
+    loadSettingsFromBackend,
   } from '$lib/stores';
   import { findTheme, applyAppTheme } from '$lib/themes';
-  import { getSettings } from '$lib/tauri';
+  import { getSettings, getSettingsPath } from '$lib/tauri';
   import type { ConnectionProfile } from '$lib/tauri';
 
   let historyVisible = false;
   let notificationsVisible = false;
   let diagnosticsVisible = false;
   let settingsVisible = false;
+  let settingsPath = '';
 
   $: if ($resultSets.length === 0 && $resultsPanelHeight > 0 && $activeBottomTab !== 'terminal') {
     resultsPanelHeight.set(0);
@@ -72,10 +74,13 @@
     loadDatasources();
     loadFolders();
 
+    // Load settings from backend JSON file (populates appSettings store)
+    await loadSettingsFromBackend();
+
     // Restore persisted state (theme, panes, layout)
     restorePersistedState();
 
-    // Apply theme from restored state or settings
+    // Apply theme
     let themeVal = '';
     const unsub = activeTheme.subscribe((v) => themeVal = v);
     unsub();
@@ -89,6 +94,11 @@
         applyAppTheme(findTheme(themeVal));
       } catch { /* defaults */ }
     }
+
+    // Load settings file path for display in Settings modal
+    try {
+      settingsPath = await getSettingsPath();
+    } catch { /* not available in dev mode */ }
 
     // Init auto-persistence on store changes
     initPersistence();
@@ -341,7 +351,7 @@
   onClose={handleCloseModal}
   editProfile={editProfile}
 />
-<SettingsModal open={settingsVisible} onClose={() => settingsVisible = false} />
+<SettingsModal open={settingsVisible} onClose={() => settingsVisible = false} {settingsPath} />
 <CommandPalette open={$commandPaletteOpen} onClose={() => commandPaletteOpen.set(false)} onSettings={() => settingsVisible = true} />
 <Toast />
 

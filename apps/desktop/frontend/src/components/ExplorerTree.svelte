@@ -1,10 +1,12 @@
 <script lang="ts">
   import { get } from 'svelte/store';
-  import { datasourceTrees, schemaCache, savedQueries, tabs, activeTabId, activeDatasourceId } from '$lib/stores';
+  import { datasourceTrees, schemaCache, savedQueries, tabs, activeTabId, activeDatasourceId, addTabToPane, activePaneId, dragState } from '$lib/stores';
   import { introspectNode, type ExplorerNode, type IntrospectKind } from '$lib/tauri';
   import NodeIcon from './NodeIcon.svelte';
-  import { ChevronRight, ChevronDown, Loader2, X, Pencil } from 'lucide-svelte';
+  import { ChevronRight, ChevronDown, Loader2, X, Pencil, Copy, ExternalLink } from 'lucide-svelte';
   import { deleteQuery, renameQuery } from '$lib/stores';
+  import ContextMenu from './ContextMenu.svelte';
+  import type { ContextMenuItem } from './ContextMenu.svelte';
 
   export let nodes: ExplorerNode[] = [];
   export let depth = 0;
@@ -13,6 +15,8 @@
   let savedQueriesExpanded = false;
   let renamingId: string | null = null;
   let renameValue = '';
+  let contextMenu: ContextMenu;
+  let nodeContextMenu: ContextMenu;
 
   function loadQuery(q: { id: string; sql: string; datasourceId: string }) {
     tabs.update((ts) =>
@@ -21,6 +25,15 @@
       ),
     );
     activeDatasourceId.set(q.datasourceId);
+  }
+
+  function openQueryInNewTab(q: { id: string; sql: string; datasourceId: string; name: string }) {
+    const pid = get(activePaneId);
+    addTabToPane(pid, { title: q.name, sql: q.sql, datasourceId: q.datasourceId });
+  }
+
+  function copySql(sql: string) {
+    navigator.clipboard.writeText(sql);
   }
 
   function startRename(id: string, currentName: string) {
@@ -38,6 +51,50 @@
   function handleDelete(e: MouseEvent, id: string) {
     e.stopPropagation();
     deleteQuery(id);
+  }
+
+  function openQueryContext(e: MouseEvent, q: { id: string; sql: string; datasourceId: string; name: string }) {
+    e.preventDefault();
+    e.stopPropagation();
+    const items: ContextMenuItem[] = [
+      { label: 'Open in Current Tab', action: () => loadQuery(q) },
+      { label: 'Open in New Tab', action: () => openQueryInNewTab(q) },
+      { separator: true },
+      { label: 'Copy SQL', action: () => copySql(q.sql) },
+      { separator: true },
+      { label: 'Rename', action: () => startRename(q.id, q.name) },
+      { label: 'Delete', danger: true, action: () => deleteQuery(q.id) },
+    ];
+    contextMenu.open(e.clientX, e.clientY, items);
+  }
+
+  function onQueryDragStart(e: DragEvent, q: { id: string; sql: string; datasourceId: string; name: string }) {
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/plain', q.sql);
+      e.dataTransfer.setData('text/sql', q.sql);
+      dragState.set({ type: 'saved-query', sql: q.sql, title: q.name });
+    }
+  }
+
+  function onQueryDragEnd() {
+    dragState.set(null);
+  }
+
+  function openNodeContext(e: MouseEvent, node: ExplorerNode) {
+    e.preventDefault();
+    e.stopPropagation();
+    const items: ContextMenuItem[] = [
+      { label: `Copy Name`, action: () => navigator.clipboard.writeText(node.name) },
+    ];
+    if (node.id) {
+      items.push({ label: 'Copy Path', action: () => navigator.clipboard.writeText(node.id) });
+    }
+    if (isExpandable(node.kind) && depth > 0) {
+      items.push({ separator: true });
+      items.push({ label: node.expanded ? 'Collapse' : 'Expand', action: () => handleToggle(node) });
+    }
+    nodeContextMenu.open(e.clientX, e.clientY, items);
   }
 
   $: profileQueries = profileId
@@ -183,6 +240,10 @@
               style="padding-left: 24px"
               on:click={() => loadQuery(q)}
               on:keydown={(e) => { if (e.key === 'Enter') { loadQuery(q); } }}
+              on:contextmenu={(e) => openQueryContext(e, q)}
+              draggable="true"
+              on:dragstart={(e) => onQueryDragStart(e, q)}
+              on:dragend={onQueryDragEnd}
               title={q.sql.length > 80 ? q.sql.slice(0, 80) + '…' : q.sql}
             >
               <span class="tree-glyph"><NodeIcon kind="SavedQuery" expanded={false} /></span>
@@ -202,6 +263,7 @@
               <span class="sq-actions">
                 <button class="sq-btn" on:click|stopPropagation={() => startRename(q.id, q.name)} title="Rename"><Pencil size="10" /></button>
                 <button class="sq-btn" on:click={(e) => handleDelete(e, q.id)} title="Delete"><X size="10" /></button>
+                <button class="sq-btn" on:click|stopPropagation={() => copySql(q.sql)} title="Copy SQL"><Copy size="10" /></button>
               </span>
             </div>
           {/each}
@@ -223,6 +285,7 @@
         style="padding-left: {8 + depth * 16}px"
         on:click={() => handleToggle(node)}
         on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggle(node); } }}
+        on:contextmenu={(e) => openNodeContext(e, node)}
       >
         {#if node.loading}
           <span class="tree-glyph"><Loader2 size="11" class="spin" /></span>
@@ -246,6 +309,9 @@
     </li>
   {/each}
 </ul>
+
+<ContextMenu bind:this={contextMenu} />
+<ContextMenu bind:this={nodeContextMenu} />
 
 <style>
   .tree {

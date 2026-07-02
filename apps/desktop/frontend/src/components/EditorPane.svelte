@@ -1,9 +1,12 @@
 <script lang="ts">
-  import { activeTab, statusText, saveQuery, savedQueries, activePaneId, updateTabSql, updateTabDatasource, pushNavigationLocation } from '$lib/stores';
+  import { splitPanes, statusText, saveQuery, savedQueries, activePaneId, updateTabSql, updateTabDatasource, pushNavigationLocation, addTabToPane, dragState } from '$lib/stores';
+  import type { EditorTab } from '$lib/stores';
   import EditorTabs from './EditorTabs.svelte';
   import TabToolbar from './TabToolbar.svelte';
   import MonacoEditor from './MonacoEditor.svelte';
-  import { Play, Save } from 'lucide-svelte';
+  import ContextMenu from './ContextMenu.svelte';
+  import type { ContextMenuItem } from './ContextMenu.svelte';
+  import { Play, Save, FilePlus, Code, Copy } from 'lucide-svelte';
   import { notify } from '../lib/toast';
 
   export let paneId: string = '';
@@ -11,8 +14,13 @@
   let runFn: (() => void) | null = null;
   let saveDialogOpen = false;
   let saveQueryName = '';
+  let contextMenu: ContextMenu;
+  let editorHostEl: HTMLDivElement | null = null;
+  let isDragOver = false;
 
-  $: paneTab = $activeTab;
+  // Resolve this pane's active tab from the splitPanes store
+  $: pane = $splitPanes.find(p => p.id === paneId);
+  $: paneTab = pane?.tabs.find(t => t.id === pane?.activeTabId) ?? null;
 
   function handleSqlChange(sql: string) {
     const tab = paneTab;
@@ -59,10 +67,53 @@
     if (!tab) return;
     updateTabDatasource(paneId, tab.id, datasourceId, schema);
   }
+
+  function openEditorContext(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const tab = paneTab;
+    const items: ContextMenuItem[] = [
+      { label: 'New Query Tab', action: () => addTabToPane(paneId) },
+      { separator: true },
+      { label: 'Run Query', disabled: !tab?.datasourceId, action: () => handleRun() },
+      { separator: true },
+      { label: 'Save Query', action: () => openSaveDialog() },
+      { label: 'Format Document', action: () => window.dispatchEvent(new CustomEvent('format-document')) },
+      { separator: true },
+      { label: 'Copy All SQL', action: () => { if (tab) navigator.clipboard.writeText(tab.sql); } },
+    ];
+    contextMenu.open(e.clientX, e.clientY, items);
+  }
+
+  function onDragOver(e: DragEvent) {
+    if (e.dataTransfer?.types.includes('text/sql')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      isDragOver = true;
+    }
+  }
+
+  function onDragLeave(e: DragEvent) {
+    if (editorHostEl && !editorHostEl.contains(e.relatedTarget as Node)) {
+      isDragOver = false;
+    }
+  }
+
+  function onDrop(e: DragEvent) {
+    e.preventDefault();
+    isDragOver = false;
+    const sql = e.dataTransfer?.getData('text/sql');
+    if (sql) {
+      addTabToPane(paneId, { sql, title: 'Imported Query' });
+      notify('Query imported from saved queries', 'info');
+    }
+    dragState.set(null);
+  }
 </script>
 
-<section class="editor-pane" on:focus={handleTabFocus}>
-  <EditorTabs />
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<section class="editor-pane" on:focus={handleTabFocus} on:contextmenu={(e) => openEditorContext(e)}>
+  <EditorTabs {paneId} />
   <div class="toolbar">
     {#if paneTab}
       <TabToolbar
@@ -82,6 +133,9 @@
         <Play size="11" /> Run
       </button>
     {/if}
+    <button class="toolbar-new-tab" on:click={() => addTabToPane(paneId)} title="New Tab (Ctrl+N)">
+      <FilePlus size="11" />
+    </button>
   </div>
 
   {#if saveDialogOpen}
@@ -104,7 +158,15 @@
       </div>
     </div>
   {/if}
-  <div class="editor-host">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="editor-host"
+    class:drag-over={isDragOver}
+    bind:this={editorHostEl}
+    on:dragover={onDragOver}
+    on:dragleave={onDragLeave}
+    on:drop={onDrop}
+  >
     {#if paneTab}
       <MonacoEditor
         sql={paneTab.sql}
@@ -114,10 +176,18 @@
         onReady={(fn) => runFn = fn}
       />
     {:else}
-      <div class="editor-empty">Open a query tab or select a file</div>
+      <div class="editor-empty">
+        <div class="empty-content">
+          <span class="empty-icon"><Code size="32" /></span>
+          <span>Open a query tab or drag a saved query here</span>
+          <button class="empty-btn" on:click={() => addTabToPane(paneId)}>New Query Tab</button>
+        </div>
+      </div>
     {/if}
   </div>
 </section>
+
+<ContextMenu bind:this={contextMenu} />
 
 <style>
   .editor-pane {
@@ -153,9 +223,26 @@
     color: var(--text-muted);
     padding-left: 8px;
   }
+  .toolbar-new-tab {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+    margin-left: 4px;
+  }
+  .toolbar-new-tab:hover { color: var(--text); background: var(--bg-hover); border-color: var(--border); }
   .editor-host {
     flex: 1;
     overflow: hidden;
+    position: relative;
+  }
+  .editor-host.drag-over {
+    outline: 2px dashed var(--accent);
+    outline-offset: -2px;
   }
   .toolbar-save {
     display: flex;
@@ -241,4 +328,22 @@
     color: var(--text-faint);
     font-size: 13px;
   }
+  .empty-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    opacity: 0.7;
+  }
+  .empty-icon { opacity: 0.4; }
+  .empty-btn {
+    padding: 6px 16px;
+    font-size: 12px;
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .empty-btn:hover { opacity: 0.9; }
 </style>

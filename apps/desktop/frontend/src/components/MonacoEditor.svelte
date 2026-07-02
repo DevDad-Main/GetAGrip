@@ -6,7 +6,7 @@
   import {
     resultSets, activeResultSetId, statusText, diagnostics as diagStore,
     nextResultSetId, resultsPanelHeight, activeTheme, type ResultSet,
-    metadataRefreshed, jumpToPosition,
+    metadataRefreshed, jumpToPosition, appSettings,
   } from '$lib/stores';
   import CustomSuggestWidget from './CustomSuggestWidget.svelte';
 
@@ -125,6 +125,17 @@
 
   $: if (editor && $activeTheme) {
     monaco.editor.setTheme($activeTheme);
+  }
+
+  $: if (editor && $appSettings) {
+    editor.updateOptions({
+      fontSize: $appSettings.fontSize,
+      fontFamily: $appSettings.fontFamily,
+      wordWrap: $appSettings.wordWrap ? 'on' : 'off',
+      minimap: { enabled: $appSettings.minimap, scale: 1 },
+      lineNumbers: $appSettings.lineNumbers ? 'on' : 'off',
+      tabSize: $appSettings.tabSize,
+    });
   }
 
   // Jump to diagnostics position
@@ -460,20 +471,21 @@
   onMount(() => {
     if (!containerEl) return;
 
+    const s = $appSettings;
     editor = monaco.editor.create(containerEl, {
       value: sql,
       language: 'sql',
       theme: 'darcula',
-      minimap: { enabled: true, scale: 1 },
-      fontSize: 13,
-      fontFamily: 'JetBrains Mono, Fira Code, Menlo, Consolas, monospace',
+      minimap: { enabled: s.minimap, scale: 1 },
+      fontSize: s.fontSize,
+      fontFamily: s.fontFamily,
       fontLigatures: true,
-      lineNumbers: 'on',
+      lineNumbers: s.lineNumbers ? 'on' : 'off',
       lineNumbersMinChars: 3,
       glyphMargin: false,
       folding: true,
       scrollBeyondLastLine: false,
-      wordWrap: 'on',
+      wordWrap: s.wordWrap ? 'on' : 'off',
       renderLineHighlight: 'line',
       smoothScrolling: true,
       cursorBlinking: 'smooth',

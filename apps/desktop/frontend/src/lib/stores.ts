@@ -52,7 +52,7 @@ export interface SplitPane {
 export type SplitDirection = 'horizontal' | 'vertical';
 
 export const splitPanes = writable<SplitPane[]>([
-  { id: 'pane-main', tabs: [{ id: 'q1', title: 'Query 1', sql: '', datasourceId: null, schema: null }], activeTabId: 'q1', flex: 1 },
+  { id: 'pane-main', tabs: [{ id: 'q1', title: 'untitled-1', sql: '', datasourceId: null, schema: null }], activeTabId: 'q1', flex: 1 },
 ]);
 export const activePaneId = writable<string>('pane-main');
 export const splitDirection = writable<SplitDirection>('horizontal');
@@ -103,9 +103,10 @@ export function nextTabId(): string {
 
 export function addTabToPane(paneId: string, tab?: Partial<EditorTab>): string {
   const id = nextTabId();
+  const num = id.replace('q', '');
   const newTab: EditorTab = {
     id,
-    title: tab?.title ?? `Query ${id}`,
+    title: tab?.title ?? `untitled-${num}`,
     sql: tab?.sql ?? '',
     datasourceId: tab?.datasourceId ?? null,
     schema: tab?.schema ?? null,
@@ -119,25 +120,40 @@ export function addTabToPane(paneId: string, tab?: Partial<EditorTab>): string {
   return id;
 }
 
+function ensureDefaultTab(panes: SplitPane[]): SplitPane[] {
+  const hasAnyTab = panes.some((p) => p.tabs.length > 0);
+  if (!hasAnyTab) {
+    _tabCounter = 1;
+    const defaultTab: EditorTab = { id: 'q1', title: 'untitled-1', sql: '', datasourceId: null, schema: null, filePath: null, isDirty: false };
+    activePaneId.set('pane-main');
+    activeTabId.set('q1');
+    return [{ id: 'pane-main', tabs: [defaultTab], activeTabId: 'q1', flex: 1 }];
+  }
+  return panes;
+}
+
 export function closeTab(paneId: string, tabId: string): void {
-  splitPanes.update((panes) =>
-    panes.map((p) => {
-      if (p.id !== paneId) return p;
-      if (p.tabs.length <= 1) return p;
-      const idx = p.tabs.findIndex((t) => t.id === tabId);
-      const newTabs = p.tabs.filter((t) => t.id !== tabId);
-      let newActive = p.activeTabId;
-      if (p.activeTabId === tabId) {
-        newActive = newTabs[Math.min(idx, newTabs.length - 1)]?.id ?? newTabs[0]?.id ?? null;
+  splitPanes.update((panes) => {
+    const pane = panes.find((p) => p.id === paneId);
+    if (!pane || pane.tabs.length === 0) return panes;
+    const newTabs = pane.tabs.filter((t) => t.id !== tabId);
+    // If pane becomes empty and there are other panes, close the pane
+    if (newTabs.length === 0 && panes.length > 1) {
+      if (get(activePaneId) === paneId) {
+        const remaining = panes.filter((p) => p.id !== paneId);
+        activePaneId.set(remaining[0].id);
       }
-      if (newActive !== null) {
-        _syncing = true;
-        activeTabId.set(newActive);
-        _syncing = false;
-      }
-      return { ...p, tabs: newTabs, activeTabId: newActive };
-    }),
-  );
+      const result = panes.filter((p) => p.id !== paneId);
+      return ensureDefaultTab(result);
+    }
+    let newActive = pane.activeTabId;
+    if (pane.activeTabId === tabId) {
+      const idx = pane.tabs.findIndex((t) => t.id === tabId);
+      newActive = newTabs[Math.min(idx, newTabs.length - 1)]?.id ?? newTabs[0]?.id ?? null;
+    }
+    const result = panes.map((p) => (p.id === paneId ? { ...p, tabs: newTabs, activeTabId: newActive } : p));
+    return ensureDefaultTab(result);
+  });
 }
 
 export function closeAllTabs(paneId: string): void {
@@ -147,6 +163,8 @@ export function closeAllTabs(paneId: string): void {
       return { ...p, tabs: [], activeTabId: null };
     }),
   );
+  // Restore default if all panes are now empty
+  splitPanes.update((panes) => ensureDefaultTab(panes));
 }
 
 export function closeOtherTabs(paneId: string, tabId: string): void {
@@ -160,21 +178,29 @@ export function closeOtherTabs(paneId: string, tabId: string): void {
 }
 
 export function moveTab(fromPaneId: string, toPaneId: string, tabId: string): void {
+  if (fromPaneId === toPaneId) return;
   let movedTab: EditorTab | undefined;
-  splitPanes.update((panes) =>
-    panes.map((p) => {
+  let fromPaneEmpty = false;
+  splitPanes.update((panes) => {
+    const updated = panes.map((p) => {
       if (p.id === fromPaneId) {
         const tab = p.tabs.find((t) => t.id === tabId);
         if (tab) movedTab = tab;
         const newTabs = p.tabs.filter((t) => t.id !== tabId);
+        fromPaneEmpty = newTabs.length === 0;
         const newActive = p.activeTabId === tabId
           ? newTabs[Math.min(p.tabs.indexOf(p.tabs.find((t) => t.id === tabId)!), newTabs.length - 1)]?.id ?? newTabs[0]?.id ?? null
           : p.activeTabId;
         return { ...p, tabs: newTabs, activeTabId: newActive };
       }
       return p;
-    }),
-  );
+    });
+    // If source pane is now empty and there are other panes, remove it
+    if (fromPaneEmpty && updated.length > 1) {
+      return updated.filter((p) => p.id !== fromPaneId);
+    }
+    return updated;
+  });
   if (movedTab) {
     splitPanes.update((panes) =>
       panes.map((p) => (p.id === toPaneId ? { ...p, tabs: [...p.tabs, movedTab!], activeTabId: tabId } : p)),
@@ -233,18 +259,21 @@ export function updateTabTitle(paneId: string, tabId: string, title: string): vo
 
 // ---- Split pane management -------------------------------------------------
 
-export function splitPane(paneId: string): string {
+export function splitPane(paneId: string, side?: 'before' | 'after'): string {
   const newId = `pane-${Date.now()}`;
   splitPanes.update((panes) => {
-    const src = panes.find((p) => p.id === paneId);
-    if (!src) return panes;
+    const srcIdx = panes.findIndex((p) => p.id === paneId);
+    if (srcIdx === -1) return panes;
     const newPane: SplitPane = {
       id: newId,
       tabs: [],
       activeTabId: null,
       flex: 1,
     };
-    return [...panes, newPane];
+    const insertAt = side === 'before' ? srcIdx : srcIdx + 1;
+    const copy = [...panes];
+    copy.splice(insertAt, 0, newPane);
+    return copy;
   });
   activePaneId.set(newId);
   return newId;
@@ -253,12 +282,12 @@ export function splitPane(paneId: string): string {
 export function closePane(paneId: string): void {
   const currentActive = get(activePaneId);
   splitPanes.update((panes) => {
-    if (panes.length <= 1) return panes;
+    if (panes.length <= 1) return ensureDefaultTab(panes);
     const remaining = panes.filter((p) => p.id !== paneId);
     if (remaining.length > 0 && currentActive === paneId) {
       activePaneId.set(remaining[0].id);
     }
-    return remaining;
+    return ensureDefaultTab(remaining);
   });
 }
 
@@ -398,9 +427,87 @@ export const availableShells = writable<Record<string, string>>({});
 export const activeTheme = writable<string>('darcula');
 export const isFullscreen = writable<boolean>(false);
 
+// ---- Settings (synced with JSON settings file) -----------------------------
+
+export interface AppSettings {
+  fontSize: number;
+  fontFamily: string;
+  wordWrap: boolean;
+  minimap: boolean;
+  tabSize: number;
+  lineNumbers: boolean;
+  autoSave: boolean;
+  autoSaveDelay: number;
+  formatOnSave: boolean;
+  theme: string;
+  sidebarWidth: number;
+}
+
+export const defaultSettings: AppSettings = {
+  fontSize: 13,
+  fontFamily: 'JetBrains Mono, Fira Code, Menlo, Consolas, monospace',
+  wordWrap: true,
+  minimap: true,
+  tabSize: 4,
+  lineNumbers: true,
+  autoSave: true,
+  autoSaveDelay: 30,
+  formatOnSave: false,
+  theme: 'darcula',
+  sidebarWidth: 260,
+};
+
+export const appSettings = writable<AppSettings>({ ...defaultSettings });
+
+export async function loadSettingsFromBackend(): Promise<void> {
+  try {
+    const raw = await tauri.getSettings();
+    const merged: AppSettings = { ...defaultSettings };
+    for (const key of Object.keys(raw)) {
+      const k = key as keyof AppSettings;
+      if (k in merged) {
+        const v = (raw as any)[key];
+        if (typeof v === typeof merged[k]) {
+          (merged as any)[k] = v;
+        }
+      }
+    }
+    appSettings.set(merged);
+    activeTheme.set(merged.theme);
+    sidebarWidth.set(merged.sidebarWidth);
+  } catch {
+    // fall back to defaults
+  }
+}
+
+export async function updateSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]): Promise<void> {
+  appSettings.update((s) => ({ ...s, [key]: value }));
+  if (key === 'theme') activeTheme.set(value as string);
+  if (key === 'sidebarWidth') sidebarWidth.set(value as number);
+  try {
+    await tauri.setSetting(key, value as any);
+  } catch {
+    // silent — setting saved locally at least
+  }
+}
+
 export type ModalKind = 'connect' | 'datasource' | 'none';
 export const activeModal = writable<ModalKind>('none');
 export const modalPayload = writable<unknown>(null);
+
+// ---- Drag & Drop state -----------------------------------------------------
+
+export interface DragPayload {
+  type: 'tab' | 'saved-query' | 'file';
+  tabId?: string;
+  paneId?: string;
+  sql?: string;
+  title?: string;
+}
+export const dragState = writable<DragPayload | null>(null);
+
+export type DropZone = 'left' | 'right' | 'top' | 'bottom' | 'center' | null;
+export const activeDropZone = writable<DropZone>(null);
 
 // ---- Recent projects -------------------------------------------------------
 
@@ -820,7 +927,7 @@ export function resetAll(): void {
   datasourceStates.set({});
   datasourceTrees.set({});
   folders.set([]);
-  splitPanes.set([{ id: 'pane-main', tabs: [{ id: 'q1', title: 'Query 1', sql: '', datasourceId: null, schema: null }], activeTabId: 'q1', flex: 1 }]);
+  splitPanes.set([{ id: 'pane-main', tabs: [{ id: 'q1', title: 'untitled-1', sql: '', datasourceId: null, schema: null }], activeTabId: 'q1', flex: 1 }]);
   activePaneId.set('pane-main');
   activeTabId.set('q1');
   resultSets.set([]);

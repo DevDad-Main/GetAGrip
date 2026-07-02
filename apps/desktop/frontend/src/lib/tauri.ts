@@ -166,6 +166,10 @@ export async function setSetting(key: string, value: unknown): Promise<void> {
   return invoke<void>('set_setting', { key, value });
 }
 
+export async function getSettingsPath(): Promise<string> {
+  return invoke<string>('get_settings_path');
+}
+
 // ---- LSP server management -------------------------------------------------
 
 export interface LspServerInfo {

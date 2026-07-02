@@ -1,59 +1,44 @@
 <script lang="ts">
-  import { getSettings, setSetting } from '$lib/tauri';
-  import { activeTheme } from '$lib/stores';
+  import { appSettings, updateSetting } from '$lib/stores';
   import { THEMES, findTheme, applyAppTheme, type ThemeDef } from '$lib/themes';
   import { onMount } from 'svelte';
   import { X } from 'lucide-svelte';
-  import { notify } from '../lib/toast';
-  import LspSettingsModal from './LspSettingsModal.svelte';
 
   export let open = false;
   export let onClose: () => void;
+  export let settingsPath = '';
 
   let activeTab = 'editor';
-  let loaded = false;
-  let showLspSettings = false;
 
-  let fontSize = 13;
-  let fontFamily = 'JetBrains Mono, Fira Code, Menlo, Consolas, monospace';
-  let theme = 'darcula';
-  let minimap = true;
-  let wordWrap = true;
-
-  let previewOnHover: string | null = null;
-
-  onMount(async () => {
-    try {
-      const settings = await getSettings();
-      fontSize = (settings.fontSize as number) ?? 13;
-      fontFamily = (settings.fontFamily as string) ?? 'JetBrains Mono, Fira Code, Menlo, Consolas, monospace';
-      theme = (settings.theme as string) ?? 'darcula';
-      minimap = (settings.minimap as boolean) ?? true;
-      wordWrap = (settings.wordWrap as boolean) ?? true;
-    } catch { /* defaults */ }
-    loaded = true;
-  });
-
-  async function save(key: string, value: unknown) {
-    try {
-      await setSetting(key, value);
-      notify(`${key} updated`, 'success');
-    } catch {
-      notify('Failed to save setting', 'error');
-    }
+  function handleRange(key: 'fontSize' | 'autoSaveDelay', e: Event) {
+    updateSetting(key, parseInt((e.target as HTMLInputElement).value));
   }
 
-  // Live preview: apply theme CSS vars immediately
+  function handleText(key: 'fontFamily', e: Event) {
+    updateSetting(key, (e.target as HTMLInputElement).value);
+  }
+
+  function handleCheckbox(key: 'wordWrap' | 'minimap' | 'lineNumbers' | 'formatOnSave' | 'autoSave', e: Event) {
+    updateSetting(key, (e.target as HTMLInputElement).checked);
+  }
+
+  function handleSelect(e: Event) {
+    updateSetting('tabSize', parseInt((e.target as HTMLSelectElement).value));
+  }
+
   function previewTheme(t: ThemeDef) {
     applyAppTheme(t);
   }
 
   function applyTheme(value: string) {
-    theme = value;
     const t = findTheme(value);
     applyAppTheme(t);
-    activeTheme.set(value);
-    save('theme', value);
+    updateSetting('theme', value);
+  }
+
+  function restoreThemePreview() {
+    const current = $appSettings.theme;
+    previewTheme(THEMES.find((x) => x.value === current) ?? null);
   }
 </script>
 
@@ -66,44 +51,71 @@
         <span>Settings</span>
         <button class="settings-close" on:click={onClose}><X size="14" /></button>
       </div>
-      <LspSettingsModal open={showLspSettings} onClose={() => { showLspSettings = false; onClose(); }} />
       <div class="settings-body">
         <nav class="settings-tabs">
           <button class:active={activeTab === 'editor'} on:click={() => activeTab = 'editor'}>Editor</button>
           <button class:active={activeTab === 'theme'} on:click={() => activeTab = 'theme'}>Theme</button>
           <button class:active={activeTab === 'shortcuts'} on:click={() => activeTab = 'shortcuts'}>Shortcuts</button>
-          <button class:active={activeTab === 'lsp'} on:click={() => activeTab = 'lsp'}>LSP</button>
+          <button class:active={activeTab === 'general'} on:click={() => activeTab = 'general'}>General</button>
         </nav>
 
         <div class="settings-content">
-          {#if !loaded}
-            <div class="loading">Loading…</div>
-          {:else if activeTab === 'editor'}
+          {#if activeTab === 'editor'}
             <div class="setting-group">
-              <h3>Editor</h3>
+              <h3>Font</h3>
               <label class="setting">
                 <span>Font Size</span>
                 <div class="setting-row">
-                  <input type="range" min="10" max="24" bind:value={fontSize} on:change={() => save('fontSize', fontSize)} />
-                  <span class="setting-val">{fontSize}px</span>
+                  <input type="range" min="10" max="24" value={$appSettings.fontSize} on:input={(e) => handleRange('fontSize', e)} />
+                  <span class="setting-val">{$appSettings.fontSize}px</span>
                 </div>
               </label>
               <label class="setting">
                 <span>Font Family</span>
-                <input type="text" bind:value={fontFamily} on:change={() => save('fontFamily', fontFamily)} />
+                <input type="text" value={$appSettings.fontFamily} on:change={(e) => handleText('fontFamily', e)} />
               </label>
+            </div>
+            <div class="setting-group">
+              <h3>Layout</h3>
               <label class="setting">
                 <span>Word Wrap</span>
                 <div class="setting-row">
-                  <input type="checkbox" bind:checked={wordWrap} on:change={() => save('wordWrap', wordWrap)} />
-                  <span>{wordWrap ? 'On' : 'Off'}</span>
+                  <input type="checkbox" checked={$appSettings.wordWrap} on:change={(e) => handleCheckbox('wordWrap', e)} />
+                  <span>{$appSettings.wordWrap ? 'On' : 'Off'}</span>
                 </div>
               </label>
               <label class="setting">
                 <span>Minimap</span>
                 <div class="setting-row">
-                  <input type="checkbox" bind:checked={minimap} on:change={() => save('minimap', minimap)} />
-                  <span>{minimap ? 'Visible' : 'Hidden'}</span>
+                  <input type="checkbox" checked={$appSettings.minimap} on:change={(e) => handleCheckbox('minimap', e)} />
+                  <span>{$appSettings.minimap ? 'Visible' : 'Hidden'}</span>
+                </div>
+              </label>
+              <label class="setting">
+                <span>Line Numbers</span>
+                <div class="setting-row">
+                  <input type="checkbox" checked={$appSettings.lineNumbers} on:change={(e) => handleCheckbox('lineNumbers', e)} />
+                  <span>{$appSettings.lineNumbers ? 'On' : 'Off'}</span>
+                </div>
+              </label>
+              <label class="setting">
+                <span>Tab Size</span>
+                <div class="setting-row">
+                  <select value={$appSettings.tabSize} on:change={handleSelect}>
+                    {#each [2, 4, 6, 8] as n}
+                      <option value={n}>{n} spaces</option>
+                    {/each}
+                  </select>
+                </div>
+              </label>
+            </div>
+            <div class="setting-group">
+              <h3>Formatting</h3>
+              <label class="setting">
+                <span>Format on Save</span>
+                <div class="setting-row">
+                  <input type="checkbox" checked={$appSettings.formatOnSave} on:change={(e) => handleCheckbox('formatOnSave', e)} />
+                  <span>{$appSettings.formatOnSave ? 'On' : 'Off'}</span>
                 </div>
               </label>
             </div>
@@ -115,18 +127,18 @@
                 {#each THEMES as t}
                   <button
                     class="theme-card"
-                    class:selected={theme === t.value}
+                    class:selected={$appSettings.theme === t.value}
                     on:click={() => applyTheme(t.value)}
                     on:mouseenter={() => previewTheme(t)}
-                    on:mouseleave={() => { if (theme !== t.value) previewTheme(THEMES.find((x) => x.value === theme) ?? null); }}
-                    style="background: {t.bg}; color: {t.fg}; border-color: {theme === t.value ? t.accent : 'var(--border)'};"
+                    on:mouseleave={restoreThemePreview}
+                    style="background: {t.bg}; color: {t.fg}; border-color: {$appSettings.theme === t.value ? t.accent : 'var(--border)'};"
                   >
                     <div class="theme-preview">
                       <span class="theme-accent" style="background: {t.accent};"></span>
                       <span class="theme-text" style="color: {t.fg};">{t.label}</span>
                     </div>
                     <span class="theme-name">{t.label}</span>
-                    {#if theme === t.value}
+                    {#if $appSettings.theme === t.value}
                       <span class="theme-check" style="color: {t.accent};">✓</span>
                     {/if}
                   </button>
@@ -139,7 +151,7 @@
               <h3>Keyboard Shortcuts</h3>
               <div class="shortcut-list">
                 <div class="shortcut"><kbd>Ctrl+Enter</kbd> Run query</div>
-                <div class="shortcut"><kbd>Ctrl+K / Ctrl+Shift+A</kbd> Command palette</div>
+                <div class="shortcut"><kbd>Ctrl+K</kbd> Command palette</div>
                 <div class="shortcut"><kbd>Ctrl+B</kbd> Toggle sidebar</div>
                 <div class="shortcut"><kbd>Ctrl+H</kbd> Toggle history</div>
                 <div class="shortcut"><kbd>Ctrl+J</kbd> Toggle results</div>
@@ -147,20 +159,43 @@
                 <div class="shortcut"><kbd>Ctrl+,</kbd> Settings</div>
                 <div class="shortcut"><kbd>Ctrl+N</kbd> New query tab</div>
                 <div class="shortcut"><kbd>Ctrl+W</kbd> Close tab</div>
+                <div class="shortcut"><kbd>Ctrl+S</kbd> Save</div>
+                <div class="shortcut"><kbd>Ctrl+O</kbd> Open file</div>
+                <div class="shortcut"><kbd>F11</kbd> Toggle fullscreen</div>
+                <div class="shortcut"><kbd>Alt+←/→</kbd> Navigate back/forward</div>
               </div>
             </div>
 
-          {:else if activeTab === 'lsp'}
+          {:else if activeTab === 'general'}
             <div class="setting-group">
-              <h3>Language Servers</h3>
-              <p class="lsp-tab-info">
-                Language servers provide enhanced autocompletion and diagnostics.
-                Configure LSP binaries for each database driver below.
-              </p>
-              <button class="primary lsp-open-btn" on:click={() => showLspSettings = true}>
-                Open LSP Settings
-              </button>
+              <h3>Auto Save</h3>
+              <label class="setting">
+                <span>Enable Auto Save</span>
+                <div class="setting-row">
+                  <input type="checkbox" checked={$appSettings.autoSave} on:change={(e) => handleCheckbox('autoSave', e)} />
+                  <span>{$appSettings.autoSave ? 'On' : 'Off'}</span>
+                </div>
+              </label>
+              {#if $appSettings.autoSave}
+                <label class="setting">
+                  <span>Auto Save Delay (seconds)</span>
+                  <div class="setting-row">
+                    <input type="range" min="5" max="300" step="5" value={$appSettings.autoSaveDelay} on:input={(e) => handleRange('autoSaveDelay', e)} />
+                    <span class="setting-val">{$appSettings.autoSaveDelay}s</span>
+                  </div>
+                </label>
+              {/if}
             </div>
+
+            {#if settingsPath}
+              <div class="setting-group">
+                <h3>Settings File</h3>
+                <p class="settings-file-info">
+                  Settings are stored in a JSON file. You can edit it directly with any text editor.
+                </p>
+                <code class="settings-path">{settingsPath}</code>
+              </div>
+            {/if}
           {/if}
         </div>
       </div>
@@ -176,7 +211,7 @@
   .settings {
     background: var(--bg-elev); border: 1px solid var(--border-strong);
     border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
-    width: 680px; max-width: 92vw; height: 460px; max-height: 80vh;
+    width: 680px; max-width: 92vw; height: 520px; max-height: 85vh;
     display: flex; flex-direction: column;
   }
   .settings-header {
@@ -206,7 +241,6 @@
   .settings-content {
     flex: 1; overflow-y: auto; padding: 16px 24px;
   }
-  .loading { text-align: center; color: var(--text-faint); padding: 40px; }
   .setting-group h3 {
     font-size: 11px; font-weight: 600; color: var(--text-muted);
     text-transform: uppercase; letter-spacing: 1px; margin: 0 0 14px 0;
@@ -218,7 +252,10 @@
   .setting > span { font-size: 12px; color: var(--text); font-weight: 500; }
   .setting-row { display: flex; align-items: center; gap: 10px; }
   .setting-val { font-size: 11px; color: var(--text-muted); min-width: 32px; }
-  .setting input[type="text"] { max-width: 320px; }
+  .setting select {
+    padding: 4px 8px; font-size: 12px; background: var(--bg-input);
+    border: 1px solid var(--border); color: var(--text); border-radius: 3px;
+  }
   .theme-grid {
     display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
   }
@@ -246,10 +283,13 @@
     border-radius: 3px; color: var(--text-muted); font-family: var(--font-mono);
     min-width: 130px; text-align: center;
   }
-  .lsp-tab-info {
-    font-size: 11px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5;
+  .settings-file-info {
+    font-size: 11px; color: var(--text-muted); margin-bottom: 8px; line-height: 1.5;
   }
-  .lsp-open-btn {
-    font-size: 12px; padding: 6px 16px;
+  .settings-path {
+    display: block; padding: 8px 10px; font-size: 11px;
+    background: var(--bg-input); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text-muted); word-break: break-all;
+    font-family: var(--font-mono);
   }
 </style>

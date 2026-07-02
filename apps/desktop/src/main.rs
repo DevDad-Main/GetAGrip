@@ -31,7 +31,7 @@ use commands::intelligence::{
 use commands::introspect::introspect;
 use commands::lsp::{get_lsp_servers, install_lsp, set_lsp_path};
 use commands::query::execute_query;
-use commands::settings::{get_settings, set_setting, SettingsState};
+use commands::settings::{get_settings, get_settings_path, set_setting, SettingsState};
 use commands::util::{detect_available_shells, run_command};
 use commands::pty::{start_pty, stop_pty, pty_input, pty_resize, read_pty_output, log_debug};
 
@@ -107,7 +107,13 @@ fn main() {
             };
 
             // Create SettingsState early so LSP discovery can check user paths
-            let settings_state = SettingsState::new();
+            let app_config = app
+                .path()
+                .app_config_dir()
+                .unwrap_or_else(|_| app_data.join("getagrip"));
+            let settings_path = app_config.join("settings.json");
+            let _ = std::fs::create_dir_all(&app_config);
+            let settings_state = SettingsState::load(settings_path);
 
             // Register LSP providers for all supported database drivers
             {
@@ -242,6 +248,7 @@ fn main() {
             introspect_node,
             execute_query,
             get_settings,
+            get_settings_path,
             set_setting,
             save_datasource,
             update_datasource,
