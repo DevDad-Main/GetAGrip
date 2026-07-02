@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { sidebarVisible, datasources, activeDatasourceId, datasourceTrees, datasourceStates, activeModal, modalPayload, loadFolders } from '$lib/stores';
+  import { sidebarVisible, datasources, activeDatasourceId, datasourceTrees, datasourceStates, activeModal, modalPayload, loadFolders, databaseExplorerVisible } from '$lib/stores';
   import type { ConnectionProfile } from '$lib/tauri';
   import { handleConnect, handleDisconnect, handleConnectAll } from '$lib/connection';
   import { saveFolder } from '$lib/tauri';
@@ -159,53 +159,55 @@
   {/if}
 
   <!-- Explorer Section -->
-  <div class="section-header" class:collapsed={explorerCollapsed}>
-    <button class="section-toggle" on:click={() => explorerCollapsed = !explorerCollapsed}>
-      {#if explorerCollapsed}
-        <ChevronRight size="12" />
-      {:else}
-        <ChevronDown size="12" />
-      {/if}
-      <span>EXPLORER</span>
-    </button>
-  </div>
-
-  {#if !explorerCollapsed}
-    <div class="explorer-section">
-      {#if $activeDatasourceId}
-        <div class="sidebar-explorer-header">
-          <Database size="12" />
-          <span>
-            {#if $datasourceStates[$activeDatasourceId]?.state === 'connected'}
-              {$datasourceStates[$activeDatasourceId].name}
-            {:else}
-              Not connected
-            {/if}
-          </span>
-          {#if $datasourceStates[$activeDatasourceId]?.state === 'connected'}
-            <button
-              class="explorer-refresh"
-              on:click={() => {
-                const ds = $datasources.find((d) => d.id === $activeDatasourceId);
-                if (ds) handleConnect(ds);
-              }}
-              title="Refresh explorer"
-            >
-              <RefreshCw size="11" />
-            </button>
-          {/if}
-        </div>
-        {#if activeTrees.length > 0}
-          <ExplorerTree nodes={activeTrees} depth={0} profileId={$activeDatasourceId} />
-        {:else if $datasourceStates[$activeDatasourceId]?.state === 'connected'}
-          <div class="sidebar-empty">Loading databases…</div>
+  {#if $databaseExplorerVisible}
+    <div class="section-header" class:collapsed={explorerCollapsed}>
+      <button class="section-toggle" on:click={() => explorerCollapsed = !explorerCollapsed}>
+        {#if explorerCollapsed}
+          <ChevronRight size="12" />
+        {:else}
+          <ChevronDown size="12" />
         {/if}
-      {:else if $datasources.length > 0}
-        <div class="sidebar-empty">Select a data source to explore.</div>
-      {:else}
-        <div class="sidebar-empty">Add a data source to get started.</div>
-      {/if}
+        <span>EXPLORER</span>
+      </button>
     </div>
+
+    {#if !explorerCollapsed}
+      <div class="explorer-section">
+        {#if $activeDatasourceId}
+          <div class="sidebar-explorer-header">
+            <Database size="12" />
+            <span>
+              {#if $datasourceStates[$activeDatasourceId]?.state === 'connected'}
+                {$datasourceStates[$activeDatasourceId].name}
+              {:else}
+                Not connected
+              {/if}
+            </span>
+            {#if $datasourceStates[$activeDatasourceId]?.state === 'connected'}
+              <button
+                class="explorer-refresh"
+                on:click={() => {
+                  const ds = $datasources.find((d) => d.id === $activeDatasourceId);
+                  if (ds) handleConnect(ds);
+                }}
+                title="Refresh explorer"
+              >
+                <RefreshCw size="11" />
+              </button>
+            {/if}
+          </div>
+          {#if activeTrees.length > 0}
+            <ExplorerTree nodes={activeTrees} depth={0} profileId={$activeDatasourceId} />
+          {:else if $datasourceStates[$activeDatasourceId]?.state === 'connected'}
+            <div class="sidebar-empty">Loading databases…</div>
+          {/if}
+        {:else if $datasources.length > 0}
+          <div class="sidebar-empty">Select a data source to explore.</div>
+        {:else}
+          <div class="sidebar-empty">Add a data source to get started.</div>
+        {/if}
+      </div>
+    {/if}
   {/if}
 </aside>
 

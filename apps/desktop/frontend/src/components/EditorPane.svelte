@@ -1,28 +1,38 @@
 <script lang="ts">
-  import { tabs, activeTab, statusText, saveQuery, savedQueries } from '$lib/stores';
+  import { activeTab, statusText, saveQuery, savedQueries, activePaneId, updateTabSql, updateTabDatasource, pushNavigationLocation } from '$lib/stores';
   import EditorTabs from './EditorTabs.svelte';
   import TabToolbar from './TabToolbar.svelte';
   import MonacoEditor from './MonacoEditor.svelte';
   import { Play, Save } from 'lucide-svelte';
   import { notify } from '../lib/toast';
 
+  export let paneId: string = '';
+
   let runFn: (() => void) | null = null;
   let saveDialogOpen = false;
   let saveQueryName = '';
 
+  $: paneTab = $activeTab;
+
   function handleSqlChange(sql: string) {
-    const tab = $activeTab;
+    const tab = paneTab;
     if (!tab) return;
-    const updated = $tabs.map((t) => (t.id === tab.id ? { ...t, sql } : t));
-    tabs.set(updated);
+    updateTabSql(paneId, tab.id, sql);
   }
 
   function handleRun() {
     runFn?.();
   }
 
+  function handleTabFocus() {
+    const tab = paneTab;
+    if (tab) {
+      pushNavigationLocation(tab.id, paneId, tab.title);
+    }
+  }
+
   function openSaveDialog() {
-    const tab = $activeTab;
+    const tab = paneTab;
     if (!tab) return;
     if (!tab.datasourceId) {
       notify('Select a datasource first', 'warning');
@@ -37,7 +47,7 @@
   }
 
   function confirmSave() {
-    const tab = $activeTab;
+    const tab = paneTab;
     if (!tab || !saveQueryName.trim()) return;
     saveQuery(saveQueryName.trim(), tab.sql, tab.datasourceId);
     notify(`Saved "${saveQueryName.trim()}"`, 'success');
@@ -45,28 +55,26 @@
   }
 
   function handleDatasourceChange(datasourceId: string | null, schema: string | null) {
-    tabs.update((ts) =>
-      ts.map((t) =>
-        t.id === $activeTab?.id ? { ...t, datasourceId, schema } : t,
-      ),
-    );
+    const tab = paneTab;
+    if (!tab) return;
+    updateTabDatasource(paneId, tab.id, datasourceId, schema);
   }
 </script>
 
-<section class="editor-pane">
+<section class="editor-pane" on:focus={handleTabFocus}>
   <EditorTabs />
   <div class="toolbar">
-    {#if $activeTab}
+    {#if paneTab}
       <TabToolbar
-        datasourceId={$activeTab.datasourceId}
-        schema={$activeTab.schema}
+        datasourceId={paneTab.datasourceId}
+        schema={paneTab.schema}
         onChange={handleDatasourceChange}
       />
     {:else}
       <span class="toolbar-info">No active tab</span>
     {/if}
     <div class="toolbar-spacer"></div>
-    {#if $activeTab?.datasourceId}
+    {#if paneTab?.datasourceId}
       <button class="toolbar-save" on:click={openSaveDialog} title="Save query">
         <Save size="11" /> Save
       </button>
@@ -97,16 +105,16 @@
     </div>
   {/if}
   <div class="editor-host">
-    {#if $activeTab}
+    {#if paneTab}
       <MonacoEditor
-        sql={$activeTab.sql}
-        profileId={$activeTab.datasourceId}
-        tabId={$activeTab.id}
+        sql={paneTab.sql}
+        profileId={paneTab.datasourceId}
+        tabId={paneTab.id}
         onSqlChange={handleSqlChange}
         onReady={(fn) => runFn = fn}
       />
     {:else}
-      <div class="editor-empty">No active tab</div>
+      <div class="editor-empty">Open a query tab or select a file</div>
     {/if}
   </div>
 </section>
@@ -118,6 +126,7 @@
     overflow: hidden;
     flex: 1;
     min-height: 0;
+    outline: none;
   }
   .toolbar {
     display: flex;

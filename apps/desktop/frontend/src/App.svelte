@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import TitleBar from './components/TitleBar.svelte';
   import SidePanel from './components/SidePanel.svelte';
-  import EditorPane from './components/EditorPane.svelte';
+  import SplitEditor from './components/SplitEditor.svelte';
+  import BreadcrumbNav from './components/BreadcrumbNav.svelte';
   import ResultsPanel from './components/ResultsPanel.svelte';
   import StatusBar from './components/StatusBar.svelte';
   import DataSourceForm from './components/DataSourceForm.svelte';
@@ -18,7 +19,9 @@
   import {
     commandPaletteOpen, activeModal, modalPayload, sidebarVisible,
     loadDatasources, loadFolders, resultsPanelHeight, resultSets, activeResultSetId,
-    activeTheme, activeBottomTab,
+    activeTheme, activeBottomTab, isFullscreen, databaseExplorerVisible,
+    addTabToPane, activePaneId, addRecentProject, sidebarWidth,
+    restorePersistedState, persistState, initPersistence,
   } from '$lib/stores';
   import { findTheme, applyAppTheme } from '$lib/themes';
   import { getSettings } from '$lib/tauri';
@@ -28,9 +31,7 @@
   let notificationsVisible = false;
   let diagnosticsVisible = false;
   let settingsVisible = false;
-  let sidebarW = 260;
 
-  // Auto-hide results panel when all result tabs are closed (not when terminal is active)
   $: if ($resultSets.length === 0 && $resultsPanelHeight > 0 && $activeBottomTab !== 'terminal') {
     resultsPanelHeight.set(0);
   }
@@ -49,7 +50,7 @@
     function onMove(ev: MouseEvent) {
       const w = ev.clientX - startX + 160;
       if (w > 80 || (ev.clientX - startX) > 20) pushed = true;
-      if (pushed) sidebarW = Math.max(160, Math.min(600, w));
+      if (pushed) sidebarWidth.set(Math.max(160, Math.min(600, w)));
     }
     function onUp() {
       document.removeEventListener('mousemove', onMove);
@@ -63,25 +64,100 @@
     document.body.style.userSelect = 'none';
   }
 
+  function openSettings() {
+    settingsVisible = true;
+  }
+
   onMount(async () => {
     loadDatasources();
     loadFolders();
-    try {
-      const settings = await getSettings();
-      const themeVal = (settings.theme as string) ?? 'darcula';
-      activeTheme.set(themeVal);
+
+    // Restore persisted state (theme, panes, layout)
+    restorePersistedState();
+
+    // Apply theme from restored state or settings
+    let themeVal = '';
+    const unsub = activeTheme.subscribe((v) => themeVal = v);
+    unsub();
+    if (themeVal) {
       applyAppTheme(findTheme(themeVal));
-    } catch { /* defaults */ }
+    } else {
+      try {
+        const settings = await getSettings();
+        themeVal = (settings.theme as string) ?? 'darcula';
+        activeTheme.set(themeVal);
+        applyAppTheme(findTheme(themeVal));
+      } catch { /* defaults */ }
+    }
+
+    // Init auto-persistence on store changes
+    initPersistence();
+
+    // Add the cwd as a recent project
+    if (typeof window !== 'undefined' && '__TAURI__' in window) {
+      try {
+        const { appDataDir } = await import('@tauri-apps/api/path');
+        const dir = await appDataDir();
+        addRecentProject(dir, 'GetAGrip');
+      } catch {}
+    }
   });
+
+  // Persist on window events
+  function handleBlur() { persistState(); }
+  function handleBeforeUnload() { persistState(); }
+  function handleWindowResize() { persistState(); }
+  onMount(() => {
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    // Persist window bounds on resize/move
+    if (typeof window !== 'undefined' && '__TAURI__' in window) {
+      import('@tauri-apps/api/window').then((w) => {
+        const win = w.getCurrentWindow();
+        win.onResized().then(() => persistState());
+        win.onMoved().then(() => persistState());
+        // Restore saved bounds
+        try {
+          const raw = localStorage.getItem('getagrip_window_bounds');
+          if (raw) {
+            const bounds = JSON.parse(raw);
+            if (bounds.width && bounds.height) {
+              win.setSize(new w.LogicalSize(bounds.width, bounds.height));
+            }
+            if (bounds.x !== undefined && bounds.y !== undefined) {
+              win.setPosition(new w.LogicalPosition(bounds.x, bounds.y));
+            }
+          }
+        } catch {}
+      });
+    }
+  });
+  import { onDestroy } from 'svelte';
+  onDestroy(() => { window.removeEventListener('beforeunload', handleBeforeUnload); });
+
+  // Save window bounds to localStorage on resize
+  async function saveWindowBounds() {
+    if (typeof window !== 'undefined' && '__TAURI__' in window) {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const win = getCurrentWindow();
+        const size = await win.outerSize();
+        const pos = await win.outerPosition();
+        localStorage.setItem('getagrip_window_bounds', JSON.stringify({
+          width: size.width, height: size.height,
+          x: pos.x, y: pos.y,
+        }));
+      } catch {}
+    }
+  }
 
   function handleKeydown(e: KeyboardEvent) {
     const ctrl = e.metaKey || e.ctrlKey;
 
-    if (ctrl && e.key === 'k') {
+    if (ctrl && e.key === 'k' && !e.shiftKey) {
       e.preventDefault();
       commandPaletteOpen.update((v) => !v);
     }
-    if (ctrl && e.shiftKey && e.key === 'A') {
+    if (ctrl && e.shiftKey && e.key === 'K') {
       e.preventDefault();
       commandPaletteOpen.update((v) => !v);
     }
@@ -112,12 +188,80 @@
     }
     if (ctrl && (e.key === '`' || e.code === 'Backquote')) {
       e.preventDefault();
-      if ($resultsPanelHeight > 0) {
-        activeBottomTab.set('terminal');
+      if ($activeBottomTab === 'terminal' && $resultsPanelHeight > 0) {
+        resultsPanelHeight.set(0);
       } else {
-      resultsPanelHeight.set(300);
-      activeBottomTab.set('terminal');
+        resultsPanelHeight.set(300);
+        activeBottomTab.set('terminal');
       }
+    }
+    if (ctrl && e.key === 'n') {
+      e.preventDefault();
+      let pid = '';
+      activePaneId.subscribe((v) => pid = v)();
+      addTabToPane(pid);
+    }
+    if (ctrl && e.key === 'w') {
+      e.preventDefault();
+      import('$lib/stores').then((s) => {
+        let pid = '';
+        let tab = null;
+        const unsub1 = s.activePaneId.subscribe((v) => pid = v);
+        const unsub2 = s.activeTab.subscribe((v) => tab = v);
+        unsub1();
+        unsub2();
+        if (tab) s.closeTab(pid, tab.id);
+      });
+    }
+    if (ctrl && e.key === 'o') {
+      e.preventDefault();
+      import('$lib/stores').then((s) => s.openFileDialog());
+    }
+    if (ctrl && e.key === 's' && !e.shiftKey) {
+      e.preventDefault();
+      import('$lib/stores').then((s) => {
+        let tab: import('$lib/stores').EditorTab | null = null;
+        const unsub = s.activeTab.subscribe((v) => tab = v);
+        unsub();
+        if (tab?.filePath) {
+          import('@tauri-apps/plugin-fs').then((fs) => fs.writeTextFile(tab!.filePath!, tab!.sql));
+        } else if (tab) {
+          s.saveFileDialog(tab.sql, tab.title + '.sql');
+        }
+      });
+    }
+    if (ctrl && e.shiftKey && e.key === 'S') {
+      e.preventDefault();
+      import('$lib/stores').then((s) => {
+        let tab: import('$lib/stores').EditorTab | null = null;
+        const unsub = s.activeTab.subscribe((v) => tab = v);
+        unsub();
+        if (tab) s.saveFileDialog(tab.sql, tab.title + '.sql');
+      });
+    }
+    if (ctrl && e.key === 'p') {
+      e.preventDefault();
+      commandPaletteOpen.set(true);
+    }
+    if (e.key === 'F11') {
+      e.preventDefault();
+      isFullscreen.update((v) => !v);
+    }
+    if (e.altKey && e.key === 'ArrowLeft') {
+      e.preventDefault();
+      import('$lib/stores').then((s) => s.navigateBack());
+    }
+    if (e.altKey && e.key === 'ArrowRight') {
+      e.preventDefault();
+      import('$lib/stores').then((s) => s.navigateForward());
+    }
+    if (e.key === 'F8') {
+      e.preventDefault();
+      import('$lib/stores').then((s) => s.navigateBack());
+    }
+    if (e.shiftKey && e.key === 'F8') {
+      e.preventDefault();
+      import('$lib/stores').then((s) => s.navigateForward());
     }
     if (e.key === 'Escape') {
       commandPaletteOpen.update((v) => false);
@@ -132,16 +276,16 @@
   $: editProfile = $activeModal === 'datasource' ? ($modalPayload as ConnectionProfile | null) : null;
 </script>
 
-<svelte:window on:keydown|capture={handleKeydown} />
+<svelte:window on:keydown|capture={handleKeydown} on:blur={handleBlur} />
 
-<div class="app-shell">
-  <TitleBar title="GetAGrip" onShowSettings={() => settingsVisible = true} historyVisible={historyVisible} onToggleHistory={() => historyVisible = !historyVisible} />
+<div class="app-shell" class:fullscreen={$isFullscreen}>
+  <TitleBar {openSettings} />
   <main class="content">
     {#if $sidebarVisible}
-      <div class="sidebar-col" style="width: {sidebarW}px">
+      <div class="sidebar-col" style="width: {$sidebarWidth}px">
         <SidePanel />
       </div>
-      <ResizeHandle direction="horizontal" size={sidebarW} onResize={(s) => sidebarW = s} onCollapse={() => sidebarVisible.set(false)} collapseThreshold={60} />
+      <ResizeHandle direction="horizontal" size={$sidebarWidth} onResize={(s) => sidebarWidth.set(s)} onCollapse={() => sidebarVisible.set(false)} collapseThreshold={60} />
     {:else}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="sidebar-reveal" on:mousedown={startSidebarReveal} title="Drag to reveal sidebar">
@@ -149,10 +293,11 @@
       </div>
     {/if}
     <div class="editor-column">
-      <EditorPane />
+      <BreadcrumbNav />
+      <SplitEditor />
       {#if $resultsPanelHeight > 0}
-        <ResizeHandle direction="vertical" size={$resultsPanelHeight} onResize={(s) => resultsPanelHeight.set(s)} minSize={80} maxSize={800} onCollapse={() => resultsPanelHeight.set(0)} collapseThreshold={40} />
-        <div class="results-col" style="height: {$resultsPanelHeight}px">
+        <ResizeHandle direction="vertical" size={$resultsPanelHeight || 300} onResize={(s) => resultsPanelHeight.set(s)} minSize={80} maxSize={800} onCollapse={() => resultsPanelHeight.set(0)} collapseThreshold={40} />
+        <div class="results-col" style="height: {$resultsPanelHeight || 300}px">
           <div class="bottom-tabs">
             <button
               class="bottom-tab"
@@ -162,7 +307,7 @@
             <button
               class="bottom-tab"
               class:active={$activeBottomTab === 'terminal'}
-              on:click={() => activeBottomTab.set('terminal')}
+              on:click={() => { activeBottomTab.set('terminal'); }}
             >Terminal</button>
             <button class="bottom-tab-close" on:click={() => resultsPanelHeight.set(0)} title="Close panel (Ctrl+J)">✕</button>
           </div>

@@ -34,7 +34,7 @@ async function loadAllTableNames(profileId: string) {
   }
 }
 
-export async function handleConnect(profile: ConnectionProfile) {
+export async function handleConnect(profile: ConnectionProfile): Promise<boolean> {
   datasourceStates.update((s) => ({
     ...s,
     [profile.id]: {
@@ -65,9 +65,9 @@ export async function handleConnect(profile: ConnectionProfile) {
         lastError: result.last_error,
       },
     }));
-    activeDatasourceId.set(profile.id);
 
     if (state === 'connected') {
+      activeDatasourceId.set(profile.id);
       notify(`Connected to ${result.name}`, 'success');
       try {
         const nodes = await introspectNode(profile.id, null, null, null);
@@ -80,8 +80,10 @@ export async function handleConnect(profile: ConnectionProfile) {
           })
           .catch((e) => notify(`Metadata load failed: ${e}`, 'warning'));
       } catch {}
+      return true;
     } else {
       notify(`Connection failed: ${result.last_error ?? 'unknown error'}`, 'error');
+      return false;
     }
   } catch (e) {
     notify(`Connection failed: ${e}`, 'error');
@@ -98,6 +100,7 @@ export async function handleConnect(profile: ConnectionProfile) {
         lastError: String(e),
       },
     }));
+    return false;
   }
 }
 
@@ -141,12 +144,9 @@ export async function handleConnectAll() {
   for (const ds of dsList) {
     const state = get(datasourceStates)[ds.id]?.state;
     if (state === 'connected' || state === 'connecting') continue;
-    try {
-      await handleConnect(ds);
-      connected++;
-    } catch {
-      failed++;
-    }
+    const ok = await handleConnect(ds);
+    if (ok) connected++;
+    else failed++;
   }
 
   if (connected > 0) {
