@@ -241,7 +241,7 @@
             style="width: {colWidths[i] || 150}px;"
             role="columnheader"
             on:click={() => handleSort(col)}
-            title={result.columns[i]?.db_type as string ?? ''}
+            title={String(result.columns[i]?.db_type ?? '')}
           >
             <span class="th-label">{col}</span>
             {#if result.sortColumn === col}

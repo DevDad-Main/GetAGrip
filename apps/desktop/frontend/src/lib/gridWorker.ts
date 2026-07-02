@@ -33,6 +33,15 @@ function computeSorted(data: Record<string, unknown>[]): Record<string, unknown>
   });
 }
 
+/// Convert a value-array (no keys) to a row object using column names.
+function arrayToRow(vals: unknown[]): Record<string, unknown> {
+  const row: Record<string, unknown> = {};
+  for (let i = 0; i < colNames.length; i++) {
+    row[colNames[i]] = vals[i];
+  }
+  return row;
+}
+
 self.onmessage = (e: MessageEvent) => {
   const msg = e.data;
   switch (msg.type) {
@@ -45,6 +54,35 @@ self.onmessage = (e: MessageEvent) => {
       self.postMessage({ type: 'dataLoaded', totalRows: rows.length, colNames });
       break;
     }
+
+    // Append a batch of rows (streaming). Rows arrive as value-arrays [val, val, ...]
+    // when no column names are provided, or as objects if already converted.
+    case 'appendRows': {
+      const batch: unknown[][] = msg.rows;
+      if (!colNames.length && msg.colNames) {
+        colNames = msg.colNames;
+      }
+      for (const vals of batch) {
+        if (Array.isArray(vals)) {
+          rows.push(arrayToRow(vals));
+        } else {
+          rows.push(vals as Record<string, unknown>);
+        }
+      }
+      self.postMessage({ type: 'rowsAppended', totalRows: rows.length, totalFiltered: computeFiltered().length });
+      break;
+    }
+
+    case 'resetData': {
+      rows = [];
+      colNames = msg.colNames ?? [];
+      filterText = '';
+      sortColumn = null;
+      sortDirection = null;
+      self.postMessage({ type: 'dataLoaded', totalRows: 0, colNames: colNames });
+      break;
+    }
+
     case 'setFilter': {
       filterText = msg.filterText;
       self.postMessage({ type: 'filterChanged', totalFiltered: computeFiltered().length });
@@ -72,6 +110,10 @@ self.onmessage = (e: MessageEvent) => {
     case 'getAllRows': {
       const data = computeSorted(computeFiltered());
       self.postMessage({ type: 'allRows', rows: data, colNames });
+      break;
+    }
+    case 'getTotalRows': {
+      self.postMessage({ type: 'totalRows', totalRows: rows.length, totalFiltered: computeFiltered().length });
       break;
     }
   }

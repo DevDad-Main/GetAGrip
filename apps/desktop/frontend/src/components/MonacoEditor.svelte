@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import * as monaco from 'monaco-editor';
-  import { executeQueryV2, requestCompletion, requestDiagnostics, type QueryResultDto, type CompletionItem } from '$lib/tauri';
+  import { executeQueryV2, startStreamingQuery, requestCompletion, requestDiagnostics, type QueryResultDto, type CompletionItem, type QueryStreamEvent } from '$lib/tauri';
+  import { listen } from '@tauri-apps/api/event';
+  import type { UnlistenFn } from '@tauri-apps/api/event';
   import { notify } from '$lib/toast';
   import {
     resultSets, activeResultSetId, statusText, diagnostics as diagStore,
@@ -705,37 +707,97 @@
     }
 
     statusText.set('Running query…');
+
+    const rsId = nextResultSetId();
+    let colNames: string[] = [];
+    let batchCount = 0;
+
+    resultSets.update((rs) => {
+      const entry: ResultSet = {
+        id: rsId,
+        tabId,
+        columns: [],
+        rows: [],
+        elapsedMs: 0,
+        rowsAffected: 0,
+        pinned: false,
+        sortColumn: null,
+        sortDirection: null,
+        filterText: '',
+      };
+      activeResultSetId.set(rsId);
+      resultsPanelHeight.set(280);
+      return [...rs, entry];
+    });
+
     try {
-      const results: QueryResultDto[] = await executeQueryV2(profileId, currentSql, tabId);
+      let unlisten: UnlistenFn | null = null;
 
-      resultSets.update((rs) => {
-        const newSets: ResultSet[] = results.map((r) => ({
-          id: nextResultSetId(),
-          tabId,
-          columns: r.columns as unknown as Record<string, unknown>[],
-          rows: r.rows as Record<string, unknown>[],
-          elapsedMs: r.elapsed_ms,
-          rowsAffected: r.rows_affected,
-          pinned: false,
-          sortColumn: null,
-          sortDirection: null,
-          filterText: '',
-        }));
-
-        const updated = [...rs, ...newSets];
-        if (newSets.length > 0) {
-          activeResultSetId.set(newSets[0].id);
-          resultsPanelHeight.set(280);
+      unlisten = await listen<QueryStreamEvent>('query-batch', (event) => {
+        const payload = event.payload;
+        if (payload.type === 'meta') {
+          colNames = payload.columns.map((c) => c.name);
+          resultSets.update((rs) =>
+            rs.map((r) =>
+              r.id === rsId
+                ? { ...r, columns: payload.columns as unknown as Record<string, unknown>[] }
+                : r,
+            ),
+          );
+        } else if (payload.type === 'batch') {
+          batchCount++;
+          const newRows = payload.rows.map((vals) => {
+            const row: Record<string, unknown> = {};
+            for (let i = 0; i < colNames.length; i++) row[colNames[i]] = vals[i];
+            return row;
+          });
+          resultSets.update((rs) =>
+            rs.map((r) =>
+              r.id === rsId
+                ? { ...r, rows: [...r.rows, ...newRows] }
+                : r,
+            ),
+          );
+          statusText.set(`Received batch ${batchCount} (${newRows.length} rows)`);
+        } else if (payload.type === 'complete') {
+          resultSets.update((rs) =>
+            rs.map((r) =>
+              r.id === rsId
+                ? { ...r, elapsedMs: payload.elapsedMs }
+                : r,
+            ),
+          );
+          statusText.set(`${payload.totalRows} rows — ${payload.elapsedMs}ms`);
+          unlisten?.();
         }
-        return updated;
       });
 
-      const totalRows = results.reduce((sum, r) => sum + r.rows.length, 0);
-      const totalMs = results.reduce((sum, r) => sum + r.elapsed_ms, 0);
-      statusText.set(`${totalRows} rows — ${totalMs}ms`);
-    } catch (e: unknown) {
-      const msg = String(e);
-      statusText.set(`Error: ${msg}`);
+      await startStreamingQuery(profileId, currentSql, tabId);
+    } catch {
+      try {
+        const results: QueryResultDto[] = await executeQueryV2(profileId, currentSql, tabId);
+
+        resultSets.update((rs) =>
+          rs.map((r) =>
+            r.id === rsId
+              ? {
+                  ...r,
+                  columns: results[0].columns as unknown as Record<string, unknown>[],
+                  rows: results[0].rows as unknown as Record<string, unknown>[],
+                  elapsedMs: results[0].elapsed_ms,
+                  rowsAffected: results[0].rows_affected,
+                }
+              : r,
+          ),
+        );
+
+        const totalRows = results.reduce((sum, r) => sum + r.rows.length, 0);
+        const totalMs = results.reduce((sum, r) => sum + r.elapsed_ms, 0);
+        statusText.set(`${totalRows} rows — ${totalMs}ms`);
+      } catch (e: unknown) {
+        const msg = String(e);
+        statusText.set(`Error: ${msg}`);
+      }
     }
   }
 

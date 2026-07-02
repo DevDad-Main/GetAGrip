@@ -321,6 +321,45 @@ export async function executeQueryV2(
   return invoke<QueryResultDto[]>('execute_query', { profileId, sql, tabId });
 }
 
+// ---- Streaming query events -------------------------------------------------
+
+export interface StreamMetaEvent {
+  type: 'meta';
+  queryId: string;
+  tabId: string;
+  columns: QueryColumnDto[];
+  totalRows: number;
+}
+
+export interface StreamBatchEvent {
+  type: 'batch';
+  queryId: string;
+  rows: unknown[][];
+}
+
+export interface StreamCompleteEvent {
+  type: 'complete';
+  queryId: string;
+  elapsedMs: number;
+  totalRows: number;
+}
+
+export type QueryStreamEvent = StreamMetaEvent | StreamBatchEvent | StreamCompleteEvent;
+
+/// Start a streaming query. Results arrive via `query-batch` Tauri events.
+/// The returned promise resolves when the query finishes executing.
+export async function startStreamingQuery(
+  profileId: string,
+  sql: string,
+  tabId: string,
+): Promise<{ totalRows: number; elapsedMs: number }> {
+  return invoke<{ totalRows: number; elapsedMs: number }>('execute_query_stream', {
+    profileId,
+    sql,
+    tabId,
+  });
+}
+
 // ---- Phase 2 history commands ----------------------------------------------
 
 export async function listHistory(): Promise<HistoryEntry[]> {

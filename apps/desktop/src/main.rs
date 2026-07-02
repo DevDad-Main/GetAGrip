@@ -30,7 +30,7 @@ use commands::intelligence::{
 };
 use commands::introspect::introspect;
 use commands::lsp::{get_lsp_servers, install_lsp, set_lsp_path};
-use commands::query::execute_query;
+use commands::query::{execute_query, execute_query_stream};
 use commands::settings::{get_settings, get_settings_path, set_setting, SettingsState};
 use commands::util::{detect_available_shells, run_command};
 use commands::pty::{start_pty, stop_pty, pty_input, pty_resize, read_pty_output, log_debug};
@@ -253,6 +253,7 @@ fn main() {
             introspect,
             introspect_node,
             execute_query,
+            execute_query_stream,
             get_settings,
             get_settings_path,
             set_setting,
