@@ -11,6 +11,23 @@ pub struct SettingsState {
     pub path: Option<PathBuf>,
 }
 
+/// Default settings written to disk on first launch so users can see every option.
+fn default_settings() -> Vec<(&'static str, serde_json::Value)> {
+    vec![
+        ("fontSize", serde_json::Value::Number(13.into())),
+        ("fontFamily", serde_json::Value::String("JetBrains Mono, Fira Code, Menlo, Consolas, monospace".into())),
+        ("wordWrap", serde_json::Value::Bool(true)),
+        ("minimap", serde_json::Value::Bool(true)),
+        ("tabSize", serde_json::Value::Number(4.into())),
+        ("lineNumbers", serde_json::Value::Bool(true)),
+        ("autoSave", serde_json::Value::Bool(true)),
+        ("autoSaveDelay", serde_json::Value::Number(30.into())),
+        ("formatOnSave", serde_json::Value::Bool(false)),
+        ("theme", serde_json::Value::String("darcula".into())),
+        ("sidebarWidth", serde_json::Value::Number(260.into())),
+    ]
+}
+
 impl SettingsState {
     pub fn new() -> Self {
         Self {
@@ -19,11 +36,22 @@ impl SettingsState {
         }
     }
 
+    /// Load settings from disk, writing defaults if the file doesn't exist.
     pub fn load(path: PathBuf) -> Self {
-        let path2 = path.clone();
+        let exists = path.exists();
+        let inner = SettingsStore::load(path.clone()).unwrap_or_default();
+
+        if !exists {
+            // First launch — seed the file with defaults
+            for (key, value) in default_settings() {
+                let _ = inner.set(key, &value);
+            }
+            let _ = inner.save();
+        }
+
         Self {
-            inner: SettingsStore::load(path).unwrap_or_default(),
-            path: Some(path2),
+            inner,
+            path: Some(path),
         }
     }
 }

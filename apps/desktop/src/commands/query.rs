@@ -190,7 +190,7 @@ pub async fn execute_query_stream(
     app.emit("query-batch", meta).map_err(|e| format!("emit meta: {e}"))?;
 
     // Emit rows in batches (value-arrays, not maps — much smaller on the wire)
-    const BATCH_SIZE: usize = 5000;
+    const BATCH_SIZE: usize = 50000;
     for chunk in result.rows.chunks(BATCH_SIZE) {
         let batch_rows: Vec<Vec<serde_json::Value>> = chunk
             .iter()
