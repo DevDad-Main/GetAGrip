@@ -50,6 +50,16 @@ fn history_path(app_data: &PathBuf) -> PathBuf {
     app_data.join("getagrip").join("query_history.json")
 }
 
+fn settings_path() -> PathBuf {
+    let base = std::env::var("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+            PathBuf::from(home).join(".config")
+        });
+    base.join("getagrip").join("settings.json")
+}
+
 fn main() {
     let _ = getagrip_telemetry::init_default();
     tracing::info!("GetAGrip starting");
@@ -107,13 +117,9 @@ fn main() {
             };
 
             // Create SettingsState early so LSP discovery can check user paths
-            let app_config = app
-                .path()
-                .app_config_dir()
-                .unwrap_or_else(|_| app_data.join("getagrip"));
-            let settings_path = app_config.join("settings.json");
-            let _ = std::fs::create_dir_all(&app_config);
-            let settings_state = SettingsState::load(settings_path);
+            let settings_file = settings_path();
+            let _ = settings_file.parent().map(fs::create_dir_all);
+            let settings_state = SettingsState::load(settings_file);
 
             // Register LSP providers for all supported database drivers
             {

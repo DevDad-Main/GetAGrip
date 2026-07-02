@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount, afterUpdate } from 'svelte';
   import type { ResultSet } from '$lib/stores';
   import { resultSets } from '$lib/stores';
   import { exportResult, saveExport, type ExportInput, type ExportColumn } from '$lib/tauri';
@@ -8,19 +9,40 @@
 
   export let result: ResultSet;
 
-  const MAX_ROWS = 5000;
+  const ROW_HEIGHT = 28;
+  const OVERSCAN = 10;
+  let containerEl: HTMLDivElement;
+  let headerEl: HTMLTableElement;
+  let scrollTop = 0;
+  let containerHeight = 300;
+  let rafId: number | null = null;
+  let colWidths: number[] = [];
   let exportMenuOpen = false;
 
-  $: filtered = computeFiltered(result.rows, result.columns, result.filterText);
-  $: sorted = computeSorted(filtered, result.columns, result.sortColumn, result.sortDirection);
+  let filtered: Record<string, unknown>[] = [];
+  let sorted: Record<string, unknown>[] = [];
+
+  $: {
+    filtered = computeFiltered(result.rows, result.columns, result.filterText);
+    sorted = computeSorted(filtered, result.columns, result.sortColumn, result.sortDirection);
+  }
+
+  let colNames: string[] = [];
+  $: colNames = result.columns.map((c) => String(c.name));
+
+  $: totalFiltered = sorted.length;
+  $: visibleStart = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  $: visibleEnd = Math.min(totalFiltered, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + OVERSCAN);
+  $: displayRows = sorted.slice(visibleStart, visibleEnd);
 
   function computeFiltered(rows: Record<string, unknown>[], cols: Record<string, unknown>[], filter: string): Record<string, unknown>[] {
     if (!filter?.trim()) return rows;
     const q = filter.toLowerCase();
-    return rows.filter((row) => cols.some((col) => {
-      const val = row[String(col.name)];
-      return val != null && String(val).toLowerCase().includes(q);
-    }));
+    return rows.filter((row) =>
+      cols.some((col) => {
+        const val = row[String(col.name)];
+        return val != null && String(val).toLowerCase().includes(q);
+      }));
   }
 
   function computeSorted(rows: Record<string, unknown>[], cols: Record<string, unknown>[], sortCol: string | null, sortDir: 'asc' | 'desc' | null): Record<string, unknown>[] {
@@ -86,9 +108,9 @@
 
   function handleCopy() {
     try {
-      const cols = result.columns.map((c: Record<string, unknown>) => String(c.name));
+      const cols = colNames;
       const lines = [cols.join('\t')];
-      for (const row of sorted.slice(0, MAX_ROWS)) {
+      for (const row of sorted) {
         lines.push(cols.map((c) => copyValue(row[c])).join('\t'));
       }
       navigator.clipboard.writeText(lines.join('\n'))
@@ -106,7 +128,7 @@
         name: String(c.name), col_type: String(c.col_type ?? 'string'),
         db_type: String(c.db_type ?? ''), nullable: Boolean(c.nullable ?? true), ordinal: i,
       }));
-      const rows: unknown[][] = sorted.slice(0, MAX_ROWS).map((row: Record<string, unknown>) =>
+      const rows: unknown[][] = sorted.map((row: Record<string, unknown>) =>
         columns.map((c) => row[c.name]),
       );
       const outFmt = format === 'tsv' ? 'tsv' : format;
@@ -134,11 +156,40 @@
       notify(`Export failed: ${msg}`, 'error');
     }
   }
+
+  function handleScroll() {
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(() => {
+      if (containerEl) {
+        scrollTop = containerEl.scrollTop;
+        containerHeight = containerEl.clientHeight;
+      }
+      rafId = null;
+    });
+  }
+
+  function measureColWidths() {
+    if (headerEl) {
+      const cells = headerEl.querySelectorAll('th');
+      colWidths = Array.from(cells).map((th) => Math.max(80, th.offsetWidth));
+    }
+  }
+
+  onMount(() => {
+    measureColWidths();
+    if (containerEl) {
+      containerHeight = containerEl.clientHeight;
+    }
+  });
+
+  afterUpdate(() => {
+    if (colWidths.length === 0) measureColWidths();
+  });
 </script>
 
 <div class="rg">
   <div class="rg-toolbar">
-    <span class="rg-meta">{sorted.length} of {result.rows.length} rows — {result.elapsedMs}ms</span>
+    <span class="rg-meta">{totalFiltered} rows — {result.elapsedMs}ms</span>
     <div class="rg-actions">
       <button class="rg-btn" on:click={handleCopy} title="Copy as TSV"><Copy size="12" /></button>
 
@@ -167,46 +218,65 @@
     </div>
   </div>
 
-  <div class="rg-body">
-    {#if result.columns.length === 0}
-      <div class="rg-empty">No columns returned.</div>
-    {:else}
-      <div class="rg-scroll">
-        <table class="rg-table">
-          <thead>
-            <tr>
-              {#each result.columns as col (col.name)}
-                <th title={col.db_type} on:click={() => handleSort(String(col.name))}>
-                  <span class="th-label">{col.name}</span>
-                  {#if result.sortColumn === String(col.name)}
-                    {#if result.sortDirection === 'asc'}
-                      <ArrowUp size="10" class="sort-icon" />
-                    {:else}
-                      <ArrowDown size="10" class="sort-icon" />
-                    {/if}
-                  {/if}
-                </th>
-              {/each}
-            </tr>
-          </thead>
-          <tbody>
-            {#each sorted.slice(0, MAX_ROWS) as row, idx (idx)}
-              <tr class:stripe={idx % 2 === 1}>
-                {#each result.columns as col}
-                  <td class:null={isNull(row[col.name])} class:number={isNumber(row[col.name])}>
-                    {formatValue(row[col.name])}
-                  </td>
-                {/each}
-              </tr>
+  {#if result.columns.length === 0}
+    <div class="rg-empty">No columns returned.</div>
+  {:else}
+    <div class="rg-body" bind:this={containerEl} on:scroll={handleScroll}>
+      <!-- Hidden measurement table (auto-sizes columns from header content) -->
+      <table class="rg-table rg-measure" bind:this={headerEl} aria-hidden="true">
+        <thead>
+          <tr>
+            {#each colNames as col}
+              <th>{col}</th>
             {/each}
-          </tbody>
-        </table>
-        {#if sorted.length > MAX_ROWS}
-          <div class="rg-truncated">Showing first {MAX_ROWS} of {sorted.length} rows.</div>
-        {/if}
+          </tr>
+        </thead>
+      </table>
+
+      <!-- Sticky header row -->
+      <div class="rg-header" role="row">
+        {#each colNames as col, i}
+          <div
+            class="rg-cell rg-hcell"
+            style="width: {colWidths[i] || 150}px;"
+            role="columnheader"
+            on:click={() => handleSort(col)}
+            title={result.columns[i]?.db_type as string ?? ''}
+          >
+            <span class="th-label">{col}</span>
+            {#if result.sortColumn === col}
+              {#if result.sortDirection === 'asc'}
+                <ArrowUp size="10" class="sort-icon" />
+              {:else}
+                <ArrowDown size="10" class="sort-icon" />
+              {/if}
+            {/if}
+          </div>
+        {/each}
       </div>
-    {/if}
-  </div>
+
+      <!-- Virtual viewport spacer controls the scrollbar -->
+      <div class="rg-viewport" style="height: {totalFiltered * ROW_HEIGHT}px;">
+        <!-- Row container translates to show the correct rows -->
+        <div class="rg-rows" style="transform: translateY({visibleStart * ROW_HEIGHT}px);">
+          {#each displayRows as row, idx (visibleStart + idx)}
+            <div class="rg-row" class:rg-stripe={(visibleStart + idx) % 2 === 1} style="height: {ROW_HEIGHT}px;" role="row">
+              {#each colNames as col, j}
+                <div
+                  class="rg-cell"
+                  class:rg-null={isNull(row[col])}
+                  class:rg-number={isNumber(row[col])}
+                  style="width: {colWidths[j] || 150}px;"
+                >
+                  {formatValue(row[col])}
+                </div>
+              {/each}
+            </div>
+          {/each}
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -244,36 +314,66 @@
   .rg-menu-item:hover { background: var(--accent-soft); }
   .rg-menu-sep { height: 1px; background: var(--border); margin: 4px 0; }
   .rg-filter { width: 120px; font-size: 11px; padding: 2px 6px; }
-  .rg-body { flex: 1; overflow: hidden; min-height: 0; }
-  .rg-scroll { overflow: auto; height: 100%; }
-  .rg-table {
-    border-collapse: collapse; font-size: 12px; font-family: var(--font-mono);
-    width: max-content; min-width: 100%;
+
+  .rg-body {
+    flex: 1; overflow: auto; min-height: 0; position: relative;
+    will-change: scroll-position;
   }
-  .rg-table th {
-    position: sticky; top: 0; background: var(--bg-elev); color: var(--text-muted);
-    font-weight: 600; text-align: left; padding: 4px 10px;
+
+  /* Hidden table to auto-measure column widths */
+  .rg-measure {
+    position: absolute; left: 0; top: 0; visibility: hidden;
+    pointer-events: none; z-index: -1; font-size: 12px;
+    font-family: var(--font-mono);
+  }
+  .rg-measure th {
+    padding: 4px 10px; font-weight: 600;
     border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
-    white-space: nowrap; z-index: 1; cursor: pointer; user-select: none;
+    white-space: nowrap;
   }
-  .rg-table th:hover { background: var(--bg-input); }
-  .th-label { margin-right: 4px; }
-  .sort-icon { opacity: 0.5; flex-shrink: 0; vertical-align: middle; }
-  .rg-table td {
-    padding: 3px 10px; border-bottom: 1px solid var(--border);
-    border-right: 1px solid var(--border); color: var(--text);
-    white-space: nowrap; max-width: 300px; overflow: hidden; text-overflow: ellipsis;
+
+  .rg-viewport {
+    position: relative; overflow: visible; min-height: 0;
   }
-  .rg-table tr.stripe td { background: var(--bg-stripe); }
-  .rg-table tr:hover td { background: var(--bg-hover); }
-  .rg-table td.null { color: var(--text-faint); font-style: italic; }
-  .rg-table td.number { text-align: right; color: var(--info); }
+
+  .rg-header {
+    position: sticky; top: 0; z-index: 10; display: flex;
+    background: var(--bg-elev);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .rg-rows {
+    position: relative; will-change: transform;
+  }
+
+  .rg-row {
+    display: flex; align-items: center;
+    border-bottom: 1px solid var(--border);
+  }
+  .rg-row:hover { background: var(--bg-hover); }
+  .rg-stripe { background: var(--bg-stripe); }
+  .rg-stripe:hover { background: var(--bg-hover); }
+
+  .rg-cell {
+    padding: 3px 10px; font-size: 12px; font-family: var(--font-mono);
+    color: var(--text); flex-shrink: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    border-right: 1px solid var(--border);
+  }
+  .rg-hcell {
+    font-weight: 600; color: var(--text-muted); cursor: pointer; user-select: none;
+    padding: 4px 10px; border-right: 1px solid var(--border);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .rg-hcell:hover { background: var(--bg-input); }
+  .rg-null { color: var(--text-faint); font-style: italic; }
+  .rg-number { text-align: right; color: var(--info); }
+
+  .th-label { overflow: hidden; text-overflow: ellipsis; }
+  .sort-icon { flex-shrink: 0; opacity: 0.5; }
+
   .rg-empty {
     display: flex; align-items: center; justify-content: center;
     height: 100%; color: var(--text-faint); font-size: 12px;
-  }
-  .rg-truncated {
-    padding: 6px 12px; font-size: 11px; color: var(--warning);
-    background: var(--bg-elev); border-top: 1px solid var(--border);
   }
 </style>
